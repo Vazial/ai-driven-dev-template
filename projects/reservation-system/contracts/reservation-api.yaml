@@ -22,11 +22,11 @@
 #
 # 拒否理由コードとシナリオの対応:
 #   TIME_SLOT_CONFLICT      … RSV-C-02(重なり) → 409
-#   TOO_SHORT               … RSV-C-04(30分未満) → 422
-#   INVALID_TIME_SLOT       … RSV-C-05/06(逆転・同一時刻) → 422
-#   CROSSES_DAY_BOUNDARY    … RSV-C-07(日マタギ) → 422
+#   TOO_SHORT               … RSV-C-05(30分未満) → 422
+#   INVALID_TIME_SLOT       … RSV-C-06/07(逆転・同一時刻) → 422
 #   OUTSIDE_BUSINESS_HOURS  … RSV-C-08/09(営業時間外) → 422
 #   EXCEEDS_CAPACITY        … RSV-C-10(定員超過) → 422
+#   CROSSES_DAY_BOUNDARY    … RSV-C-11(日マタギ) → 422
 # ============================================================
 openapi: 3.0.3
 info:
