@@ -1,11 +1,11 @@
 # activeContext.md — テンプレート整備プロジェクト
 
 > P-11: このファイルは常に「現在」だけを映す。更新は上書き。歴史はgitとADRが持つ。
-> 最終更新: 2026-07-13 (templates/完了を反映)
+> 最終更新: 2026-07-13 (予約システム初適用: リポジトリ初期構成・guardrails実体まで完了)
 
 ## 今どこにいるか
 
-A層の規程7ファイル + agents/の4agent定義 + templates/の6雛形が完成。ARCHITECTURE.md（設計の現在）の概念も追加済み。残る書き物はguardrails実体のみで、次はいよいよ予約システムへの初適用。
+A層の規程7ファイル + agents/の4agent定義 + templates/の6雛形が完成。予約システムへの初適用を開始し、リポジトリ初期構成（projects/reservation-system/・.claude/agents/）とguardrails実体（.claude/settings.json・.github/workflows/ci.yml骨格・commit-msg hook・branch protection手順書・step定義lint調査）まで完了。次はarchitectによるアーキテクチャ選定（ADR-0001）。詳細な進捗はprojects/reservation-system/activeContext.mdを見る。
 
 ## 確定した主要な判断
 

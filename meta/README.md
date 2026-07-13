@@ -28,5 +28,5 @@ agents.md を参照（architect / developer / tester / reviewer の4役と分離
 
 - [x] agents/ — subagent個別定義（architect / developer / tester / reviewer。設計はagents.md）
 - [x] templates/ — adr / pull-request / audit-report / friction-log / active-context / architecture の6雛形
-- [ ] guardrails/ — branch protection・deny設定・CI設定の実体ファイル
+- [x] guardrails/ — branch protection・deny設定・CI設定の実体ファイル（.claude/settings.json、.github/workflows/ci.yml、guardrails/。CIの実コマンドとstep定義lintツールはスタック確定後に追加）
 - [ ] 検証: 予約システムプロジェクトへの初適用と friction log 開始
