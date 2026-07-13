@@ -1,0 +1,97 @@
+# 契約: スライスRSV-C「予約を作成できる」のAPI仕様
+# 状態: ドラフト(人間の承認待ち)
+# スコープ: P-02に従い、このスライスに必要な操作のみ定義する。未来の分は書かない
+openapi: 3.0.3
+info:
+  title: 会議室予約システム API
+  version: 0.1.0
+paths:
+  /reservations:
+    post:
+      operationId: createReservation
+      summary: 予約を作成する
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateReservationRequest"
+      responses:
+        "201":
+          description: 予約が作成された
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReservationResponse"
+        "409":
+          description: 時間帯が既存の予約と重なっている(室×時間帯の排他的占有に違反)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemResponse"
+        "422":
+          description: 予約単体のルール違反(30分未満・時刻の逆転/同一・日マタギ・営業時間外・定員超過)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemResponse"
+components:
+  schemas:
+    CreateReservationRequest:
+      type: object
+      required: [roomId, employeeId, date, startTime, endTime, attendeeCount]
+      properties:
+        roomId:
+          type: string
+          description: 会議室ID
+        employeeId:
+          type: string
+          description: 予約する社員のID
+        date:
+          type: string
+          format: date
+          description: 予約日
+        startTime:
+          type: string
+          pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          description: 開始時刻(その日の時刻)
+        endTime:
+          type: string
+          pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          description: 終了時刻(その日の時刻)。時間帯は半開区間で、終了時刻ちょうどは占有に含まない
+        attendeeCount:
+          type: integer
+          minimum: 1
+          description: 利用人数
+    ReservationResponse:
+      type: object
+      required: [reservationId, roomId, employeeId, date, startTime, endTime, attendeeCount]
+      properties:
+        reservationId:
+          type: string
+        roomId:
+          type: string
+        employeeId:
+          type: string
+        date:
+          type: string
+          format: date
+        startTime:
+          type: string
+        endTime:
+          type: string
+        attendeeCount:
+          type: integer
+    ProblemResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: >
+            拒否理由コード。TIME_SLOT_CONFLICT(重なり) / TOO_SHORT(30分未満) /
+            INVALID_TIME_SLOT(逆転・同一時刻) / CROSSES_DAY_BOUNDARY(日マタギ) /
+            OUTSIDE_BUSINESS_HOURS(営業時間外) / EXCEEDS_CAPACITY(定員超過)
+        message:
+          type: string
+          description: 人間が読める説明
