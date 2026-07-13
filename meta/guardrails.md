@@ -1,0 +1,32 @@
+# guardrails.md — 運用ガードレール規程
+
+> 対象: 全agent、およびリポジトリ初期設定。
+> 原則の根拠: P-04（ここに書かれた項目は、可能な限り設定として機械的に強制する。本文書は「何をなぜ強制しているか」の索引）
+
+## 1. コミット・ブランチ
+
+| 項目 | 内容 | 強制手段 |
+|---|---|---|
+| コミット規約 | Conventional Commits（feat / fix / refactor / test / docs / chore） | commitlint |
+| ブランチ運用 | trunk-based。1スライス=1短命ブランチ=1PR | 運用 + PRテンプレ |
+| AIができること | ブランチ作成、コミット、PR作成 | — |
+| 人間のみができること | mainへのマージ | branch protection |
+| 禁止操作 | force push、mainへの直接push、ブランチ/タグの削除 | branch protection + agent権限設定 |
+
+## 2. PR・CI
+
+- PRテンプレート必須項目: 「対象契約（シナリオID）」「DoD充足のエビデンス（CI結果）」
+- CI必須チェック: L1 → L2 → L3 → L4（verification.md参照）。全て緑でなければマージ不可（required checks）
+
+## 3. シークレット・破壊的操作
+
+| 項目 | 強制手段 |
+|---|---|
+| `.env`・認証情報・秘密鍵はAI読み取り禁止 | agentのdeny設定（口頭ルールにしない） |
+| 本番環境への操作、データ削除系コマンドの禁止 | agentに権限を与えない（credential分離） |
+| 依存パッケージの追加はPR上で人間が差分確認 | PRレビュー + lockファイルのCODEOWNERS |
+
+## 4. セッション・コンテキスト
+
+- 全agentは起動時に PRINCIPLES.md + 自分の役割定義 + activeContext.md を読む
+- activeContext.mdの更新タイミングと権限は permissions.md に従う
