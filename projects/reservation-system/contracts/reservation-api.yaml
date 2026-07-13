@@ -1,6 +1,33 @@
 # 契約: スライスRSV-C「予約を作成できる」のAPI仕様
 # 状態: ドラフト(人間の承認待ち)
 # スコープ: P-02に従い、このスライスに必要な操作のみ定義する。未来の分は書かない
+#
+# ============================================================
+# 3行でわかるこの契約
+#   予約する:   POST /reservations に「誰が・どの部屋を・いつ・何人で」を送る
+#   成功したら: 201 と、予約ID付きの予約内容が返る
+#   拒否なら:   時間帯の重なりは409、それ以外のルール違反は422。どちらも理由コード+説明文が返る
+#
+# リクエスト例(会議室Aを7/14の10:00-11:00に4人で予約):
+#   POST /reservations
+#   { "roomId": "room-a", "employeeId": "emp-001", "date": "2026-07-14",
+#     "startTime": "10:00", "endTime": "11:00", "attendeeCount": 4 }
+#
+# 成功レスポンス例(201):
+#   { "reservationId": "rsv-123", "roomId": "room-a", "employeeId": "emp-001",
+#     "date": "2026-07-14", "startTime": "10:00", "endTime": "11:00", "attendeeCount": 4 }
+#
+# 拒否レスポンス例(409):
+#   { "code": "TIME_SLOT_CONFLICT", "message": "時間帯が既存の予約と重なっています" }
+#
+# 拒否理由コードとシナリオの対応:
+#   TIME_SLOT_CONFLICT      … RSV-C-02(重なり) → 409
+#   TOO_SHORT               … RSV-C-04(30分未満) → 422
+#   INVALID_TIME_SLOT       … RSV-C-05/06(逆転・同一時刻) → 422
+#   CROSSES_DAY_BOUNDARY    … RSV-C-07(日マタギ) → 422
+#   OUTSIDE_BUSINESS_HOURS  … RSV-C-08/09(営業時間外) → 422
+#   EXCEEDS_CAPACITY        … RSV-C-10(定員超過) → 422
+# ============================================================
 openapi: 3.0.3
 info:
   title: 会議室予約システム API
@@ -16,6 +43,13 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/CreateReservationRequest"
+            example:
+              roomId: room-a
+              employeeId: emp-001
+              date: "2026-07-14"
+              startTime: "10:00"
+              endTime: "11:00"
+              attendeeCount: 4
       responses:
         "201":
           description: 予約が作成された
@@ -23,18 +57,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReservationResponse"
+              example:
+                reservationId: rsv-123
+                roomId: room-a
+                employeeId: emp-001
+                date: "2026-07-14"
+                startTime: "10:00"
+                endTime: "11:00"
+                attendeeCount: 4
         "409":
           description: 時間帯が既存の予約と重なっている(室×時間帯の排他的占有に違反)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProblemResponse"
+              example:
+                code: TIME_SLOT_CONFLICT
+                message: 時間帯が既存の予約と重なっています
         "422":
           description: 予約単体のルール違反(30分未満・時刻の逆転/同一・日マタギ・営業時間外・定員超過)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProblemResponse"
+              example:
+                code: TOO_SHORT
+                message: 予約は30分以上でなければなりません
 components:
   schemas:
     CreateReservationRequest:
