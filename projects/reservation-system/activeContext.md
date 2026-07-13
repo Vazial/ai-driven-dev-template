@@ -6,24 +6,26 @@
 
 ## 今どこにいるか
 
-A層テンプレートの初適用プロジェクト。リポジトリ初期構成、guardrails実体（.claude/settings.json・CI骨格・commit-msg hook・branch protection手順書・step定義lint調査）が完了。次はarchitectによるアーキテクチャ選定。
+A層テンプレートの初適用プロジェクト。リポジトリ初期構成・guardrails実体・アーキテクチャ選定（ADR-0001承認済み: ドメインモデルパック）まで完了。DDDモデリングワークの成果サマリーをdocs/に取り込み済み。次は最初の垂直スライス「予約を作成できる」で4agentフローを一周する。
 
 ## 確定した主要な判断
 
-- （まだなし。ADR-0001でアーキテクチャ選定を記録予定）
+- ドメインモデルパックを採用（ADR-0001・承認済み）。不変条件・状態遷移中心の業務システムのため
+- ドメイン設計はDDDモデリングワークで確定済みの判断群に従う（docs/workshop-summary-01-reservation.md）: 小さいReservation集約 + DB排他制約、半開区間[start, end)、営業時間・定員はスナップショット、状態は導出（ReservationStatus.of()に一元化）、並行制御2層（@Version + 部分排他制約）、Clock注入
 
 ## 進行中 / 次にやること
 
-1. architectによるアーキテクチャ選定 → ADR-0001（projects/reservation-system/adr/）
-2. 最初の垂直スライス「予約を作成できる」で4agentフローを一周
+1. 最初の垂直スライス「予約を作成できる」: architect契約ドラフト → 人間承認 → developer/tester並行 → reviewer監査 → 人間承認 → CI
+2. スライス着手時にワーク側ADR 0001〜0008全文とreservation-create.featureの共有を人間に依頼（契約ドラフトの入力）
 
 ## 未解決の論点
 
-- 会議室予約システムのEventStorming・ADR・Gherkin素材の所在が未確認。architectが契約ドラフトを作る際の入力として人間に確認が必要
-- branch protectionはリモートホスト未接続のため手順書のみ（guardrails/branch-protection.md）。実際の有効化はリモート接続後に人間が実施
-- step定義lintの具体ツールは未確定（guardrails/step-definition-lint.md に調査結果）。ADR-0001でのスタック確定後にarchitect/developerが決定
+- 実装スタック未確定。ワーク素材は@Version等Java/JPA前提の語彙だが、正式決定はADRとして記録が必要
+- ワーク側ADR全文・.featureファイル2本の取り込みが未了（サマリーのみ取り込み済み）
+- branch protectionはリモートホスト未接続のため手順書のみ（guardrails/branch-protection.md）。有効化はリモート接続後に人間が実施
+- step定義lintの具体ツールは未確定（guardrails/step-definition-lint.md）。スタック確定後に決定
 - CI（.github/workflows/ci.yml）はL1〜L4のジョブ骨格のみ。実コマンドはスタック確定後に埋める
 
 ## 直近のfriction
 
-- （まだ記録なし）
+- FR-001（未対応: HANDOFF参照素材の所在不明 → 手動共有で解消中）
