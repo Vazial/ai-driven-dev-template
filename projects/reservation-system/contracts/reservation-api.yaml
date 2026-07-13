@@ -10,11 +10,11 @@
 #
 # リクエスト例(会議室Aを7/14の10:00-11:00に4人で予約):
 #   POST /reservations
-#   { "roomId": "room-a", "employeeId": "emp-001", "date": "2026-07-14",
+#   { "roomId": "room-a", "reserverId": "user-001", "date": "2026-07-14",
 #     "startTime": "10:00", "endTime": "11:00", "attendeeCount": 4 }
 #
 # 成功レスポンス例(201):
-#   { "reservationId": "rsv-123", "roomId": "room-a", "employeeId": "emp-001",
+#   { "reservationId": "rsv-123", "roomId": "room-a", "reserverId": "user-001",
 #     "date": "2026-07-14", "startTime": "10:00", "endTime": "11:00", "attendeeCount": 4 }
 #
 # 拒否レスポンス例(409):
@@ -45,7 +45,7 @@ paths:
               $ref: "#/components/schemas/CreateReservationRequest"
             example:
               roomId: room-a
-              employeeId: emp-001
+              reserverId: user-001
               date: "2026-07-14"
               startTime: "10:00"
               endTime: "11:00"
@@ -60,7 +60,7 @@ paths:
               example:
                 reservationId: rsv-123
                 roomId: room-a
-                employeeId: emp-001
+                reserverId: user-001
                 date: "2026-07-14"
                 startTime: "10:00"
                 endTime: "11:00"
@@ -87,14 +87,14 @@ components:
   schemas:
     CreateReservationRequest:
       type: object
-      required: [roomId, employeeId, date, startTime, endTime, attendeeCount]
+      required: [roomId, reserverId, date, startTime, endTime, attendeeCount]
       properties:
         roomId:
           type: string
           description: 会議室ID
-        employeeId:
+        reserverId:
           type: string
-          description: 予約する社員のID
+          description: 予約する人のID
         date:
           type: string
           format: date
@@ -113,13 +113,13 @@ components:
           description: 利用人数
     ReservationResponse:
       type: object
-      required: [reservationId, roomId, employeeId, date, startTime, endTime, attendeeCount]
+      required: [reservationId, roomId, reserverId, date, startTime, endTime, attendeeCount]
       properties:
         reservationId:
           type: string
         roomId:
           type: string
-        employeeId:
+        reserverId:
           type: string
         date:
           type: string

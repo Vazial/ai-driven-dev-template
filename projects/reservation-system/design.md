@@ -1,6 +1,6 @@
 # design.md — 会議室予約システム 設計骨格
 
-> ステータス: 承認待ち(人間が承認すると、developer/testerはこの骨格の中で作業する)
+> ステータス: 承認済み(2026-07-13) — developer/testerはこの骨格の中で作業する
 > 「現在の設計の地図」。承認後はarchitectが構造変更のたびに上書き維持する
 > 出典: ADR-0001(ドメインモデルパック) / ADR-0002(Java+Spring+JPA) / docs/workshop-summary-01-reservation.md
 
@@ -33,7 +33,7 @@ projects/reservation-system/
 |---|---|---|
 | id | UUID | 予約ID |
 | room_id | VARCHAR | 会議室ID |
-| employee_id | VARCHAR | 予約した社員 |
+| reserver_id | VARCHAR | 予約者(社員に限定しない。人間承認済みの一般化) |
 | date | DATE | 予約日 |
 | start_time / end_time | TIME | 半開区間[start, end)。end含まず |
 | attendee_count | INT | 利用人数 |
@@ -57,11 +57,10 @@ projects/reservation-system/
 | 予約単体のルール(RSV-C-05〜07, 11) | domainの値オブジェクト(TimeSlot)が生成時に弾く |
 | 営業時間・定員(RSV-C-08〜10) | domainがRoomスナップショットと突き合わせて弾く |
 
-## DB選定(要判断)
+## DB選定(確定)
 
-排他制約(時間範囲の重なり禁止)はPostgreSQL固有機能のため、**テスト・ローカル実行はTestcontainers(Docker上のPostgreSQL)** を使う。
-- 前提条件: この開発機でDockerが動くこと(未確認)
-- Dockerが使えない場合の代替: H2 + 悲観ロック(部屋単位)に骨格を差し替え。ただしワークADR-0001「砦はDB排他制約」から外れるため、その時は矛盾分析レポートを出して人間の判断を仰ぐ
+排他制約(時間範囲の重なり禁止)はPostgreSQL固有機能のため、**テスト・ローカル実行はTestcontainers上のPostgreSQL**を使う。
+コンテナ実行環境は**Podman**(人間確認済み)。TestcontainersはPodmanのDocker互換APIで動かす。
 
 ## 主要な流れ(予約作成)
 
