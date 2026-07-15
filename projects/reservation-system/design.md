@@ -64,6 +64,9 @@ projects/reservation-system/
 
 ## 受け入れテスト用seam(骨格承認後にarchitectが追記: 2026-07-13)
 
+> **正式仕様のSSOTは contracts/test-support-api.yaml（テストインフラ契約、meta/adr/0008）**。
+> tester/developerはそちらを原文参照すること。本節はseamを設けた意図の記録。
+
 シナリオのGiven「会議室◯◯が存在する」を作る手段が公開API(契約)に無いため、verification.md L4規約の「Given専用seam」をここに明示的に定義する:
 
 - `POST /test-support/rooms` … 部屋登録(name, businessHoursStart/End, capacity)。同名は設定上書き。**応答は`roomId`フィールドで部屋IDを返す**(公開APIの語彙と揃える。DSLが名前→IDの解決に使う)。**Springプロファイル`acceptance`でのみ有効**。本番構成では存在しない

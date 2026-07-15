@@ -1,0 +1,103 @@
+# 会議室予約システム テストインフラ契約 — 受け入れテスト用seam(test-support)の機械可読仕様
+# 位置づけ: 業務契約ではない(人間の承認ゲートなし)。architectが維持し、変更はPR差分で可視化される(meta/adr/0008)
+# 重要: tester/developerはこのファイルを原文のまま参照する。プロンプトや散文への言い換え転記は禁止
+# 有効範囲: Springプロファイル`acceptance`のみ。本番構成にこれらのエンドポイントは存在しない
+#
+# 3行でわかるこのseam
+#   部屋を用意する:   POST /test-support/rooms(同名は設定上書き)。応答のroomIdで名前→IDを解決する
+#   状態を初期化する: DELETE /test-support/reservations(全予約削除+時計を実時刻に戻す)
+#   時計を固定する:   PUT /test-support/clock に {"now": "2026-07-14T09:45:00"}(オフセットなしのローカル日時)
+openapi: 3.0.3
+info:
+  title: 会議室予約システム テストインフラAPI(acceptanceプロファイル限定)
+  version: 0.1.0
+paths:
+  /test-support/rooms:
+    post:
+      operationId: upsertRoom
+      summary: 会議室を登録する。同名の部屋が既にあれば設定を上書きする(idは維持)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoomUpsertRequest"
+            example:
+              name: 会議室A
+              businessHoursStart: "09:00"
+              businessHoursEnd: "18:00"
+              capacity: 6
+      responses:
+        "200":
+          description: 登録・上書きが完了した
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomResponse"
+              example:
+                roomId: 5f3a…(サーバ採番)
+                name: 会議室A
+                businessHoursStart: "09:00"
+                businessHoursEnd: "18:00"
+                capacity: 6
+  /test-support/reservations:
+    delete:
+      operationId: deleteAllReservations
+      summary: 全予約を削除する(シナリオ間の独立性確保用)。副作用として時計を実時刻に戻す
+      responses:
+        "204":
+          description: 削除完了(ボディなし)
+  /test-support/clock:
+    put:
+      operationId: setClock
+      summary: 現在時刻を固定する(時刻依存ルールの検証用)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClockRequest"
+            example:
+              now: "2026-07-14T09:45:00"
+      responses:
+        "204":
+          description: 固定完了(ボディなし)
+components:
+  schemas:
+    RoomUpsertRequest:
+      type: object
+      required: [name, businessHoursStart, businessHoursEnd, capacity]
+      properties:
+        name:
+          type: string
+        businessHoursStart:
+          type: string
+          pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+        businessHoursEnd:
+          type: string
+          pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+        capacity:
+          type: integer
+          minimum: 1
+    RoomResponse:
+      type: object
+      required: [roomId, name, businessHoursStart, businessHoursEnd, capacity]
+      properties:
+        roomId:
+          type: string
+          description: 公開API(reservation-api.yaml)のroomIdと同じ語彙。DSLの名前→ID解決に使う
+        name:
+          type: string
+        businessHoursStart:
+          type: string
+        businessHoursEnd:
+          type: string
+        capacity:
+          type: integer
+    ClockRequest:
+      type: object
+      required: [now]
+      properties:
+        now:
+          type: string
+          description: オフセットなしのローカル日時(例 2026-07-14T09:45:00)。サーバのタイムゾーンで解釈される
