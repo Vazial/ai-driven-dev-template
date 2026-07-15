@@ -2,7 +2,8 @@ name: CI
 
 # L1 → L2 → L3 → L4 の順に実行する(meta/verification.md)。
 # 下の段が落ちたら上の段は実行しない(needs で直列化)。
-# 各ステップの実コマンドはスタック未選定のため TODO。ADR-0001(アーキテクチャ選定)確定後に developer/tester が埋める。
+# 実コマンドはスライスRSV-C時点の構成(Java 21 / Gradle wrapper / PostgreSQL)。
+# 注: リモートホスト未接続のためこのワークフローはまだ実行実績がない。初回push時に要確認
 
 on:
   pull_request:
@@ -10,40 +11,93 @@ on:
   push:
     branches: [main]
 
+defaults:
+  run:
+    working-directory: projects/reservation-system
+
 jobs:
   l1-unit-lint:
-    name: "L1: 実装の内部品質(単体テスト・lint)"
+    name: "L1: 実装の内部品質(単体テスト・lint・mutation)"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # TODO(ADR-0001後): 単体テスト実行コマンド
-      # TODO(ADR-0001後): lint実行コマンド
-      # TODO(ADR-0001後): mutation testing(PIT / Stryker等) — L1確定条件(verification.md L1)
-      - run: echo "TODO- スタック選定後に実コマンドを追加"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - name: 単体テスト(domain/application)
+        run: ./gradlew test --tests "reservation.domain.*" --tests "reservation.application.*"
+      - name: lint
+        run: ./gradlew checkstyleMain checkstyleTest checkstyleAcceptanceTest
+      - name: mutation testing(PIT)
+        run: ./gradlew pitest
 
   l2-structure:
-    name: "L2: 構造の健全性(依存関係lint等)"
+    name: "L2: 構造の健全性(ArchUnit)"
     runs-on: ubuntu-latest
     needs: l1-unit-lint
     steps:
       - uses: actions/checkout@v4
-      # TODO(ADR-0001後): 選定した設計パックの依存制約ルールに基づく構造検証
-      - run: echo "TODO- 設計パック選定後に構造検証コマンドを追加"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - name: 依存方向・層構造の検証
+        run: ./gradlew test --tests "reservation.architecture.*"
 
   l3-boundary:
-    name: "L3: 境界の整合(契約テスト等)"
+    name: "L3: 境界の整合(API契約・DB制約)"
     runs-on: ubuntu-latest
     needs: l2-structure
     steps:
       - uses: actions/checkout@v4
-      # TODO(ADR-0001後): API仕様からの型/クライアント生成、契約テスト
-      - run: echo "TODO- API仕様確定後に契約テストコマンドを追加"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - name: API契約整合(@WebMvcTest)
+        run: ./gradlew test --tests "reservation.adapter.*"
+      - name: DB統合(Flyway・EXCLUDE制約・seam。Testcontainers)
+        run: ./gradlew test --tests "reservation.integration.*"
 
   l4-acceptance:
     name: "L4: 仕様の充足(受け入れシナリオ実行)"
     runs-on: ubuntu-latest
     needs: l3-boundary
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: reservation
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
-      # TODO(最初の垂直スライス後): 受け入れテスト実行コマンド(tester作成のstep/dsl)
-      - run: echo "TODO- 最初の垂直スライスのstep/dsl整備後に受け入れテストコマンドを追加"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - name: SUT起動(acceptanceプロファイル)
+        run: |
+          ./gradlew bootRun --args='--spring.profiles.active=acceptance' &
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:8080/actuator/health >/dev/null 2>&1 && break
+            curl -sf -o /dev/null -X POST http://localhost:8080/test-support/rooms 2>/dev/null && break
+            sleep 2
+          done
+        env:
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/reservation
+          SPRING_DATASOURCE_USERNAME: postgres
+          SPRING_DATASOURCE_PASSWORD: postgres
+      - name: 受け入れシナリオ実行(contracts/ = SSOT)
+        run: ./gradlew acceptanceTest
+        env:
+          RESERVATION_API_BASE_URL: http://localhost:8080

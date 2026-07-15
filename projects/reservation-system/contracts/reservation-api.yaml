@@ -1,5 +1,6 @@
 # 会議室予約システム API仕様 — スライスRSV-C「予約を作成できる」
 # ステータス: 承認済み(2026-07-13) — このファイルがスライスRSV-Cの正式な仕様。変更には再承認が必要
+# 改訂: 2026-07-14 CROSSES_DAY_BOUNDARYを削除。日マタギはスキーマ(単一date+時刻)が構造的に禁止(ADR-0004、人間承認済み)
 # 範囲: このスライスで使う操作だけを定義する。先のスライスの分は書かない
 #
 # ============================================================
@@ -26,7 +27,6 @@
 #   INVALID_TIME_SLOT       … RSV-C-06/07(逆転・同一時刻) → 422
 #   OUTSIDE_BUSINESS_HOURS  … RSV-C-08/09(営業時間外) → 422
 #   EXCEEDS_CAPACITY        … RSV-C-10(定員超過) → 422
-#   CROSSES_DAY_BOUNDARY    … RSV-C-11(日マタギ) → 422
 # ============================================================
 openapi: 3.0.3
 info:
@@ -75,7 +75,7 @@ paths:
                 code: TIME_SLOT_CONFLICT
                 message: 時間帯が既存の予約と重なっています
         "422":
-          description: 予約単体のルール違反(30分未満・時刻の逆転/同一・日マタギ・営業時間外・定員超過)
+          description: 予約単体のルール違反(30分未満・時刻の逆転/同一・営業時間外・定員超過)
           content:
             application/json:
               schema:
@@ -138,7 +138,7 @@ components:
           type: string
           description: >
             拒否理由コード。TIME_SLOT_CONFLICT(重なり) / TOO_SHORT(30分未満) /
-            INVALID_TIME_SLOT(逆転・同一時刻) / CROSSES_DAY_BOUNDARY(日マタギ) /
+            INVALID_TIME_SLOT(逆転・同一時刻) /
             OUTSIDE_BUSINESS_HOURS(営業時間外) / EXCEEDS_CAPACITY(定員超過)
         message:
           type: string

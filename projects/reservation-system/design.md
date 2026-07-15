@@ -62,6 +62,14 @@ projects/reservation-system/
 排他制約(時間範囲の重なり禁止)はPostgreSQL固有機能のため、**テスト・ローカル実行はTestcontainers上のPostgreSQL**を使う。
 コンテナ実行環境は**Podman**(人間確認済み)。TestcontainersはPodmanのDocker互換APIで動かす。
 
+## 受け入れテスト用seam(骨格承認後にarchitectが追記: 2026-07-13)
+
+シナリオのGiven「会議室◯◯が存在する」を作る手段が公開API(契約)に無いため、verification.md L4規約の「Given専用seam」をここに明示的に定義する:
+
+- `POST /test-support/rooms` … 部屋登録(name, businessHoursStart/End, capacity)。同名は設定上書き。**応答は`roomId`フィールドで部屋IDを返す**(公開APIの語彙と揃える。DSLが名前→IDの解決に使う)。**Springプロファイル`acceptance`でのみ有効**。本番構成では存在しない
+- `DELETE /test-support/reservations` … 全予約削除(シナリオ間の独立性確保用)。同上
+- 上記以外の状態準備・検証はすべて公開API(POST /reservations とそのレスポンス)経由で行う
+
 ## 主要な流れ(予約作成)
 
 ```

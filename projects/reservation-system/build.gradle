@@ -1,0 +1,106 @@
+// ビルド骨格 — orchestratorが管理する。developer/testerは原則ここを変更しない
+// (依存追加が必要な場合: developerは変更可+PRで差分明示、testerは変更せずエスカレーション)
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.4.1'
+    id 'io.spring.dependency-management' version '1.1.7'
+    id 'checkstyle'
+    id 'info.solidsoft.pitest' version '1.15.0'
+}
+
+group = 'reservation'
+version = '0.1.0'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+repositories {
+    mavenCentral()
+}
+
+// ---- 受け入れテスト(L4)用ソースセット: testerの領分。実装(main)から隔離 ----
+sourceSets {
+    acceptanceTest {
+        java.srcDir 'src/acceptanceTest/java'
+        resources.srcDir 'src/acceptanceTest/resources'
+        // 実装クラスに依存しない(SUTはHTTP越しに操作する)。JavaコンパイルにmainのAPIを見せない
+        compileClasspath += configurations.acceptanceTestCompileClasspath
+        runtimeClasspath += output + configurations.acceptanceTestRuntimeClasspath
+    }
+}
+
+configurations {
+    acceptanceTestImplementation
+    acceptanceTestRuntimeOnly.extendsFrom acceptanceTestImplementation
+    acceptanceTestCompileClasspath.extendsFrom acceptanceTestImplementation
+    acceptanceTestRuntimeClasspath.extendsFrom acceptanceTestRuntimeOnly
+}
+
+dependencies {
+    // ---- 実装(developerの領分) ----
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.flywaydb:flyway-core'
+    implementation 'org.flywaydb:flyway-database-postgresql'
+    runtimeOnly 'org.postgresql:postgresql'
+
+    // ---- 単体テスト L1 / 構造検証 L2 / 境界 L3 (developerの領分) ----
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+    testImplementation 'org.testcontainers:postgresql'
+    testImplementation 'org.testcontainers:junit-jupiter'
+    testImplementation 'com.tngtech.archunit:archunit-junit5:1.3.0'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    // ---- 受け入れテスト L4 (testerの領分: steps/ dsl/ のみ書く) ----
+    acceptanceTestImplementation platform('org.junit:junit-bom:5.11.4')
+    acceptanceTestImplementation platform('io.cucumber:cucumber-bom:7.20.1')
+    acceptanceTestImplementation 'io.cucumber:cucumber-java'
+    acceptanceTestImplementation 'io.cucumber:cucumber-junit-platform-engine'
+    acceptanceTestImplementation 'org.junit.platform:junit-platform-suite'
+    acceptanceTestImplementation 'org.assertj:assertj-core:3.26.3'
+    acceptanceTestImplementation 'io.rest-assured:rest-assured:5.5.0'
+    acceptanceTestRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+// L4: 受け入れテスト実行。SUT(アプリ)は事前に起動しておき、URLを環境変数で渡す
+tasks.register('acceptanceTest', Test) {
+    description = '受け入れシナリオ(contracts/*.feature)を実行する(L4)'
+    group = 'verification'
+    testClassesDirs = sourceSets.acceptanceTest.output.classesDirs
+    classpath = sourceSets.acceptanceTest.runtimeClasspath
+    // Suiteクラス経由とエンジン直接検出の二重実行を避け、Cucumberエンジンに一本化する
+    useJUnitPlatform {
+        includeEngines 'cucumber'
+    }
+    // シナリオのSSOTはcontracts/。コピーせず直接読む
+    systemProperty 'cucumber.features', 'contracts'
+    systemProperty 'cucumber.glue', 'reservation.acceptance'
+    systemProperty 'cucumber.plugin', 'pretty'
+    // dry-run(step定義の突き合わせのみ、SUT不要)をCLIから渡せるようにする
+    systemProperty 'cucumber.execution.dry-run', System.getProperty('cucumber.execution.dry-run', 'false')
+    // SUTの場所。integration実行時に上書きする
+    environment 'RESERVATION_API_BASE_URL', System.getenv('RESERVATION_API_BASE_URL') ?: 'http://localhost:8080'
+    outputs.upToDateWhen { false }
+}
+
+checkstyle {
+    toolVersion = '10.20.2'
+    configFile = file('config/checkstyle/checkstyle.xml')
+}
+// 受け入れテストコードにもlintを効かせる(step定義の規約はPMD等で強化予定: guardrails/step-definition-lint.md)
+checkstyleAcceptanceTest.enabled = true
+
+pitest {
+    junit5PluginVersion = '1.2.1'
+    targetClasses = ['reservation.domain.*', 'reservation.application.*']
+    mutationThreshold = 70
+    timestampedReports = false
+}

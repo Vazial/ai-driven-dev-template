@@ -2,31 +2,43 @@
 
 > P-11: このファイルは常に「現在」だけを映す。更新は上書き。歴史はgitとADRが持つ。
 > 更新タイミング: スライスの区切り、エスカレーション発生時（permissions.md）
-> 最終更新: 2026-07-13
+> 最終更新: 2026-07-14
 
 ## 今どこにいるか
 
-A層テンプレートの初適用プロジェクト。スライスRSV-C「予約を作成できる」の契約（受け入れシナリオRSV-C-01〜11 + API仕様）が人間に承認された（2026-07-13）。次はdeveloper（実装+単体テスト、L1〜L3）とtester（step定義+DSL、L4）の並行作業。実装スタックはJava + Spring Boot + JPA（ADR-0002承認済み）。
+**スライスRSV-C「予約を作成できる」の検証が全段完了**（2026-07-14）。人間の承認3点（契約・設計骨格・step実装）済み、L1（単体39件+checkstyle+PIT 29/29 kill）・L2（ArchUnit）・L3（API契約整合+DB統合9件、EXCLUDE制約の最終防衛を実機確認）・L4（受け入れシナリオ10本、実SUTに対し全緑）。reviewer監査レポート（reviews/audit-rsv-c.md）に人間承認を記録済み。残り: ブランチslice/rsv-cのmasterへのマージ（人間のみ実施可）と、規程改善バッチ。
 
 ## 確定した主要な判断
 
-- ドメインモデルパックを採用（ADR-0001・承認済み）。不変条件・状態遷移中心の業務システムのため
-- ドメイン設計はDDDモデリングワークで確定済みの判断群に従う（docs/workshop-summary-01-reservation.md）: 小さいReservation集約 + DB排他制約、半開区間[start, end)、営業時間・定員はスナップショット、状態は導出（ReservationStatus.of()に一元化）、並行制御2層（@Version + 部分排他制約）、Clock注入
+- ドメインモデルパックを採用（ADR-0001）。実装スタックはJava + Spring Boot + JPA（ADR-0002）
+- ドメイン設計はDDDモデリングワークの判断群に従う（docs/workshop-summary-01-reservation.md）: 小さいReservation集約 + DB排他制約（EXCLUDE, btree_gist, WHERE cancelled_at IS NULL）、半開区間[start, end)、営業時間・定員はスナップショット、Clock注入
+- 予約者は社員に限定しない一般化（ADR-0003）
+- 日マタギ禁止はシナリオ・拒否コードでなく構造的禁止（単一date+時刻2つのスキーマとTimeSlotの形）で強制（ADR-0004）
+- 受け入れテスト用seam: POST /test-support/rooms（応答はroomIdフィールド）と DELETE /test-support/reservations。プロファイルacceptance限定（design.md）
 
 ## 進行中 / 次にやること
 
-1. スライスRSV-C: developer（実装+単体テスト）とtester（step定義+DSL）の並行作業 → reviewer監査 → 人間が対訳表を突き合わせて承認 → CI全緑
-2. 実装前の準備: JDK/ビルドツールの環境確認、スライス用ブランチ作成、Gradleプロジェクトの骨格
-3. FR-003の押し込み: meta/templates/への受け入れシナリオ雛形追加の変更提案（人間の判断待ち。スライス完了後にでも）
+1. slice/rsv-c → master のマージ（人間の判断・実施待ち）
+2. 次スライス候補: 「予約をキャンセルできる」（ワーク素材にreservation-cancel.featureあり。cancelled_at・15分前期限・部分排他制約の本領）
+3. スライス完了後の規程改善バッチ（人間指示・ADR起票して判断を仰ぐ）:
+   - FR-003の押し込み: meta/templates/への受け入れシナリオ雛形追加
+   - meta/agents/原本への model: sonnet 追加（.claude/agents/デプロイ側は設定済み。原本変更はADR必須）
+   - **「設計骨格の承認以降に人間の判断が必要になった場合、ADRをセットで起票する」規則の提案**（FR-004/005の押し込みの一般化。人間発案 2026-07-14）。その際「friction-logにも記録するか」の判定基準（人間判断=誤りの兆候とは限らないため、frictionは「AIが迷った/誤った」場合のみ等）も併せて定義する
+
+## 環境メモ
+
+- JDK: Amazon Corretto 23（PATH先頭はJava 8なのでJAVA_HOME明示が必要）
+- ビルド: Gradle wrapper 8.14（projects/reservation-system/gradlew.bat）。ビルド骨格はorchestrator管理（今スライスで変更なし）
+- コンテナ: Podman稼働中（DOCKER_HOST=npipe:////./pipe/podman-machine-default、TESTCONTAINERS_RYUK_DISABLED=true）。**手動コンテナのポートはWindowsのlocalhostに転送されない**（Testcontainers経由は問題なし）。ホストからはWSLのIP（`podman machine ssh "ip -4 addr show eth0"`で確認、再起動で変わる）に直接接続する。人間が夜にWSL更新+machine作り直し予定（2026-07-14時点）
 
 ## 未解決の論点
 
-- 実装スタック未確定。ワーク素材は@Version等Java/JPA前提の語彙だが、正式決定はADRとして記録が必要
-- ワーク側ADR全文・.featureファイル2本の取り込みが未了（サマリーのみ取り込み済み）
-- branch protectionはリモートホスト未接続のため手順書のみ（guardrails/branch-protection.md）。有効化はリモート接続後に人間が実施
-- step定義lintの具体ツールは未確定（guardrails/step-definition-lint.md）。スタック確定後に決定
-- CI（.github/workflows/ci.yml）はL1〜L4のジョブ骨格のみ。実コマンドはスタック確定後に埋める
+- branch protectionはリモートホスト未接続のため手順書のみ（guardrails/branch-protection.md）
+- step定義lintの具体ツールは未確定（guardrails/step-definition-lint.md）
+- CI（.github/workflows/ci.yml）はジョブ骨格のみ。実コマンド埋めが必要（テストは./gradlew test等で実行可能になった）
+- POST /reservationsの契約未定義領域は実装判断で埋めた: 部屋が存在しない→404（ProblemResponse同形, code=ROOM_NOT_FOUND）、リクエスト形式違反→Spring既定の400
 
 ## 直近のfriction
 
 - FR-001（未対応: HANDOFF参照素材の所在不明 → 手動共有で解消中）
+- FR-004まで記録済み（friction-log.md）
