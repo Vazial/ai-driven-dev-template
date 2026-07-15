@@ -1,6 +1,8 @@
 # 会議室予約システム API仕様 — スライスRSV-C「予約を作成できる」
 # ステータス: 承認済み(2026-07-13) — このファイルがスライスRSV-Cの正式な仕様。変更には再承認が必要
 # 改訂: 2026-07-14 CROSSES_DAY_BOUNDARYを削除。日マタギはスキーマ(単一date+時刻)が構造的に禁止(ADR-0004、人間承認済み)
+# 改訂: 2026-07-15(承認済み) スライスRSV-K「予約をキャンセルできる」のキャンセル操作を追記(下記「RSV-K追記」ブロックと
+#       paths./reservations/{reservationId}/cancel)。POST /reservationsを含む既存部分は無変更(ProblemResponse.code説明文への追記のみ人間承認済み)
 # 範囲: このスライスで使う操作だけを定義する。先のスライスの分は書かない
 #
 # ============================================================
@@ -27,6 +29,36 @@
 #   INVALID_TIME_SLOT       … RSV-C-06/07(逆転・同一時刻) → 422
 #   OUTSIDE_BUSINESS_HOURS  … RSV-C-08/09(営業時間外) → 422
 #   EXCEEDS_CAPACITY        … RSV-C-10(定員超過) → 422
+# ============================================================
+#
+# ---- RSV-K「予約をキャンセルできる」追記(承認済み: 2026-07-15) ----
+# 4行目の要約:
+#   キャンセルする: POST /reservations/{reservationId}/cancel に「誰が」(reserverId)を送る。
+#                   成功は200+キャンセル後の予約内容。本人以外は403、開始15分前を過ぎていたら422、
+#                   既にキャンセル済みなら409、予約が存在しなければ404
+#
+# リクエスト例(佐藤が予約rsv-123をキャンセル):
+#   POST /reservations/rsv-123/cancel
+#   { "reserverId": "user-sato" }
+#
+# 成功レスポンス例(200):
+#   { "reservationId": "rsv-123", "roomId": "room-a", "reserverId": "user-sato",
+#     "date": "2026-07-14", "startTime": "10:00", "endTime": "11:00", "attendeeCount": 4,
+#     "cancelledAt": "2026-07-14T09:30:00+09:00" }
+#
+# 拒否レスポンス例(422、開始15分前を過ぎている場合):
+#   { "code": "CANCEL_DEADLINE_PASSED", "message": "開始15分前を過ぎているためキャンセルできません" }
+#
+# 新しい拒否理由コードとシナリオの対応(このスライスの追加分):
+#   NOT_RESERVER            … RSV-K-02(予約した本人ではない) → 403
+#   CANCEL_DEADLINE_PASSED  … RSV-K-06/07(開始15分前を過ぎている) → 422
+#   ALREADY_CANCELLED       … RSV-K-08(既にキャンセル済み) → 409
+#   RESERVATION_NOT_FOUND   … RSV-K-09(予約が存在しない) → 404
+#
+# 裁定記録(2026-07-15人間裁定、詳細はprojects/reservation-system/adr/0005):
+#   15分前ちょうどは可 / キャンセルは本人のみ(reserverId必須) / 二重キャンセルは409 /
+#   成功は200+内容 / ProblemResponse.codeの説明文へ新コード追記(承認済みテキストの改訂を含む)
+# ---- RSV-K追記ここまで ----
 # ============================================================
 openapi: 3.0.3
 info:
@@ -83,6 +115,79 @@ paths:
               example:
                 code: TOO_SHORT
                 message: 予約は30分以上でなければなりません
+  # ---- ここから RSV-K追記。上のPOST /reservationsは無変更 ----
+  /reservations/{reservationId}/cancel:
+    post:
+      operationId: cancelReservation
+      summary: 予約をキャンセルする(RSV-K追記)
+      parameters:
+        - name: reservationId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: キャンセル対象の予約ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CancelReservationRequest"
+            example:
+              reserverId: user-sato
+      responses:
+        "200":
+          description: 予約がキャンセルされた(RSV-K-01/04/05)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CancelledReservationResponse"
+              example:
+                reservationId: rsv-123
+                roomId: room-a
+                reserverId: user-sato
+                date: "2026-07-14"
+                startTime: "10:00"
+                endTime: "11:00"
+                attendeeCount: 4
+                cancelledAt: "2026-07-14T09:30:00+09:00"
+        "403":
+          description: 予約した本人ではない(RSV-K-02)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemResponse"
+              example:
+                code: NOT_RESERVER
+                message: 予約した本人のみキャンセルできます
+        "404":
+          description: 予約が存在しない(RSV-K-09)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemResponse"
+              example:
+                code: RESERVATION_NOT_FOUND
+                message: 予約が存在しません
+        "409":
+          description: 既にキャンセルされている(RSV-K-08)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemResponse"
+              example:
+                code: ALREADY_CANCELLED
+                message: この予約は既にキャンセルされています
+        "422":
+          description: 開始15分前を過ぎている(RSV-K-06/07)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemResponse"
+              example:
+                code: CANCEL_DEADLINE_PASSED
+                message: 開始15分前を過ぎているためキャンセルできません
+  # ---- RSV-K追記ここまで ----
 components:
   schemas:
     CreateReservationRequest:
@@ -130,6 +235,38 @@ components:
           type: string
         attendeeCount:
           type: integer
+    # ---- RSV-K追記: キャンセル用スキーマ2つ ----
+    CancelReservationRequest:
+      type: object
+      required: [reserverId]
+      properties:
+        reserverId:
+          type: string
+          description: キャンセルを実行する人のID。予約した本人と一致しなければ403
+    CancelledReservationResponse:
+      type: object
+      required: [reservationId, roomId, reserverId, date, startTime, endTime, attendeeCount, cancelledAt]
+      properties:
+        reservationId:
+          type: string
+        roomId:
+          type: string
+        reserverId:
+          type: string
+        date:
+          type: string
+          format: date
+        startTime:
+          type: string
+        endTime:
+          type: string
+        attendeeCount:
+          type: integer
+        cancelledAt:
+          type: string
+          format: date-time
+          description: キャンセルが実行された日時
+    # ---- RSV-K追記ここまで ----
     ProblemResponse:
       type: object
       required: [code, message]
@@ -139,7 +276,10 @@ components:
           description: >
             拒否理由コード。TIME_SLOT_CONFLICT(重なり) / TOO_SHORT(30分未満) /
             INVALID_TIME_SLOT(逆転・同一時刻) /
-            OUTSIDE_BUSINESS_HOURS(営業時間外) / EXCEEDS_CAPACITY(定員超過)
+            OUTSIDE_BUSINESS_HOURS(営業時間外) / EXCEEDS_CAPACITY(定員超過) /
+            NOT_RESERVER(本人以外のキャンセル) / CANCEL_DEADLINE_PASSED(開始15分前超過) /
+            ALREADY_CANCELLED(キャンセル済み) / RESERVATION_NOT_FOUND(予約なし)
+            ※RSV-K改訂でキャンセル系4コードを追記(人間裁定に基づく承認済みテキストの改訂)
         message:
           type: string
           description: 人間が読める説明

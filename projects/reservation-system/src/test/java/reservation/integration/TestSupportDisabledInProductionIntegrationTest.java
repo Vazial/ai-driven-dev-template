@@ -38,5 +38,11 @@ class TestSupportDisabledInProductionIntegrationTest extends AbstractPostgresInt
         ResponseEntity<Void> delete = rest.exchange(
                 "/test-support/reservations", HttpMethod.DELETE, HttpEntity.EMPTY, Void.class);
         assertThat(delete.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+
+        // RSV-K追記: 時刻固定seam(PUT /test-support/clock)も本番構成には存在しない
+        ResponseEntity<Void> put = rest.exchange(
+                "/test-support/clock", HttpMethod.PUT,
+                new HttpEntity<>("{\"now\":\"2026-07-14T09:45:00\"}", headers), Void.class);
+        assertThat(put.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
 }

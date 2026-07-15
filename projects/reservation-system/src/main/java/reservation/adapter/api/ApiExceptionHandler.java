@@ -10,18 +10,30 @@ import reservation.domain.ReservationRejectedException;
 
 /**
  * ドメインの拒否をHTTPへ翻訳する。契約(reservation-api.yaml)の対応:
- * TIME_SLOT_CONFLICT → 409、それ以外の理由コード → 422。どちらもProblemResponse形状。
+ * TIME_SLOT_CONFLICT/ALREADY_CANCELLED → 409、NOT_RESERVER → 403、RESERVATION_NOT_FOUND → 404、
+ * それ以外の理由コード → 422。どれもProblemResponse形状。
  */
 @RestControllerAdvice
 public class ApiExceptionHandler {
 
     @ExceptionHandler(ReservationRejectedException.class)
     public ResponseEntity<ProblemResponse> handleRejected(ReservationRejectedException e) {
-        HttpStatus status = e.reason() == RejectionReason.TIME_SLOT_CONFLICT
-                ? HttpStatus.CONFLICT
-                : HttpStatus.UNPROCESSABLE_ENTITY;
-        return ResponseEntity.status(status)
+        return ResponseEntity.status(statusFor(e.reason()))
                 .body(new ProblemResponse(e.reason().name(), e.reason().message()));
+    }
+
+    private static HttpStatus statusFor(RejectionReason reason) {
+        switch (reason) {
+            case TIME_SLOT_CONFLICT:
+            case ALREADY_CANCELLED:
+                return HttpStatus.CONFLICT;
+            case NOT_RESERVER:
+                return HttpStatus.FORBIDDEN;
+            case RESERVATION_NOT_FOUND:
+                return HttpStatus.NOT_FOUND;
+            default:
+                return HttpStatus.UNPROCESSABLE_ENTITY;
+        }
     }
 
     /** 契約に定義のない異常系。ProblemResponseと同形で404を返す。 */

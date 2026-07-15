@@ -18,6 +18,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+import reservation.application.CancelReservationService;
 import reservation.application.CreateReservationCommand;
 import reservation.application.CreateReservationService;
 import reservation.application.RoomNotFoundException;
@@ -50,6 +51,10 @@ class ReservationApiContractTest {
 
     @MockitoBean
     private CreateReservationService createReservation;
+
+    // ReservationControllerの構築に必要(cancelエンドポイントの依存)。このクラスでは検証しない
+    @MockitoBean
+    private CancelReservationService cancelReservation;
 
     private ResultActions postReservation() throws Exception {
         return mvc.perform(post("/reservations")
@@ -100,9 +105,12 @@ class ReservationApiContractTest {
      * 契約: 予約単体のルール違反は422。
      * TOO_SHORT=RSV-C-05 / INVALID_TIME_SLOT=RSV-C-06,07 / OUTSIDE_BUSINESS_HOURS=RSV-C-08,09 /
      * EXCEEDS_CAPACITY=RSV-C-10。
+     * RSV-K追記のキャンセル系理由コード(NOT_RESERVER等)はこの一覧に含めない
+     * (POST /reservationsからは到達しないため。cancelエンドポイントの検証はReservationCancelApiContractTest)。
      */
     @ParameterizedTest
-    @EnumSource(value = RejectionReason.class, names = "TIME_SLOT_CONFLICT", mode = EnumSource.Mode.EXCLUDE)
+    @EnumSource(value = RejectionReason.class,
+            names = {"TOO_SHORT", "INVALID_TIME_SLOT", "OUTSIDE_BUSINESS_HOURS", "EXCEEDS_CAPACITY"})
     void 予約単体のルール違反は422で_契約のProblemResponse形状と理由コードを返す(RejectionReason reason)
             throws Exception {
         given(createReservation.create(any())).willThrow(new ReservationRejectedException(reason));

@@ -19,7 +19,19 @@ public enum RejectionReason {
     OUTSIDE_BUSINESS_HOURS("営業時間の外です"),
 
     /** RSV-C-10: 人数が会議室の定員を超えている。 */
-    EXCEEDS_CAPACITY("人数が定員を超えています");
+    EXCEEDS_CAPACITY("人数が定員を超えています"),
+
+    /** RSV-K-02: 予約した本人以外がキャンセルしようとした(ADR-0005)。 */
+    NOT_RESERVER("予約した本人のみキャンセルできます"),
+
+    /** RSV-K-06/07: 開始15分前を過ぎている(15分前ちょうどは可)。 */
+    CANCEL_DEADLINE_PASSED("開始15分前を過ぎているためキャンセルできません"),
+
+    /** RSV-K-08: 既にキャンセルされている予約を再びキャンセルしようとした。 */
+    ALREADY_CANCELLED("この予約は既にキャンセルされています"),
+
+    /** RSV-K-09: 指定された予約が存在しない。 */
+    RESERVATION_NOT_FOUND("予約が存在しません");
 
     // CROSSES_DAY_BOUNDARY(日マタギ)は契約改訂で削除(ADR-0004)。
     // 日マタギはAPIスキーマ(単一date+時刻2つ)とTimeSlotの形が構造的に禁止する。

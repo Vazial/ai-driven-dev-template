@@ -69,6 +69,11 @@ projects/reservation-system/
 - `POST /test-support/rooms` … 部屋登録(name, businessHoursStart/End, capacity)。同名は設定上書き。**応答は`roomId`フィールドで部屋IDを返す**(公開APIの語彙と揃える。DSLが名前→IDの解決に使う)。**Springプロファイル`acceptance`でのみ有効**。本番構成では存在しない
 - `DELETE /test-support/reservations` … 全予約削除(シナリオ間の独立性確保用)。同上
 - 上記以外の状態準備・検証はすべて公開API(POST /reservations とそのレスポンス)経由で行う
+- `PUT /test-support/clock` … 現在時刻(Clock)を固定する。body例: `{ "now": "2026-07-14T09:45:00" }`。
+  シナリオの「現在時刻は"HH:MM"である」は、DSLがこのHH:MMを既存の暗黙の予約日と組み合わせてISO日時に詰め替えて呼ぶ想定。
+  時刻依存シナリオ(RSV-K: キャンセルは開始15分前まで、の境界判定)の検証に使う。**Springプロファイル`acceptance`でのみ有効**。
+  未設定時のデフォルトは実システム時刻(既存の時刻非依存シナリオに影響しない)。DELETE /test-support/reservations の
+  実行時にclockも実時刻へリセットし、シナリオ間の時刻汚染を防ぐ(RSV-K追記・承認済み 2026-07-15)
 
 ## 主要な流れ(予約作成)
 

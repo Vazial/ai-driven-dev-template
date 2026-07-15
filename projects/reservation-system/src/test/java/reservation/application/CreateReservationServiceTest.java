@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reservation.domain.RejectionReason;
@@ -154,7 +155,13 @@ class CreateReservationServiceTest {
         }
 
         @Override
+        public Optional<Reservation> findById(UUID id) {
+            return store.stream().filter(r -> r.id().equals(id)).findFirst();
+        }
+
+        @Override
         public Reservation save(Reservation reservation) {
+            store.removeIf(r -> r.id().equals(reservation.id()));
             store.add(reservation);
             return reservation;
         }

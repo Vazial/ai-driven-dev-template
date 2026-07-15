@@ -1,5 +1,6 @@
 package reservation.domain;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.Objects;
@@ -9,8 +10,12 @@ import java.util.UUID;
  * 予約集約。小さい集約(予約1件=1行)であり、ダブルブッキングの最終防衛はDB排他制約が担う(ワークADR-0001)。
  * 営業時間・定員は予約時点のスナップショットを保持する(ワークADR-0006)。
  * 過去の時間帯の予約は許可する(ワークADR-0004。過去枠禁止は不変条件ではない)。
+ * 状態(ReservationStatus)は生データ(cancelledAt)から導出する(ワークADR-0007)。
  */
 public class Reservation {
+
+    /** RSV-K: キャンセルは開始15分前まで可能(15分前ちょうどは可、人間裁定2026-07-15)。 */
+    private static final long CANCEL_DEADLINE_MINUTES = 15;
 
     private final UUID id;
     private final String roomId;
@@ -71,6 +76,34 @@ public class Reservation {
     /** 半開区間としての時間帯の重なり判定(RSV-C-02/03)。同じ部屋かどうかは呼び出し側が絞り込む。 */
     public boolean occupiesOverlapping(TimeSlot other) {
         return timeSlot.overlaps(other);
+    }
+
+    /**
+     * 予約をキャンセルする。判定順序は 本人確認(RSV-K-02) → 二重キャンセル拒否(RSV-K-08) →
+     * 開始15分前を過ぎていないか(RSV-K-04〜07)。immutableなので、通過したら
+     * cancelledAtが埋まった新しいReservationを返す。
+     */
+    public Reservation cancel(String requesterId, Clock clock) {
+        if (!reserverId.equals(requesterId)) {
+            throw new ReservationRejectedException(RejectionReason.NOT_RESERVER);
+        }
+        if (status() == ReservationStatus.CANCELLED) {
+            throw new ReservationRejectedException(RejectionReason.ALREADY_CANCELLED);
+        }
+        LocalDateTime now = LocalDateTime.now(clock);
+        LocalDateTime deadline = timeSlot.date().atTime(timeSlot.startTime())
+                .minusMinutes(CANCEL_DEADLINE_MINUTES);
+        if (now.isAfter(deadline)) {
+            throw new ReservationRejectedException(RejectionReason.CANCEL_DEADLINE_PASSED);
+        }
+        return new Reservation(
+                id, roomId, reserverId, timeSlot, attendeeCount,
+                businessHoursStart, businessHoursEnd, capacitySnapshot, now);
+    }
+
+    /** 状態は生データ(cancelledAt)から導出する(ReservationStatus.ofに一元化、ワークADR-0007)。 */
+    public ReservationStatus status() {
+        return ReservationStatus.of(cancelledAt);
     }
 
     public UUID id() {

@@ -1,19 +1,25 @@
 package reservation.acceptance.dsl;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
 import io.restassured.path.json.JsonPath;
 import io.restassured.response.Response;
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * 受け入れテストDSL(verification.md L4詳細(1)の第3層)。
  * 業務操作を業務の言葉のまま関数として提供し、HTTP等の技術詳細をこの層に閉じ込める。
- * SUTには公開API(POST /reservations)とGiven専用seam(/test-support/*)経由でのみ触れる。
+ * SUTには公開API(POST /reservations、POST /reservations/{id}/cancel)と
+ * Given専用seam(/test-support/*)経由でのみ触れる。
+ * スライスRSV-C(作成)とRSV-K(キャンセル)の両方が同じインスタンスを共有する
+ * (理由はReservationCreateStepsのクラスコメントを参照)。
  */
 public class ReservationSystemDsl {
 
@@ -37,11 +43,28 @@ public class ReservationSystemDsl {
             "予約は30分以上でなければならない", new ExpectedRejection(422, "TOO_SHORT"),
             "終了時刻は開始時刻より後でなければならない", new ExpectedRejection(422, "INVALID_TIME_SLOT"),
             "営業時間の外である", new ExpectedRejection(422, "OUTSIDE_BUSINESS_HOURS"),
-            "人数が定員を超えている", new ExpectedRejection(422, "EXCEEDS_CAPACITY"));
+            "人数が定員を超えている", new ExpectedRejection(422, "EXCEEDS_CAPACITY"),
+            "予約した本人ではない", new ExpectedRejection(403, "NOT_RESERVER"),
+            "開始15分前を過ぎている", new ExpectedRejection(422, "CANCEL_DEADLINE_PASSED"),
+            "既にキャンセルされている", new ExpectedRejection(409, "ALREADY_CANCELLED"),
+            "予約が存在しない", new ExpectedRejection(404, "RESERVATION_NOT_FOUND"));
+
+    /** 「記録された予約が無い」ことをキャンセルAPIに問い合わせて確認するための、実在しないID。 */
+    private static final String NONEXISTENT_RESERVATION_ID_PREFIX = "does-not-exist-";
+
+    /**
+     * 「現在時刻は…」Givenを持たないシナリオが使う既定の現在時刻。
+     * 会議室の営業開始時刻(09:00)であり、シナリオが作る予約(最速10:00開始)より
+     * 常に15分以上前になるため、キャンセル期限切れに巻き込まれない中立な基準点として選ぶ。
+     */
+    private static final String BASE_DATE_DEFAULT_TIME_OF_DAY = "09:00";
 
     private final Map<String, String> roomIdByName = new HashMap<>();
+    /** Givenで作られた予約のID。キーは会議室名+時間帯("会議室名|開始|終了")。RSV-Kのキャンセル操作が引く。 */
+    private final Map<String, String> reservationIdByRoomAndSlot = new HashMap<>();
     private ReservationRequest lastRequest;
     private Response lastResponse;
+    private CancelRequest lastCancelRequest;
 
     // ---- 状態準備(Given) ----
 
@@ -52,6 +75,16 @@ public class ReservationSystemDsl {
         assertThat(res.statusCode())
                 .as("予約全削除seamの応答: %s", res.asString())
                 .isBetween(200, 299);
+    }
+
+    /**
+     * 現在時刻を基準日(FIXED_DATE_FOR_TIME_ONLY_SCENARIOS)の既定時刻に固定する。
+     * DELETE /test-support/reservationsが現在時刻を実時刻へ戻す仕様のため、
+     * その直後(フック)で呼び、シナリオが「現在時刻は…」を明示しない限り
+     * 実時刻ずれの影響を受けない決定論的な状態にする。
+     */
+    public void fixCurrentTimeToBaseDate() {
+        setCurrentTime(BASE_DATE_DEFAULT_TIME_OF_DAY);
     }
 
     /** Given専用seamで会議室を用意する(同名は上書き)。応答のroomIdを以後の予約操作に使う。 */
@@ -79,6 +112,45 @@ public class ReservationSystemDsl {
                 .isEqualTo(201);
     }
 
+    /**
+     * 予約者を明示した前提予約を公開API経由で作成する(RSV-K: キャンセルは本人特定が要るため持ち主を明示する)。
+     * 作成できなければ前提が壊れているため即失敗させ、以後のキャンセル操作がIDを引けるよう記憶する。
+     */
+    public void givenOwnedReservationExists(String roomName, String reserverName, String startTime, String endTime) {
+        Response res = postReservation(new ReservationRequest(
+                roomIdOf(roomName), reserverIdOf(reserverName),
+                FIXED_DATE_FOR_TIME_ONLY_SCENARIOS, startTime, endTime, SMALLEST_VALID_ATTENDEE_COUNT));
+        assertThat(res.statusCode())
+                .as("前提となる持ち主付き予約の作成: %s", res.asString())
+                .isEqualTo(201);
+        reservationIdByRoomAndSlot.put(reservationSlotKey(roomName, startTime, endTime),
+                res.jsonPath().getString("reservationId"));
+    }
+
+    /**
+     * 現在時刻を固定する(Given専用seam)。基準日はFIXED_DATE_FOR_TIME_ONLY_SCENARIOSと共有する。
+     * seamの仕様上、オフセットなしのローカル日時で送る(サーバのタイムゾーンで解釈される)。
+     */
+    public void setCurrentTime(String timeOfDay) {
+        String isoDateTime = FIXED_DATE_FOR_TIME_ONLY_SCENARIOS + "T" + timeOfDay + ":00";
+        Response res = RestAssured.given().baseUri(BASE_URL).contentType(ContentType.JSON)
+                .body("""
+                        {"now": "%s"}""".formatted(isoDateTime))
+                .put("/test-support/clock");
+        assertThat(res.statusCode())
+                .as("時刻固定seamの応答: %s", res.asString())
+                .isBetween(200, 299);
+    }
+
+    /** 前提として、指定の予約が既にキャンセル済みであることを公開API経由で作る。実行できなければ前提が壊れている。 */
+    public void givenReservationAlreadyCancelled(String reserverName, String roomName,
+            String startTime, String endTime) {
+        Response res = postCancel(reservationIdFor(roomName, startTime, endTime), reserverName);
+        assertThat(res.statusCode())
+                .as("前提となる予約キャンセルの実行: %s", res.asString())
+                .isEqualTo(200);
+    }
+
     // ---- 業務操作(When) ----
 
     /** 予約を試みる。成否の検証はThen側のassertメソッドが行う。 */
@@ -87,6 +159,16 @@ public class ReservationSystemDsl {
         lastRequest = new ReservationRequest(roomIdOf(roomName), reserverIdOf(reserverName),
                 FIXED_DATE_FOR_TIME_ONLY_SCENARIOS, startTime, endTime, attendeeCount);
         lastResponse = postReservation(lastRequest);
+    }
+
+    /** 予約のキャンセルを試みる。成否の検証はThen側のassertメソッドが行う。 */
+    public void cancelReservation(String reserverName, String roomName, String startTime, String endTime) {
+        String reservationId = reservationIdFor(roomName, startTime, endTime);
+        // Givenで作る予約(givenOwnedReservationExists)は必ずSMALLEST_VALID_ATTENDEE_COUNTで作られるため、
+        // キャンセル成功時に返るattendeeCountの期待値もそれで固定できる。
+        lastCancelRequest = new CancelRequest(reservationId, roomName, reserverName,
+                startTime, endTime, SMALLEST_VALID_ATTENDEE_COUNT);
+        lastResponse = postCancel(reservationId, reserverName);
     }
 
     // ---- 検証(Then) ----
@@ -104,6 +186,31 @@ public class ReservationSystemDsl {
         assertThat(body.getString("startTime")).isEqualTo(lastRequest.startTime());
         assertThat(body.getString("endTime")).isEqualTo(lastRequest.endTime());
         assertThat(body.getInt("attendeeCount")).isEqualTo(lastRequest.attendeeCount());
+    }
+
+    /**
+     * 直前のキャンセル操作が受理され(200)、CancelledReservationResponseのrequired 8フィールド
+     * (reservationId・roomId・reserverId・date・startTime・endTime・attendeeCount・cancelledAt)
+     * が依頼内容+キャンセル対象の予約内容と一致することを検証する。
+     * cancelledAtのみ値そのものは予測できないため、非空+ISO日時として妥当な形式であることを確認する。
+     */
+    public void assertReservationCancelled() {
+        assertThat(lastResponse.statusCode())
+                .as("予約キャンセルの応答: %s", lastResponse.asString())
+                .isEqualTo(200);
+        JsonPath body = lastResponse.jsonPath();
+        assertThat(body.getString("reservationId")).as("予約ID").isEqualTo(lastCancelRequest.reservationId());
+        assertThat(body.getString("roomId")).isEqualTo(roomIdOf(lastCancelRequest.roomName()));
+        assertThat(body.getString("reserverId")).isEqualTo(reserverIdOf(lastCancelRequest.reserverName()));
+        assertThat(body.getString("date")).isEqualTo(FIXED_DATE_FOR_TIME_ONLY_SCENARIOS.toString());
+        assertThat(body.getString("startTime")).isEqualTo(lastCancelRequest.startTime());
+        assertThat(body.getString("endTime")).isEqualTo(lastCancelRequest.endTime());
+        assertThat(body.getInt("attendeeCount")).isEqualTo(lastCancelRequest.attendeeCount());
+        String cancelledAt = body.getString("cancelledAt");
+        assertThat(cancelledAt).as("キャンセルが実行された日時").isNotBlank();
+        assertThatCode(() -> DateTimeFormatter.ISO_DATE_TIME.parse(cancelledAt))
+                .as("キャンセルが実行された日時の形式(ISO日時): %s", cancelledAt)
+                .doesNotThrowAnyException();
     }
 
     /** 直前の予約操作が、契約の対応表通りのHTTPステータス+理由コードで拒否されたことを検証する。 */
@@ -166,7 +273,35 @@ public class ReservationSystemDsl {
                 .post("/reservations");
     }
 
+    /**
+     * 会議室名+時間帯からGivenで記憶したreservationIdを引く。
+     * 記憶がなければ(=このシナリオでその予約を作っていない)、実在しないIDを返す。
+     * RSV-K-09「存在しない予約はキャンセルできない」を、SUTの公開契約(未知のID→404)通りに
+     * 検証するための、あいまいさのない一意な設計(対応する予約が無いことをSUTに直接問い合わせる)。
+     */
+    private String reservationIdFor(String roomName, String startTime, String endTime) {
+        return reservationIdByRoomAndSlot.getOrDefault(
+                reservationSlotKey(roomName, startTime, endTime),
+                NONEXISTENT_RESERVATION_ID_PREFIX + UUID.randomUUID());
+    }
+
+    /** 解決済みのreservationIdへ予約キャンセルを送る。 */
+    private Response postCancel(String reservationId, String reserverName) {
+        return RestAssured.given().baseUri(BASE_URL).contentType(ContentType.JSON)
+                .body("""
+                        {"reserverId": "%s"}""".formatted(reserverIdOf(reserverName)))
+                .post("/reservations/%s/cancel".formatted(reservationId));
+    }
+
+    private static String reservationSlotKey(String roomName, String startTime, String endTime) {
+        return roomName + "|" + startTime + "|" + endTime;
+    }
+
     private record ReservationRequest(String roomId, String reserverId, LocalDate date,
+            String startTime, String endTime, int attendeeCount) {
+    }
+
+    private record CancelRequest(String reservationId, String roomName, String reserverName,
             String startTime, String endTime, int attendeeCount) {
     }
 

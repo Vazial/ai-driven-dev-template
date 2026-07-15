@@ -126,4 +126,12 @@ public class ReservationJpaEntity {
     public LocalDateTime getCancelledAt() {
         return cancelledAt;
     }
+
+    /**
+     * キャンセル状態を反映する。管理下(managed)のエンティティに対して呼ぶことで、
+     * 楽観ロック(@Version)を経由した正しいUPDATEになる(新規INSERTと誤認させない)。
+     */
+    public void applyCancellation(LocalDateTime cancelledAt) {
+        this.cancelledAt = cancelledAt;
+    }
 }
