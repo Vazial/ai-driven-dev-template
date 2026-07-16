@@ -7,17 +7,18 @@ import io.cucumber.java.en.When;
 import reservation.acceptance.dsl.ReservationSystemDsl;
 
 /**
- * スライスRSV-C「予約を作成できる」+ RSV-K「予約をキャンセルできる」のstep定義
- * (verification.md L4詳細(1)の第2層)。シナリオ文とテストDSLの対応付けだけを行う薄い糊。技術詳細はdsl/に置く。
+ * スライスRSV-C「予約を作成できる」+ RSV-K「予約をキャンセルできる」+ RSV-A「空き枠を確認できる」の
+ * step定義(verification.md L4詳細(1)の第2層)。シナリオ文とテストDSLの対応付けだけを行う薄い糊。
+ * 技術詳細はdsl/に置く。
  *
- * <p>両スライスのstepを同じクラスに置く理由: Cucumberのデフォルトの動的インスタンス化
+ * <p>全スライスのstepを同じクラスに置く理由: Cucumberのデフォルトの動的インスタンス化
  * (io.cucumber.core.backend.DefaultObjectFactory、build.gradleにcucumber-picocontainer等の
  * DIモジュールを追加していない)は、glueクラスをクラスごとに1個ずつ独立にキャッシュするだけで、
  * クラスをまたいだコンストラクタ注入によるインスタンス共有をサポートしない。
- * RSV-Kのstep(キャンセル)はBackgroundの会議室セットアップ(RSV-Cのstep)が積んだ
- * {@code dsl}の状態(会議室名→ID)をそのまま使う必要があるため、別クラスに分けると
- * 別インスタンスのDSLになり前提が壊れる。そのため1シナリオ1インスタンスが保証される
- * この1クラスに集約する(必要ならDIモジュール追加をorchestratorにエスカレーションする)。
+ * RSV-Kのstep(キャンセル)・RSV-Aのstep(空き枠確認)はいずれもBackgroundの会議室セットアップ
+ * (RSV-Cのstep)が積んだ{@code dsl}の状態(会議室名→ID)をそのまま使う必要があるため、
+ * 別クラスに分けると別インスタンスのDSLになり前提が壊れる。そのため1シナリオ1インスタンスが
+ * 保証されるこの1クラスに集約する(必要ならDIモジュール追加をorchestratorにエスカレーションする)。
  */
 public class ReservationCreateSteps {
 
@@ -83,5 +84,30 @@ public class ReservationCreateSteps {
     @Then("{string}の{string}から{string}は{string}の予約で占有されている")
     public void 時間帯は予約で占有されている(String roomName, String startTime, String endTime, String reserverName) {
         dsl.assertSlotOccupiedBy(roomName, startTime, endTime, reserverName);
+    }
+
+    @When("予約者が{string}の空き枠を確認する")
+    public void 空き枠を確認する(String roomName) {
+        dsl.checkAvailability(roomName);
+    }
+
+    @Then("空いている時間帯として{string}から{string}が返る")
+    public void 空いている時間帯が一件返る(String startTime, String endTime) {
+        dsl.assertAvailableSlots(startTime, endTime);
+    }
+
+    @Then("空いている時間帯として{string}から{string}と{string}から{string}が返る")
+    public void 空いている時間帯が二件返る(String firstStart, String firstEnd, String secondStart, String secondEnd) {
+        dsl.assertAvailableSlots(firstStart, firstEnd, secondStart, secondEnd);
+    }
+
+    @Then("空いている時間帯は一つもない")
+    public void 空いている時間帯は一つもない() {
+        dsl.assertNoAvailableSlots();
+    }
+
+    @Then("空き枠の確認は{string}という理由で拒否される")
+    public void 空き枠の確認は拒否される(String reasonText) {
+        dsl.assertReservationRejected(reasonText);
     }
 }

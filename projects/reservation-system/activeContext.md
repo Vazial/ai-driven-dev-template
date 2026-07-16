@@ -2,46 +2,44 @@
 
 > P-11: このファイルは常に「現在」だけを映す。更新は上書き。歴史はgitとADRが持つ。
 > 更新タイミング: スライスの区切り、エスカレーション発生時（permissions.md）
-> 最終更新: 2026-07-14
+> 最終更新: 2026-07-16
 
-## 今どこにいるか(スライスRSV-K)
+## 今どこにいるか(スライスRSV-A)
 
-スライスRSV-K「予約をキャンセルできる」の全段検証が完了(2026-07-15)。人間承認3点(契約・骨格追記seam・step実装)済み。L1(87テスト+PIT 39/39 kill)・L2・L3(実DB統合、部分排他制約を両層確認)・L4(19本全緑=RSV-C回帰込み)。reviewer差し戻し1件(Then検証のフィールド不足)は修正・再監査で解消。残り: PR作成→CI→人間マージ。
-規程改善バッチ#2の候補が4件揃っている(下記)。friction はFR-008まで記録。
+スライスRSV-A「空き枠を確認できる」の契約が承認された(2026-07-16、シナリオRSV-A-01〜07 + API改訂 GET /rooms/{roomId}/availability)。初のクエリ側スライス(CQRSの読み側)。人間裁定はADR-0006(空き枠は予約可能な空きのみ=最小予約時間未満の隙間を除外)。developer(実装+単体テスト、L1〜L3)とtester(step定義+DSL、L4)の並行作業(ブランチslice/rsv-a)。
 
-## 前スライスの到達点(RSV-C)
+developer側は完了: domain(AvailabilityCalculator、TimeSlot.meetsMinimumDurationを公開してADR-0006のルールをドメイン1箇所に保つ)・application(RoomAvailabilityService)・adapter/api(RoomAvailabilityController、GET /rooms/{roomId}/availability)を実装。既存のrooms/reservationsテーブルとReservationRepository.findActiveByRoomAndDate(cancelled_at IS NULL絞り込み)をそのまま読み取りに再利用し、永続化層(persistence)の変更は不要だった。L1(単体+lint)/L2(ArchUnit)/L3(WebMvcTest契約+実DB統合テスト)全緑、pitest全域100% kill(閾値70%)。次はtesterのL4完走→reviewer監査→人間承認。
 
-**スライスRSV-C「予約を作成できる」の検証が全段完了**（2026-07-14）。人間の承認3点（契約・設計骨格・step実装）済み、L1（単体39件+checkstyle+PIT 29/29 kill）・L2（ArchUnit）・L3（API契約整合+DB統合9件、EXCLUDE制約の最終防衛を実機確認）・L4（受け入れシナリオ10本、実SUTに対し全緑）。reviewer監査レポート（reviews/audit-rsv-c.md）に人間承認を記録済み。PR #1はCI全緑で人間がマージ済み（squash、2026-07-14）。リモート: github.com/Vazial/ai-driven-dev-template（Private）。現在は規程改善バッチ（meta/adr/0001〜0005）を提案中。
+このスライスは2つの新規規程の初適用: ADR-0007(L4のThen検証にAPIスキーマ機械照合を組み込む=DSL側のtester作業)、ADR-0008(seam仕様はcontracts/test-support-api.yamlを原文参照)。orchestratorのディスパッチはrouting限定(ADR-0011)。
+
+## 完了済みスライス
+
+- RSV-C「予約を作成できる」: 全段緑・PR #1マージ済み(2026-07-14)
+- RSV-K「予約をキャンセルできる」: 全段緑・PR #5マージ済み(2026-07-15)。reviewer差し戻し→修正→再監査のループを完走
 
 ## 確定した主要な判断
 
-- ドメインモデルパックを採用（ADR-0001）。実装スタックはJava + Spring Boot + JPA（ADR-0002）
-- ドメイン設計はDDDモデリングワークの判断群に従う（docs/workshop-summary-01-reservation.md）: 小さいReservation集約 + DB排他制約（EXCLUDE, btree_gist, WHERE cancelled_at IS NULL）、半開区間[start, end)、営業時間・定員はスナップショット、Clock注入
-- 予約者は社員に限定しない一般化（ADR-0003）
-- 日マタギ禁止はシナリオ・拒否コードでなく構造的禁止（単一date+時刻2つのスキーマとTimeSlotの形）で強制（ADR-0004）
-- 受け入れテスト用seam: POST /test-support/rooms（応答はroomIdフィールド）と DELETE /test-support/reservations。プロファイルacceptance限定（design.md）
+- ドメインモデルパック(ADR-0001)/ Java+Spring Boot+JPA(ADR-0002)
+- ドメイン設計はDDDワークの判断群に従う(docs/workshop-summary-01-reservation.md): 小さいReservation集約 + DB排他制約(EXCLUDE, btree_gist, WHERE cancelled_at IS NULL)、半開区間[start,end)、営業時間・定員はスナップショット、状態は導出(ReservationStatus.of())、Clock注入
+- 予約者は社員に限定しない(ADR-0003)。日マタギは構造的禁止(ADR-0004)。キャンセルは本人のみ(ADR-0005)
+- 空き枠は予約可能な空きのみ返す(ADR-0006)
+- seam: POST /test-support/rooms(roomId応答) / DELETE /test-support/reservations(clockもリセット) / PUT /test-support/clock。acceptance限定。正式仕様はcontracts/test-support-api.yaml
 
 ## 進行中 / 次にやること
 
-1. 規程改善バッチ#2のPR(meta/adr/0007〜0010 + 規程/雛形反映 + テストインフラ契約の初適用) — マージ=承認
-2. 次スライスでの宿題: (a)DSLへのOpenAPIスキーマ照合の組み込み(meta/adr/0007の実装。steps/dsl差分承認が必要なためスライス作業として実施) (b)RSV-K監査の申し送り注記の確認(attendeeCount期待値の定数依存・stepクラス名)
-3. 次スライス候補: 予約の参照・一覧(読み取りモデル。CQRSの読み側)等 — 人間と相談して決定
-4. 中期: B層「ドメインモデルパック実体」を本プロジェクトの実証済み部品から抽出(ビルド骨格・ArchUnit・seamパターン・CI)
+1. スライスRSV-A: 人間承認3点(契約・裁定・step実装)完了、L1〜L4全緑。残りはPR → CI → 人間マージ
+2. **次スライスの宿題(RSV-A監査の要確認注記より。ADR-0009に従いarchitectが次の契約起草時に確認する)**:
+   - (a) スキーマ照合が契約yamlの手写しになっている二重管理リスク。**orchestratorがbuild.gradleにOpenAPI/JSON Schemaバリデータ依存を追加し**、testerがyaml原本と直接照合する形に直す(現状はbuild.gradle変更不可の制約下でtesterが手写し照合器を自作した)
+   - (b) スキーマ照合が予約作成・キャンセルの成功応答に未適用(ADR-0007の理念上は全成功応答に広げる)
+   - (c) stepクラス名`ReservationCreateSteps`の乖離が3スライス目で悪化。クラス分割を検討(Cucumberのglueインスタンス共有制約があるため、DI(cucumber-picocontainer)追加の要否も併せて判断)
+3. 次スライス候補: 「会議室の予約ルールを確認できる」(営業時間・定員・最小予約時間をまとめて公開。ADR-0006で先送りした論点。現在これらは本番の公開読み取り口が無い)
+4. 中期: B層「ドメインモデルパック実体」を本プロジェクトの実証済み部品から抽出
 
 ## 環境メモ
 
-- JDK: Amazon Corretto 23（PATH先頭はJava 8なのでJAVA_HOME明示が必要）
-- ビルド: Gradle wrapper 8.14（projects/reservation-system/gradlew.bat）。ビルド骨格はorchestrator管理（今スライスで変更なし）
-- コンテナ: Podman稼働中（DOCKER_HOST=npipe:////./pipe/podman-machine-default、TESTCONTAINERS_RYUK_DISABLED=true）。**手動コンテナのポートはWindowsのlocalhostに転送されない**（Testcontainers経由は問題なし）。ホストからはWSLのIP（`podman machine ssh "ip -4 addr show eth0"`で確認、再起動で変わる）に直接接続する。人間が夜にWSL更新+machine作り直し予定（2026-07-14時点）
-
-## 未解決の論点
-
-- branch protectionはリモートホスト未接続のため手順書のみ（guardrails/branch-protection.md）
-- step定義lintの具体ツールは未確定（guardrails/step-definition-lint.md）
-- CI（.github/workflows/ci.yml）はジョブ骨格のみ。実コマンド埋めが必要（テストは./gradlew test等で実行可能になった）
-- POST /reservationsの契約未定義領域は実装判断で埋めた: 部屋が存在しない→404（ProblemResponse同形, code=ROOM_NOT_FOUND）、リクエスト形式違反→Spring既定の400
+- JDK: Amazon Corretto 23(JAVA_HOME明示が必要)。ビルド: Gradle wrapper 8.14
+- コンテナ: Podman稼働。統合テストは DOCKER_HOST=npipe:////./pipe/podman-machine-default, TESTCONTAINERS_RYUK_DISABLED=true。手動コンテナはlocalhost転送されず、SUT起動時はWSLのIP(`podman machine ssh "ip -4 addr show eth0"`)へ接続
 
 ## 直近のfriction
 
-- FR-001（未対応: HANDOFF参照素材の所在不明 → 手動共有で解消中）
-- FR-004まで記録済み（friction-log.md）
+- FR-001〜009 記録済み(friction-log.md)。FR-002〜009は対応済み(規程/雛形/契約へ押し込み完了)。FR-001(HANDOFF参照素材の所在)のみ未対応(実害なし)

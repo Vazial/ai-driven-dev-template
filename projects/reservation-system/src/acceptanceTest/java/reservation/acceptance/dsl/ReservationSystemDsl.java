@@ -10,15 +10,17 @@ import io.restassured.response.Response;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.IntStream;
 
 /**
  * 受け入れテストDSL(verification.md L4詳細(1)の第3層)。
  * 業務操作を業務の言葉のまま関数として提供し、HTTP等の技術詳細をこの層に閉じ込める。
- * SUTには公開API(POST /reservations、POST /reservations/{id}/cancel)と
- * Given専用seam(/test-support/*)経由でのみ触れる。
- * スライスRSV-C(作成)とRSV-K(キャンセル)の両方が同じインスタンスを共有する
+ * SUTには公開API(POST /reservations、POST /reservations/{id}/cancel、
+ * GET /rooms/{roomId}/availability)とGiven専用seam(/test-support/*)経由でのみ触れる。
+ * スライスRSV-C(作成)・RSV-K(キャンセル)・RSV-A(空き枠確認)が同じインスタンスを共有する
  * (理由はReservationCreateStepsのクラスコメントを参照)。
  */
 public class ReservationSystemDsl {
@@ -47,10 +49,30 @@ public class ReservationSystemDsl {
             "予約した本人ではない", new ExpectedRejection(403, "NOT_RESERVER"),
             "開始15分前を過ぎている", new ExpectedRejection(422, "CANCEL_DEADLINE_PASSED"),
             "既にキャンセルされている", new ExpectedRejection(409, "ALREADY_CANCELLED"),
-            "予約が存在しない", new ExpectedRejection(404, "RESERVATION_NOT_FOUND"));
+            "予約が存在しない", new ExpectedRejection(404, "RESERVATION_NOT_FOUND"),
+            "会議室が存在しない", new ExpectedRejection(404, "ROOM_NOT_FOUND"));
 
     /** 「記録された予約が無い」ことをキャンセルAPIに問い合わせて確認するための、実在しないID。 */
     private static final String NONEXISTENT_RESERVATION_ID_PREFIX = "does-not-exist-";
+
+    /** 「記録された会議室が無い」ことを空き枠確認APIに問い合わせて確認するための、実在しないID。 */
+    private static final String NONEXISTENT_ROOM_ID_PREFIX = "does-not-exist-room-";
+
+    /** AvailableTimeSlot(reservation-api.yaml)のスキーマ。ADR-0007の機械照合に使う。 */
+    private static final List<JsonSchemaAssertions.Field> AVAILABLE_TIME_SLOT_SCHEMA = List.of(
+            new JsonSchemaAssertions.ScalarField("startTime", String.class),
+            new JsonSchemaAssertions.ScalarField("endTime", String.class));
+
+    /** AvailabilityResponse(reservation-api.yaml)のスキーマ。ADR-0007の機械照合に使う。 */
+    private static final List<JsonSchemaAssertions.Field> AVAILABILITY_RESPONSE_SCHEMA = List.of(
+            new JsonSchemaAssertions.ScalarField("roomId", String.class),
+            new JsonSchemaAssertions.ScalarField("date", String.class),
+            new JsonSchemaAssertions.ArrayOfObjectsField("availableSlots", AVAILABLE_TIME_SLOT_SCHEMA));
+
+    /** ProblemResponse(reservation-api.yaml)のスキーマ。ADR-0007の機械照合に使う。 */
+    private static final List<JsonSchemaAssertions.Field> PROBLEM_RESPONSE_SCHEMA = List.of(
+            new JsonSchemaAssertions.ScalarField("code", String.class),
+            new JsonSchemaAssertions.ScalarField("message", String.class));
 
     /**
      * 「現在時刻は…」Givenを持たないシナリオが使う既定の現在時刻。
@@ -65,6 +87,8 @@ public class ReservationSystemDsl {
     private ReservationRequest lastRequest;
     private Response lastResponse;
     private CancelRequest lastCancelRequest;
+    /** 直前の空き枠確認で実際に問い合わせたroomId(実在しない会議室の場合は生成した実在しないID)。 */
+    private String lastAvailabilityRoomId;
 
     // ---- 状態準備(Given) ----
 
@@ -171,6 +195,19 @@ public class ReservationSystemDsl {
         lastResponse = postCancel(reservationId, reserverName);
     }
 
+    /**
+     * 会議室の空き枠を、共有の基準日(FIXED_DATE_FOR_TIME_ONLY_SCENARIOS)について問い合わせる。
+     * 会議室がGivenで用意されていない場合は実在しないIDで問い合わせる
+     * (RSV-A-07: 存在しない会議室の空き枠確認を、SUTの公開契約(未知のID→404)通りに検証するため。
+     * reservationIdForと同型の設計)。成否の検証はThen側のassertメソッドが行う。
+     */
+    public void checkAvailability(String roomName) {
+        lastAvailabilityRoomId = roomIdByName.getOrDefault(roomName, NONEXISTENT_ROOM_ID_PREFIX + UUID.randomUUID());
+        lastResponse = RestAssured.given().baseUri(BASE_URL)
+                .queryParam("date", FIXED_DATE_FOR_TIME_ONLY_SCENARIOS.toString())
+                .get("/rooms/%s/availability".formatted(lastAvailabilityRoomId));
+    }
+
     // ---- 検証(Then) ----
 
     /** 直前の予約操作が受理され(201)、依頼した内容の予約として返ったことを検証する。 */
@@ -222,8 +259,50 @@ public class ReservationSystemDsl {
         assertThat(lastResponse.statusCode())
                 .as("拒否応答: %s", lastResponse.asString())
                 .isEqualTo(expected.httpStatus());
+        JsonSchemaAssertions.assertMatchesSchema(
+                "拒否応答", lastResponse.jsonPath().getMap(""), PROBLEM_RESPONSE_SCHEMA);
         assertThat(lastResponse.jsonPath().getString("code")).isEqualTo(expected.code());
         assertThat(lastResponse.jsonPath().getString("message")).as("人間が読める説明").isNotBlank();
+    }
+
+    /** 空き枠確認が受理され(200)、空いている時間帯が指定した1件ちょうどであることを検証する。 */
+    public void assertAvailableSlots(String startTime, String endTime) {
+        assertAvailableSlotsAre(List.of(new TimeSlot(startTime, endTime)));
+    }
+
+    /**
+     * 空き枠確認が受理され(200)、空いている時間帯が指定した2件、その順序で
+     * ちょうど返ることを検証する(reservation-api.yamlのAvailabilityResponseは開始時刻昇順が前提)。
+     */
+    public void assertAvailableSlots(String firstStart, String firstEnd, String secondStart, String secondEnd) {
+        assertAvailableSlotsAre(List.of(
+                new TimeSlot(firstStart, firstEnd), new TimeSlot(secondStart, secondEnd)));
+    }
+
+    /** 空き枠確認が受理され(200)、空いている時間帯が一つもないことを検証する。 */
+    public void assertNoAvailableSlots() {
+        assertAvailableSlotsAre(List.of());
+    }
+
+    /**
+     * 空き枠確認の応答が、AvailabilityResponseのスキーマ(ADR-0007)に適合し、
+     * 問い合わせたroomId・基準日、および期待した時間帯一覧(順序も含め)と一致することを検証する。
+     */
+    private void assertAvailableSlotsAre(List<TimeSlot> expectedSlots) {
+        assertThat(lastResponse.statusCode())
+                .as("空き枠確認の応答: %s", lastResponse.asString())
+                .isEqualTo(200);
+        JsonSchemaAssertions.assertMatchesSchema(
+                "空き枠確認の応答", lastResponse.jsonPath().getMap(""), AVAILABILITY_RESPONSE_SCHEMA);
+        JsonPath body = lastResponse.jsonPath();
+        assertThat(body.getString("roomId")).as("応答のroomId").isEqualTo(lastAvailabilityRoomId);
+        assertThat(body.getString("date")).as("応答のdate").isEqualTo(FIXED_DATE_FOR_TIME_ONLY_SCENARIOS.toString());
+        List<String> startTimes = body.getList("availableSlots.startTime", String.class);
+        List<String> endTimes = body.getList("availableSlots.endTime", String.class);
+        List<TimeSlot> actualSlots = IntStream.range(0, startTimes.size())
+                .mapToObj(i -> new TimeSlot(startTimes.get(i), endTimes.get(i)))
+                .toList();
+        assertThat(actualSlots).as("空いている時間帯(順序を含め一致すること)").isEqualTo(expectedSlots);
     }
 
     /**
@@ -306,5 +385,8 @@ public class ReservationSystemDsl {
     }
 
     private record ExpectedRejection(int httpStatus, String code) {
+    }
+
+    private record TimeSlot(String startTime, String endTime) {
     }
 }

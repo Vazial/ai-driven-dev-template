@@ -109,4 +109,37 @@ class TimeSlotTest {
         assertThat(slot.startTime()).isEqualTo(LocalTime.of(10, 0));
         assertThat(slot.endTime()).isEqualTo(LocalTime.of(11, 0));
     }
+
+    /**
+     * meetsMinimumDurationは読み取り側の空き枠計算(RSV-A-05、ADR-0006)が参照する判定。
+     * TimeSlot生成の可否(RSV-C-05)と同じ境界値をここでも直接検証する。
+     */
+    @Nested
+    class 最小予約時間の判定 {
+
+        @Test
+        void RSV_C_05相当_30分未満はfalse() {
+            assertThat(TimeSlot.meetsMinimumDuration(LocalTime.of(11, 0), LocalTime.of(11, 15))).isFalse();
+        }
+
+        @Test
+        void ちょうど30分はtrue() {
+            assertThat(TimeSlot.meetsMinimumDuration(LocalTime.of(11, 0), LocalTime.of(11, 30))).isTrue();
+        }
+
+        @Test
+        void 三十分を超えていればtrue() {
+            assertThat(TimeSlot.meetsMinimumDuration(LocalTime.of(11, 0), LocalTime.of(12, 0))).isTrue();
+        }
+
+        @Test
+        void 終了が開始と同時刻はfalse() {
+            assertThat(TimeSlot.meetsMinimumDuration(LocalTime.of(11, 0), LocalTime.of(11, 0))).isFalse();
+        }
+
+        @Test
+        void 終了が開始より前はfalse() {
+            assertThat(TimeSlot.meetsMinimumDuration(LocalTime.of(11, 0), LocalTime.of(10, 0))).isFalse();
+        }
+    }
 }

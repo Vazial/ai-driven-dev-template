@@ -21,13 +21,22 @@ public record TimeSlot(LocalDate date, LocalTime startTime, LocalTime endTime) {
         if (!endTime.isAfter(startTime)) {
             throw new ReservationRejectedException(RejectionReason.INVALID_TIME_SLOT);
         }
-        if (Duration.between(startTime, endTime).compareTo(MIN_DURATION) < 0) {
+        if (!meetsMinimumDuration(startTime, endTime)) {
             throw new ReservationRejectedException(RejectionReason.TOO_SHORT);
         }
     }
 
     public static TimeSlot of(LocalDate date, LocalTime startTime, LocalTime endTime) {
         return new TimeSlot(date, startTime, endTime);
+    }
+
+    /**
+     * 予約可能な最小時間(30分、RSV-C-05)以上かどうかを判定する。
+     * 空き枠計算(RSV-A-05)もこの判定を参照し、最小予約時間ルールをドメイン1箇所に保つ(ADR-0006)。
+     * endTimeがstartTimeより前・同時刻の場合はfalseになる。
+     */
+    public static boolean meetsMinimumDuration(LocalTime startTime, LocalTime endTime) {
+        return !endTime.isBefore(startTime) && Duration.between(startTime, endTime).compareTo(MIN_DURATION) >= 0;
     }
 
     /**
