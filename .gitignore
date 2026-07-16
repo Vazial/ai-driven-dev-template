@@ -1,0 +1,14 @@
+# OS が生成するもの
+.DS_Store
+Thumbs.db
+# Windows の予約デバイス名。リダイレクトの誤記(`> NUL`)で実ファイルが生まれる
+NUL
+
+# エディタ
+.idea/
+.vscode/
+*.swp
+
+# Claude Code のローカル設定（権限付与が各自の環境依存で溜まる。共有するのは
+# settings.json のみ）
+.claude/settings.local.json

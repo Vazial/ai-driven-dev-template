@@ -3,7 +3,6 @@ name: CI
 # L1 → L2 → L3 → L4 の順に実行する(meta/verification.md)。
 # 下の段が落ちたら上の段は実行しない(needs で直列化)。
 # 実コマンドはスライスRSV-C時点の構成(Java 21 / Gradle wrapper / PostgreSQL)。
-# 注: リモートホスト未接続のためこのワークフローはまだ実行実績がない。初回push時に要確認
 
 on:
   pull_request:
