@@ -1,8 +1,16 @@
+---
+id: 0004
+scope: project/reservation-system
+status: 承認済み
+date: 2026-07-14
+approved_by: "人間承認"
+supersedes: []
+superseded_by: null
+relates_to: []
+---
 # ADR-0004: 日マタギ禁止はシナリオで検証せず、APIの形による構造的禁止に委ねる
 
-- 日付: 2026-07-14
-- 状態: 承認済み
-- 置き換え対象: なし（契約RSV-Cの初回承認内容の一部（RSV-C-11とCROSSES_DAY_BOUNDARY）を削除する改訂）
+> 関係: 契約RSV-Cの初回承認内容の一部（RSV-C-11とCROSSES_DAY_BOUNDARY）を削除する改訂
 
 ## 文脈
 

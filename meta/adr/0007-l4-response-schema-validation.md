@@ -1,8 +1,14 @@
+---
+id: 0007
+scope: meta
+status: 承認済み
+date: 2026-07-15
+approved_by: "本PRのマージをもって承認"
+supersedes: []
+superseded_by: null
+relates_to: []
+---
 # ADR-0007: L4のThen検証は、応答をAPI仕様（スキーマ）と機械照合することを標準とする
-
-- 日付: 2026-07-15
-- 状態: 承認済み（本PRのマージをもって承認、2026-07-15）
-- 置き換え対象: なし
 
 ## 文脈
 

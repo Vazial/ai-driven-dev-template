@@ -1,8 +1,16 @@
+---
+id: 0003
+scope: project/reservation-system
+status: 承認済み
+date: 2026-07-13
+approved_by: "人間承認"
+supersedes: []
+superseded_by: null
+relates_to: []
+---
 # ADR-0003: 予約者を「社員」に限定せず一般化する
 
-- 日付: 2026-07-13
-- 状態: 承認済み
-- 置き換え対象: なし（ワークのEventStormingにおけるアクター定義「予約する（社員）」からの逸脱を記録する）
+> 関係: ワークのEventStormingにおけるアクター定義「予約する（社員）」からの逸脱を記録する
 
 ## 文脈
 

@@ -1,8 +1,14 @@
+---
+id: 0006
+scope: meta
+status: 承認済み
+date: 2026-07-14
+approved_by: "本PRのマージをもって承認"
+supersedes: []
+superseded_by: null
+relates_to: []
+---
 # ADR-0006: PRで提案するADRは、状態を「承認済み（本PRのマージをもって承認）」と書いてよい
-
-- 日付: 2026-07-14
-- 状態: 承認済み（本PRのマージをもって承認、2026-07-14）
-- 置き換え対象: なし
 
 ## 文脈
 

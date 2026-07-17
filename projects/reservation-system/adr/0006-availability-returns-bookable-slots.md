@@ -1,8 +1,14 @@
+---
+id: 0006
+scope: project/reservation-system
+status: 承認済み
+date: 2026-07-16
+approved_by: "人間裁定 2026-07-16。契約RSV-Aの承認に随伴"
+supersedes: []
+superseded_by: null
+relates_to: []
+---
 # ADR-0006: 空き枠は「予約可能な空き」だけを返す（最小予約時間未満の隙間を除外する）
-
-- 日付: 2026-07-16
-- 状態: 承認済み（人間裁定 2026-07-16。契約RSV-Aの承認に随伴）
-- 置き換え対象: なし
 
 ## 文脈
 

@@ -1,8 +1,14 @@
+---
+id: 0001
+scope: project/reservation-system
+status: 承認済み
+date: 2026-07-13
+approved_by: "人間承認"
+supersedes: []
+superseded_by: null
+relates_to: []
+---
 # ADR-0001: 会議室予約システムの設計パックとしてドメインモデルパックを選定する
-
-- 日付: 2026-07-13
-- 状態: 承認済み
-- 置き換え対象: なし
 
 ## 文脈
 

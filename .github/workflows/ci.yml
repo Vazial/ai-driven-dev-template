@@ -15,6 +15,22 @@ defaults:
     working-directory: projects/reservation-system
 
 jobs:
+  # L1より前段。統治文書(ADR・friction-log・契約)の機械検証(meta/adr/0012)。
+  # A層の検証であり実装スタックに依存しないため、他の段と並行に走らせる。
+  govlint:
+    name: "L0: 統治文書の整合(govlint)"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: ADR・friction-log・契約IDの整合を検証
+        run: python meta/tools/govlint.py
+
   l1-unit-lint:
     name: "L1: 実装の内部品質(単体テスト・lint・mutation)"
     runs-on: ubuntu-latest

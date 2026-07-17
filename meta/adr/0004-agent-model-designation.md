@@ -1,8 +1,14 @@
+---
+id: 0004
+scope: meta
+status: 承認済み
+date: 2026-07-14
+approved_by: "PR #2のマージによる人間承認"
+supersedes: []
+superseded_by: null
+relates_to: []
+---
 # ADR-0004: agent定義の原本にモデル指定（sonnet）を持たせる
-
-- 日付: 2026-07-14
-- 状態: 承認済み（PR #2のマージによる人間承認、2026-07-14）
-- 置き換え対象: なし
 
 ## 文脈
 

@@ -1,8 +1,14 @@
+---
+id: 0011
+scope: meta
+status: 承認済み
+date: 2026-07-16
+approved_by: "本PRのマージをもって承認"
+supersedes: []
+superseded_by: null
+relates_to: []
+---
 # ADR-0011: orchestratorのディスパッチは routing に限り、実質的内容を注入しない
-
-- 日付: 2026-07-16
-- 状態: 承認済み（本PRのマージをもって承認、2026-07-16）
-- 置き換え対象: なし
 
 ## 文脈
 
