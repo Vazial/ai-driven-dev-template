@@ -40,6 +40,14 @@ public record TimeSlot(LocalDate date, LocalTime startTime, LocalTime endTime) {
     }
 
     /**
+     * 予約可能な最小時間を分単位で返す(RSV-R-01/02)。値そのものの公開先はドメイン1箇所
+     * (このクラスのMIN_DURATION)のみとし、他層はこのメソッド経由で読む(design.md「主要な流れ(予約ルール確認)」、ADR-0006)。
+     */
+    public static int minimumDurationMinutes() {
+        return (int) MIN_DURATION.toMinutes();
+    }
+
+    /**
      * 半開区間同士の重なり判定(RSV-C-02/03)。
      * 別の日とは重ならず、前の予約の終了時刻と同時刻に始まる予約は重なりではない。
      */

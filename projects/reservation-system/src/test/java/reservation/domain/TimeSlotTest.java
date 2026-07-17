@@ -142,4 +142,25 @@ class TimeSlotTest {
             assertThat(TimeSlot.meetsMinimumDuration(LocalTime.of(11, 0), LocalTime.of(10, 0))).isFalse();
         }
     }
+
+    /**
+     * minimumDurationMinutesは予約ルール確認(RSV-R-01/02)が参照する、最小予約時間の分単位表現。
+     * meetsMinimumDurationと同じMIN_DURATIONを読むため、値の複製にならない(design.md「主要な流れ(予約ルール確認)」)。
+     */
+    @Nested
+    class 最小予約時間の分表現 {
+
+        @Test
+        void RSV_R_01相当_最小予約時間は30分として公開される() {
+            assertThat(TimeSlot.minimumDurationMinutes()).isEqualTo(30);
+        }
+
+        @Test
+        void 公開される分数はmeetsMinimumDurationの境界と一致する() {
+            int minutes = TimeSlot.minimumDurationMinutes();
+            LocalTime start = LocalTime.of(11, 0);
+            assertThat(TimeSlot.meetsMinimumDuration(start, start.plusMinutes(minutes))).isTrue();
+            assertThat(TimeSlot.meetsMinimumDuration(start, start.plusMinutes(minutes - 1))).isFalse();
+        }
+    }
 }

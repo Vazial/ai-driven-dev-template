@@ -34,6 +34,22 @@ public final class JsonSchemaAssertions {
     public record ArrayOfObjectsField(String name, List<Field> itemSchema) implements Field {
     }
 
+    /** AvailableTimeSlot(reservation-api.yaml)のスキーマ。ADR-0007の機械照合に使う。 */
+    public static final List<Field> AVAILABLE_TIME_SLOT_SCHEMA = List.of(
+            new ScalarField("startTime", String.class),
+            new ScalarField("endTime", String.class));
+
+    /** AvailabilityResponse(reservation-api.yaml)のスキーマ。ADR-0007の機械照合に使う。 */
+    public static final List<Field> AVAILABILITY_RESPONSE_SCHEMA = List.of(
+            new ScalarField("roomId", String.class),
+            new ScalarField("date", String.class),
+            new ArrayOfObjectsField("availableSlots", AVAILABLE_TIME_SLOT_SCHEMA));
+
+    /** ProblemResponse(reservation-api.yaml)のスキーマ。ADR-0007の機械照合に使う。 */
+    public static final List<Field> PROBLEM_RESPONSE_SCHEMA = List.of(
+            new ScalarField("code", String.class),
+            new ScalarField("message", String.class));
+
     /**
      * 応答ボディ(JsonPath#getMapで得たMap)が、スキーマの必須フィールドと過不足なく一致し、
      * 各フィールドの型が仕様通りであることを検証する。

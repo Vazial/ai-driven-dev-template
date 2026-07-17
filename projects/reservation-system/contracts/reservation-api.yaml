@@ -6,6 +6,10 @@
 # 改訂: 2026-07-16(承認済み) スライスRSV-A「空き枠を確認できる」のクエリ操作を追記(下記「RSV-A追記」ブロックと
 #       paths./rooms/{roomId}/availability)。POST /reservations・POST /reservations/{reservationId}/cancelを含む
 #       既存部分は無変更(ProblemResponse.code説明文へのROOM_NOT_FOUND追記のみ、人間承認済み)
+# 改訂: 2026-07-17(承認済み) スライスRSV-R「会議室の予約ルールを確認できる」のクエリ操作を追記(下記「RSV-R追記」ブロックと
+#       paths./rooms/{roomId}/rules)。POST /reservations・POST /reservations/{reservationId}/cancel・
+#       GET /rooms/{roomId}/availabilityを含む既存部分は無変更。ROOM_NOT_FOUNDは既存コードを再利用し、
+#       ProblemResponse.codeの説明文への追記は行わない(新規コードではないため)
 # 範囲: このスライスで使う操作だけを定義する。先のスライスの分は書かない
 #
 # ============================================================
@@ -106,6 +110,44 @@
 #       これはシナリオのThen文が複数区間を順序付きで列挙している(RSV-A-02/03)ことと対応させるため
 #
 # ---- RSV-A追記ここまで ----
+# ============================================================
+#
+# ---- RSV-R「会議室の予約ルールを確認できる」追記(承認済み: 2026-07-17) ----
+# 4行目の要約:
+#   予約ルールを確認する: GET /rooms/{roomId}/rules を呼ぶ。
+#                         成功は200+その会議室の営業時間・定員・最小予約時間。部屋が存在しなければ404
+#
+# リクエスト例(会議室room-aの予約ルールを確認):
+#   GET /rooms/room-a/rules
+#
+# 成功レスポンス例(200):
+#   { "roomId": "room-a", "businessHoursStart": "09:00", "businessHoursEnd": "18:00",
+#     "capacity": 6, "minReservationDurationMinutes": 30 }
+#
+# 拒否レスポンス例(404、部屋が存在しない場合):
+#   { "code": "ROOM_NOT_FOUND", "message": "会議室が存在しません" }
+#
+# 拒否理由コードとシナリオの対応(このスライスの追加分。新規コードなし):
+#   ROOM_NOT_FOUND          … RSV-R-03(会議室が存在しない) → 404(RSV-Aで定義済みのコードを再利用)
+#
+# 発端: ADR-0006の「帰結」に残された未解決の論点(最小予約時間の値をクライアントにどう見せるか)。
+# 詳細はprojects/reservation-system/adr/0006-availability-returns-bookable-slots.md
+#
+# 解釈ポイント(architectの判断。承認時に確認されたい。シナリオ側の解釈ポイントは
+# contracts/reservation-rules.featureのヘッダも参照):
+#   (1) 公開する予約ルールは営業時間・定員・最小予約時間の3点に限定した(activeContext.mdの
+#       次スライス候補の記述通り)。キャンセル期限(開始15分前)はこのスライスの発端に含まれて
+#       おらず対象外とした(P-02)
+#   (2) 3点を会議室1件あたりの単一クエリにまとめた(RSV-Aの空き枠確認と同型のGET /rooms/{roomId}/...
+#       経路)。最小予約時間だけを会議室に依存しない別のエンドポイントに分離する代替案は不採用:
+#       予約前の問い合わせが2回に増え、目的文「予約する前に知る」に対して回りくどいため
+#   (3) minReservationDurationMinutesはシステム共通の1つの値であり、会議室ごとに異なる値を
+#       持たない(RSV-R-02で異なる会議室に対して同じ値が返ることを確認する)
+#   (4) このクエリも予約者の識別(reserverId等)を要求しない(RSV-A解釈ポイント(1)と同じ理由)
+#   (5) ROOM_NOT_FOUNDはRSV-Aで定義済みの拒否理由コードをそのまま再利用する。ProblemResponse.code
+#       の説明文(既存承認済みテキスト)への変更は行わない(新規コードではないため追記不要と判断)
+#
+# ---- RSV-R追記ここまで ----
 # ============================================================
 openapi: 3.0.3
 info:
@@ -279,6 +321,42 @@ paths:
                 code: ROOM_NOT_FOUND
                 message: 会議室が存在しません
   # ---- RSV-A追記ここまで ----
+  # ---- ここから RSV-R追記。上のPOST /reservations・POST /reservations/{reservationId}/cancel・
+  # GET /rooms/{roomId}/availabilityは無変更 ----
+  /rooms/{roomId}/rules:
+    get:
+      operationId: getRoomReservationRules
+      summary: 会議室の予約ルール(営業時間・定員・最小予約時間)を確認する(RSV-R追記)
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 予約ルールを確認する会議室ID
+      responses:
+        "200":
+          description: 予約ルールが返る(RSV-R-01/02)。営業時間・定員は会議室ごとの現在の設定、最小予約時間はシステム共通の値
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomRulesResponse"
+              example:
+                roomId: room-a
+                businessHoursStart: "09:00"
+                businessHoursEnd: "18:00"
+                capacity: 6
+                minReservationDurationMinutes: 30
+        "404":
+          description: 会議室が存在しない(RSV-R-03)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemResponse"
+              example:
+                code: ROOM_NOT_FOUND
+                message: 会議室が存在しません
+  # ---- RSV-R追記ここまで ----
 components:
   schemas:
     CreateReservationRequest:
@@ -388,6 +466,30 @@ components:
           pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
           description: 空いている時間帯の終了時刻。時間帯は半開区間で、終了時刻ちょうどは空き時間に含まない
     # ---- RSV-A追記ここまで ----
+    # ---- RSV-R追記: 予約ルール確認用スキーマ1つ ----
+    RoomRulesResponse:
+      type: object
+      required: [roomId, businessHoursStart, businessHoursEnd, capacity, minReservationDurationMinutes]
+      properties:
+        roomId:
+          type: string
+        businessHoursStart:
+          type: string
+          pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          description: 営業時間の開始時刻(会議室ごとの現在の設定)
+        businessHoursEnd:
+          type: string
+          pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          description: 営業時間の終了時刻(会議室ごとの現在の設定)
+        capacity:
+          type: integer
+          minimum: 1
+          description: 定員(会議室ごとの現在の設定)
+        minReservationDurationMinutes:
+          type: integer
+          minimum: 1
+          description: 予約可能な最小時間(分)。システム共通の値で、会議室によらず同じ(RSV-C-05/RSV-A-05のルールと同一箇所を参照)
+    # ---- RSV-R追記ここまで ----
     ProblemResponse:
       type: object
       required: [code, message]

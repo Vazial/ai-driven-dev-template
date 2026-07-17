@@ -63,6 +63,9 @@ dependencies {
     acceptanceTestImplementation 'org.junit.platform:junit-platform-suite'
     acceptanceTestImplementation 'org.assertj:assertj-core:3.26.3'
     acceptanceTestImplementation 'io.rest-assured:rest-assured:5.5.0'
+    // 応答をAPI仕様(contracts/reservation-api.yaml)と機械照合する(meta/adr/0007)。
+    // 仕様ファイルを直接読ませ、スキーマの手写し(=二重管理)を避けるため(RSV-A監査の申し送り)
+    acceptanceTestImplementation 'com.atlassian.oai:swagger-request-validator-restassured:2.44.1'
     acceptanceTestRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
