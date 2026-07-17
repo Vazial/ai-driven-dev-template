@@ -102,10 +102,15 @@ jobs:
           cache: gradle
       - name: SUT起動(acceptanceプロファイル)
         run: |
-          ./gradlew bootRun --args='--spring.profiles.active=acceptance' &
+          # ログをファイルに落とす(後段のログ清潔チェックが読む。meta/adr/0014)
+          ./gradlew bootRun --args='--spring.profiles.active=acceptance' > sut.log 2>&1 &
+          # 死活監視: 存在しない部屋へのGET。404(部屋なし)が返れば起動+DB到達を確認できる。
+          # 404はApiExceptionHandlerが返す正常応答でありWARNを出さない(業務/seamエンドポイントを
+          # 死活監視に流用しない。ボディ無しPOSTはHttpMessageNotReadableExceptionのWARNを生む)
           for i in $(seq 1 60); do
-            curl -sf http://localhost:8080/actuator/health >/dev/null 2>&1 && break
-            curl -sf -o /dev/null -X POST http://localhost:8080/test-support/rooms 2>/dev/null && break
+            code=$(curl -s -o /dev/null -w "%{http_code}" \
+              http://localhost:8080/rooms/__readiness_probe__/rules 2>/dev/null || true)
+            [ "$code" = "404" ] && break
             sleep 2
           done
         env:
@@ -116,3 +121,12 @@ jobs:
         run: ./gradlew acceptanceTest
         env:
           RESERVATION_API_BASE_URL: http://localhost:8080
+      - name: SUTログの清潔さを検証(WARN/ERRORが無いこと。meta/adr/0014)
+        # 検証はpass/failだけでなくログの清潔さも見る。人間が目視で拾っていたWARNを機械に移す(P-01/P-10)。
+        # Springログのレベル表記(前後スペースで囲まれたWARN/ERROR)のみを対象にし、Gradleの小文字warning等は拾わない。
+        run: |
+          if grep -nE '[[:space:]](WARN|ERROR)[[:space:]]' sut.log; then
+            echo "::error::SUTログにWARN/ERRORがあります(上記)。検証インフラまたは実装の問題です"
+            exit 1
+          fi
+          echo "SUTログはクリーン(WARN/ERRORなし)"

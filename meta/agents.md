@@ -65,3 +65,5 @@ agentを起動し成果物を束ねる役（orchestrator）は、4agentのよう
 **書いてはならない**: ドメインルール・設計制約・解釈・答えといった実質的内容。これらをプロンプトに注入すると、(a)非ルーチン・非バージョン管理になり（P-04）、(b)orchestratorが劣化・バイアスの点になり（FR-006と同型）、(c)agentの独立導出を短絡させる（tester/reviewer分離が防ぐ「誤解の自己申告」と同じ失敗）。
 
 注入したくなったら、それは成文ソースの不足のサイン。まずソース（役割定義／ADR／契約／activeContext）に足してagentに読ませる。新規のドメイン判断が要るなら人間に回す。
+
+**実質的成果物を自ら作らない（meta/adr/0014）**: orchestratorは発見・routing・機械検証での確認だけを行う。実装コード・steps/dsl・契約はagentが作る。検証インフラのうち、ロジックを持つもの（build.gradle・govlint等）はdeveloperの領分（テスト付き）、薄い宣言的なCIワークフロー（.github/workflows/）のみorchestratorが直接編集してよい（PRのCIで自己検証されるため。ゲート変更は人間承認）。検証インフラの問題は発見即修正（自己採点）せず、修正をdeveloper/testerに委譲してフローに載せる。

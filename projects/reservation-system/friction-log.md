@@ -224,6 +224,28 @@ principles: [P-11]
 - 補足: 単一セッションで完結させ続けたこと自体が、クロスセッション経路の未検証を招いた。実地検証は成果物抽出（B層）と結合させず、ルーティン化されたスライスをフレッシュセッションに拾わせる形で別途行う
 
 ---
+
+## FR-011: 検証インフラ（CI・build・govlint・プローブ）に定義された所有者も検証経路も無く、orchestratorが場当たりで書き、WARNが4スライス見過ごされた
+
+```yaml
+id: FR-011
+date: 2026-07-17
+found_at: 人間
+slice: 規程改善バッチ後
+agents: [orchestrator]
+cause_category: 責務・検証経路の欠落
+cause_key: orchestrator-produces-artifact-directly
+pushed_to: [meta/adr/0014-verification-infra-ownership.md]
+status: 対応済み
+principles: [P-01, P-10, P-04]
+```
+
+- 事象: 人間がL4のSUTログにWARN（`HttpMessageNotReadableException: Required request body is missing`）を発見。原因はorchestratorが書いたCIの死活監視がボディ無しPOSTで業務/seamエンドポイントを叩いていたこと。pass/failしか見ていなかったため4スライス見過ごされた。人間の「CIは誰が作って誰が直すのが責務なのか。フローに載せないと検証できない」との問いで、検証インフラ（CI・build.gradle・govlint・プローブ）が権限マトリクスに1つも無く、orchestratorが場当たりで書いて手で検証（自己採点）していたと判明
+- 原因の仮説: 責務・検証経路の欠落 — 検証を回す仕掛けそのものの所有者と検証フローが未定義で、orchestratorにdefaultしていた。これは「orchestratorがrouting役を越えて実質的仕事をする」の**3回目**（FR-006: seam仕様の言い換え／FR-009: プロンプトへの答えの注入／本件: CIの実装代行）。**同族だが機構は異なる** — FR-006/009の cause_key `orchestrator-as-substantive-source` は「伝達経路への介入」、本件は「成果物の代行」。機械の3回目シグナルを鳴らすためにキーを寄せると機械検証を欺くことになるため、正直に別キー（`orchestrator-produces-artifact-directly`）とし、同族性はここと meta/adr/0014 のprose で繋ぐ。ADR-0011（注入の禁止）を一般則へ拡張する動機になった
+- 押し込み先: 一般則「orchestratorは実質的成果物を作らない」＋検証ハーネス（ci.yml=orchestrator・自己検証／build.gradle・govlint=developer・テスト付き）の所有明示（ADR-0014）。**ログ清潔チェックをL4に追加**し、目視のWARN発見を機械へ（P-01/P-10）。プローブは存在しない部屋へのGET（404・WARN無し）に修正
+- 補足: govlintに単体テストが無い（orchestratorの手作業検証の残骸）のもこのfrictionの一部。developerがテスト付きで持ち直す宿題
+
+---
 <!--
 記入のコツ:
 - 「その場で」書く。棚卸しでまとめて書かない（記憶で精度が落ちる）
