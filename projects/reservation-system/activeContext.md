@@ -14,7 +14,7 @@
 
 1. PR #14（B層を空に戻す＋root掃除＋govlint）→ CI → 人間マージ
 2. **② B層再定義をarchitecture-selection.mdに明文化**（architectが数行、低儀式。上記合意の転記。meta変更=マージで承認）。PR #14に同梱予定
-3. **① 承認アーティファクトの一般ルール化**（govlintが cause_key `approval-artifact-readability-convention-missing` の3回目 FR-002/003/008 を報告中）: 「人間が承認する成果物は先頭に平易な要約を置く」を一般則へ昇格するADR
+3. **① 承認アーティファクトの一般ルール化** → ADR-0016起草済み・PR中（ブランチ meta/adr-0016-approver-summary）。「人間が承認する成果物は先頭に承認者向けサマリを置く」をP-01の運用規約として明文化。原則P-12でなくADR（ADR-0011→0014の先例）。ADR-0002/0010はsupersedeせず包摂。機械検査は構造の有無のみ可能＝developer宿題。※ADR番号: 破棄したB層ADRの0015はtombstone欠番、本件は0016
 4. **クロスセッション経路の実地検証**: ルーティン化したスライスをフレッシュセッションに「HANDOFF読んで進めて」で拾わせる
 
 ## 確定した主要な判断
