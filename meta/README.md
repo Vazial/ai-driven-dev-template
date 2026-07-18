@@ -24,11 +24,11 @@
 
 ## agentの役割
 
-agents.md を参照（architect / developer / tester / reviewer の4役と分離の理由、標準フロー）。
+agents.md を参照（architect / designer / developer / tester / reviewer の役割分担と分離の理由、標準フロー。designerはUIを持つプロジェクトのみ登場する、meta/adr/0017）。
 
 ## 未整備（今後の作業）
 
-- [x] agents/ — subagent個別定義（architect / developer / tester / reviewer。設計はagents.md）
+- [x] agents/ — subagent個別定義（architect / designer / developer / tester / reviewer。設計はagents.md）
 - [x] templates/ — adr / pull-request / audit-report / friction-log / active-context / architecture / acceptance-scenario の7雛形
 - [x] guardrails/ — branch protection・deny設定・CI設定の実体ファイル（.claude/settings.json、.github/workflows/ci.yml、guardrails/。CIの実コマンドはスライスRSV-Cで実装済み。step定義lintツールは未確定）
 - [x] 検証: 予約システムプロジェクトへの初適用（スライスRSV-C完了・friction log運用中: FR-001〜005）

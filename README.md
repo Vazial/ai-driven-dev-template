@@ -40,11 +40,12 @@ AIが書いたコードを人間が読んで確かめる運用は、量が増え
 詳細は [meta/verification.md](meta/verification.md)。CIは下の段が落ちたら上を実行しない
 （[.github/workflows/ci.yml](.github/workflows/ci.yml)）。
 
-## 4つのagent
+## agentの構成
 
 | agent | 役割 | 触らないもの |
 |---|---|---|
 | architect | 契約のドラフト・整合性チェック・アーキテクチャ選定 | 実装コード |
+| designer | 承認済み契約をUI/UXデザイン（画面モック・下書きコピー）に翻訳する。**UIを持つプロジェクトのみ登場** | 実装コード（書かない・読まない） |
 | developer | 実装と単体テスト。L1〜L3を緑にする | 契約・step定義 |
 | tester | 承認済みシナリオからstep定義とテストDSLを作る | 実装コード（コンテキストを持たずに動く） |
 | reviewer | testerの成果物を独立に監査し、対訳表を作る | step定義 |
@@ -52,6 +53,9 @@ AIが書いたコードを人間が読んで確かめる運用は、量が増え
 **tester と reviewer を分けているのが肝**で、これは「誤解の自己申告」を防ぐため。
 自分が書いたstepを自分で監査させると、シナリオを読み違えたまま
 「シナリオ通りです」と報告が返ってくる。理由は [meta/agents.md](meta/agents.md) 3節。
+
+designerも実装コード（src/）を読まないが、理由は別（実装都合のバイアスが視覚デザインに
+及ぶのを防ぐため）。詳細は [meta/adr/0017](meta/adr/0017-introduce-designer-role.md)。
 
 ## 構成
 
@@ -77,7 +81,8 @@ B層（技術スタック別・設計パック別の部品）は、実プロジ�
 4. architectに複雑度を評価させ、設計パックを選ばせる（ADR第1号として記録する。
    [meta/architecture-selection.md](meta/architecture-selection.md)）
 5. 最初の縦切り1スライスの契約を書かせ、**人間が承認する**
-6. developer と tester を並行で走らせる
+6. （UIを持つプロジェクトなら）designerに画面モックを作らせ、**人間が承認する**
+7. developer と tester を並行で走らせる
 
 ## 状態
 
