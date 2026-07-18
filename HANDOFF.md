@@ -13,7 +13,7 @@
 
 1. **projects/<プロジェクト>/activeContext.md** — 「今どこにいて次に何をするか」の唯一のSSOT（P-11）。フレッシュセッションはここで進行中のスライスに合流する。現在の適用先は `projects/reservation-system/`
 2. **meta/PRINCIPLES.md** — 全agentが常時ロードする信条
-3. **meta/agents.md** — 4agent体制（architect / developer / tester / reviewer）と、コンテキスト分離の理由と、スライスの標準フロー
+3. **meta/agents.md** — agent体制（architect / designer / developer / tester / reviewer。designerはUIを持つプロジェクトのみ登場、meta/adr/0017）と、コンテキスト分離の理由と、スライスの標準フロー
 4. **meta/README.md** — A層の文書索引（残りの規程・雛形・道具はここから辿る）
 
 必要に応じて meta/verification.md（多段保証L1〜L5）、meta/permissions.md（権限・エスカレーション）を参照する。

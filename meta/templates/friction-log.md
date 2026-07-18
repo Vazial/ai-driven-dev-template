@@ -16,7 +16,7 @@ id: FR-NNN
 date: YYYY-MM-DD
 found_at: L1 | L2 | L3 | L4 | L5 | 人間      # どの段で発見したか
 slice: <スライスID>                            # プロジェクト開始 等でもよい
-agents: [<関与したagent>]                      # orchestrator / architect / developer / tester / reviewer
+agents: [<関与したagent>]                      # orchestrator / architect / designer / developer / tester / reviewer
 cause_category: <原因の大分類>                 # 規程の欠落 / 検証の不足 / 伝達の構造 / ... （粒度は粗くてよい）
 cause_key: <kebab-case-の具体的な原因キー>     # 既存を見て、同じ原因なら同じキーを使う
 pushed_to: []                                  # 押し込み先のファイルパス（実在をlintが検証する）
