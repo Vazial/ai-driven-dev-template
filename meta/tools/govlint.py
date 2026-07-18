@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 ADR_STATUSES = {"提案中", "承認済み", "superseded"}
 FR_STATUSES = {"未対応", "対応済み"}
-FR_FOUND_AT = {"L1", "L2", "L3", "L4", "L5", "人間"}
+FR_FOUND_AT = {"L1", "L2", "L3", "L4", "L5", "人間", "AI"}
 
 errors: list[str] = []
 reports: list[str] = []

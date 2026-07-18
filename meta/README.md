@@ -32,4 +32,4 @@ agents.md を参照（architect / developer / tester / reviewer の4役と分離
 - [x] templates/ — adr / pull-request / audit-report / friction-log / active-context / architecture / acceptance-scenario の7雛形
 - [x] guardrails/ — branch protection・deny設定・CI設定の実体ファイル（.claude/settings.json、.github/workflows/ci.yml、guardrails/。CIの実コマンドはスライスRSV-Cで実装済み。step定義lintツールは未確定）
 - [x] 検証: 予約システムプロジェクトへの初適用（スライスRSV-C完了・friction log運用中: FR-001〜005）
-- [ ] B層: 設計パックの実体（最初の該当プロジェクト出現時に作る。パック例はarchitecture-selection.md 4節）
+- [ ] B層: 設計パックの実体。予防的に作らない。同スタック・同型の2本目のプロジェクトが現れた時に昇格で作る（meta/architecture-selection.md 6節）

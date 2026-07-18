@@ -62,7 +62,8 @@ guardrails/    強制の実体（branch protection手順・lint）
 .claude/       agent定義とdeny設定
 ```
 
-B層（技術スタック別・設計パック別の部品）は意図的に空にしてある。
+B層（技術スタック別・設計パック別の部品）は、実プロジェクトで実証された(スタック×役割)を
+「昇格」して埋めていく任意のカタログ（A→Bの一方向依存。前提でなく選択肢）。まだ何も昇格していない。
 必要になったプロジェクトが現れた時に作る（P-02: 全体を先に設計しない）。
 
 ## 使い方
@@ -82,11 +83,9 @@ B層（技術スタック別・設計パック別の部品）は意図的に空�
 
 **実験中。実運用の推奨はまだできない。**
 
-- A層の規程・agent定義・雛形は一通り揃っている
-- 会議室予約システムへの初適用を進行中。スライス2本（作成・キャンセル）が
-  4agentフローを一周して全段検証を通った
-- B層は未着手
-- CIはL1〜L4がリモートで全段パスしている
+現在どこまで進んでいるか（揮発性の進捗）はこのREADMEには書かない（P-11: 現在状態は
+activeContextが持ち、静的文書に進捗を持たせるとドリフトする。meta/adr/0013・0014の教訓）。
+最新の状態は [projects/reservation-system/activeContext.md](projects/reservation-system/activeContext.md) を見る。
 
 うまくいかなかったことは [projects/reservation-system/friction-log.md](projects/reservation-system/friction-log.md)
 に、AIが迷った・誤った瞬間としてその場で記録している。

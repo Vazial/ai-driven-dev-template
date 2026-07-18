@@ -246,6 +246,49 @@ principles: [P-01, P-10, P-04]
 - 補足: govlintに単体テストが無い（orchestratorの手作業検証の残骸）のもこのfrictionの一部。developerがテスト付きで持ち直す宿題
 
 ---
+
+## FR-012: ルート直下の静的文書（README・activeContext）が揮発性の進捗を抱えて陳腐化していた（FR-010と同因の2回目）
+
+```yaml
+id: FR-012
+date: 2026-07-18
+found_at: AI
+slice: B層パック抽出（ADR-0015）の副産物
+agents: [orchestrator, architect]
+cause_category: 揮発性状態の置き場の誤り
+cause_key: volatile-state-in-static-doc
+pushed_to: [README.md, meta/README.md]
+status: 対応済み
+principles: [P-11, P-04]
+```
+
+- 事象: B層パック抽出中に、architectがroot README.mdとroot activeContext.mdの陳腐化を圏外事項として指摘。README.mdは「状態」節に進捗（スライス2本・B層未着手・L1〜L4）を抱えて実態（4本・B層実体化・L0〜L4）とずれ、パックが載れば「B層は空」が嘘になる。root activeContext.md（7/13）は初日の孤児で、自分で「詳細はprojects側を見よ」と書きつつ一度も更新されず二重の状態文書として残っていた
+- 原因の仮説: 揮発性状態の置き場の誤り — 静的な公開文書（README）に進捗を持たせた。これは**FR-010（HANDOFFが揮発性の「次のタスク」を抱えた）と同一原因の2回目**であり、cause_keyを正直に一致させた（機構が本当に同じなので寄せてよい。FR-011とは逆のケース）。ただし一般則は既にP-11「現在はactiveContextだけが持つ」として存在しており、これは新ルールの欠落でなく**施行漏れ**。root activeContextはC層（各プロジェクト）に置くとmeta/README.md 17行目で成文化済みのため、ルート孤児は削除が正しい
+- 押し込み先: README.mdの「状態」節を削りactiveContext/friction-logへのポインタに（P-11の適用）。root activeContext.md孤児を削除。新ADRは立てない（P-11で足りる）。govlintは cause_key `volatile-state-in-static-doc` の2回目を報告する — 3回目が出たら「静的文書に進捗表現が混入していないか」の機械検査を投資する判断に進む（現時点はP-11の人手適用で足りる）
+
+---
+
+## FR-013: B層パックを実需要（N=1）の前に作った。P-02/P-05違反を、orchestratorがバックログ項目を premise 未検証のまま実行して起こした
+
+```yaml
+id: FR-013
+date: 2026-07-18
+found_at: 人間
+slice: B層パック抽出（ADR-0015）の直後
+agents: [orchestrator, architect]
+cause_category: 予防的な作り込み（早すぎる抽象化）
+cause_key: built-ahead-of-need
+pushed_to: [meta/architecture-selection.md]
+status: 対応済み
+principles: [P-02, P-05]
+```
+
+- 事象: activeContextのバックログにあった「③ B層抽出」を、orchestratorが「そもそもこれ要るか」を問わずに実行し、architectを動かして `packs/domain-model-java-spring/` とADR-0015を作った。人間が「B層って必要？ テンプレにすべき？」と premise を問い、破棄に至った。スタックは reservation-system 1本のみ（N=1）で、パックは重複を1つも償却しておらず、しかも参照実装を"描写"する形（複製→ドリフト病、FR-010/012と同型）だった
+- 原因の仮説: 予防的な作り込み — 2本目の同スタックプロジェクトが無い＝本物の重複が無いのに抽出した。典型的な「1アプリからのフレームワーク早すぎ抽出」。根本は、テンプレートの核である**P-02/P-05をorchestrator自身がバックログ項目に適用しなかった**こと。「リストに載っている」を実行理由にした。P-02チェック（本当に今要るか）を人間が代わりに行う結果になった
+- 押し込み先: パックとADR-0015を破棄しB層を空に戻す。**B層の位置づけを「昇格で埋まる任意のカタログ」に再定義**（A→B一方向・型=A/実体=B・低儀式・マッチ制。architecture-selection.mdにarchitectが数行で明文化）。「実プロジェクトで(スタック×役割)が実証され2本目が欲しがった時に、汎用スケルトンとして昇格」を唯一の充填経路とし、書き溜めを禁ずる
+- 補足: orchestratorはバックログ項目の着手前に「P-02: これは今必要か」を通す。ディスパッチ前の premise 検証はrouting役の責務に含む
+
+---
 <!--
 記入のコツ:
 - 「その場で」書く。棚卸しでまとめて書かない（記憶で精度が落ちる）
