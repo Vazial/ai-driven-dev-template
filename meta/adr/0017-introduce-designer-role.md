@@ -1,11 +1,11 @@
 ---
 id: 0017
 scope: meta
-status: 承認済み
+status: superseded
 date: 2026-07-19
 approved_by: "本PRのマージをもって承認"
 supersedes: []
-superseded_by: null
+superseded_by: 0018
 relates_to: [P-01, P-02, P-07]
 ---
 # ADR-0017: agent役割にdesignerを新設する
@@ -180,3 +180,8 @@ designerの一発の出力が実用水準に届かないことを前提に、明
   実装する」という拘束を明示していない。本ADRでは変更しない。並行モデルにおいても、developerは「人間が
   承認した契約とモック」を実装する立場は変わらない。実務上の齟齬が生じたらfriction-logを経て改めて
   提案する（P-05）
+
+---
+> **superseded by ADR-0018（2026-07-19）**: designer役の存在・並行モデル・デザインシステム原則・
+> refinementループ原則は引き継がれるが、「発案者」という責務の中身は「design integrator（外部設計の
+> 統合役）」へ再定義された。現行の役割定義はmeta/adr/0018を参照。本文はP-06により編集しない。
