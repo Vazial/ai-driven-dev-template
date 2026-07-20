@@ -195,3 +195,12 @@ ADR-0019が指定した`meta/tools/commission-design.sh`（Gemini CLIラッパ�
   （「原案としてOKな水準」）をactiveContext.mdに反映する
 - friction-log: 伝送方式の誤りにより設計を得られなかった事象をFR-003として記録した（architectの
   判断。cause_key: agentic-cli-unsuitable-for-design-delegation）
+
+---
+
+> **トレーラー（P-06により本文は編集しない。参照のみ追記）**: meta/adr/0021が、本ADRが「designerが
+> 行う」と記述した(b)外部AI実行の実行主体を明確化した（実態に合わせ、orchestratorがdesignerの依頼を
+> 受けて代行する）。また、外部AI成果物の改修ガバナンス（人間レビュー後の改修を許容し、「おおまかな
+> コンポーネント構成」の凍結によって劣化を検知する）を新たに定めた。本ADRが規定した伝送方式
+> （Generative Language APIの直接呼び出し）・成果物形式（実プロジェクトの受け皿でのTSX描画）・
+> ブリーフ構成・無料枠運用規約は、いずれもmeta/adr/0021によって変更されていない。

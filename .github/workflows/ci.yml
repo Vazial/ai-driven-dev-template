@@ -32,6 +32,8 @@ jobs:
         run: python -m unittest meta.tools.test_govlint
       - name: ADR・friction-log・契約IDの整合を検証
         run: python meta/tools/govlint.py
+      - name: commission_design_api.pyの単体テスト(ネットワーク不使用。meta/adr/0014・0020)
+        run: python -m unittest meta.tools.test_commission_design_api
 
   l1-unit-lint:
     name: "L1: 実装の内部品質(単体テスト・lint・mutation)"
