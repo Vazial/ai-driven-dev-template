@@ -19,10 +19,8 @@
  *   外部AI（Gemini）が返したもの（試行1・人間評価「原案としてOK」）。**無改変**。
  *   内蔵ダミーデータのみで動く。
  *
- * 再現性検証(試行2)のエビデンスは design/verification/reproducibility-check/ に集約している
- * （BookingDesignTrial2.tsx はそこに記録として置いてある。骨格の分散が観測された。
- * 詳細は activeContext.md・friction-log.md FR-004）。再描画したいときはそのTSXを
- * このディレクトリに一時的に置く。
+ * （再現性検証で単発実行の出力骨格に分散があることが分かっている。試行2の実ファイルは
+ * 残していない。詳細は friction-log.md FR-004・activeContext.md）
  */
 import { Toaster } from "@/components/ui/sonner"
 
