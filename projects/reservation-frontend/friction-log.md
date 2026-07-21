@@ -1,0 +1,166 @@
+# friction-log.md
+
+> 追記専用。AIが迷った・誤った・曖昧な指示で事故った瞬間を**その場で**記録する（P-05）。
+> 各エントリは「下の段への押し込み」（P-10）まで書けたら完了。テンプレート改善の一次データ。
+>
+> 様式（meta/adr/0012）: 見出しの直後に機械可読なメタデータ（```yaml ブロック）、その後にprose。
+> **cause_key** は「どの具体的な欠落か」を示すkebab-caseのキー。**新しいFRを書く前に既存のcause_keyを見て、同じ原因なら同じキーを再利用すること**。
+> 同一キーの2回目以降は `meta/tools/govlint.py` が構造的欠陥のシグナルとして報告する（判断は人間。lintは失敗させない）。
+
+---
+
+## FR-001: designer（内部AI）によるUI/UX画面設計が、2回にわたり実用水準に届かなかった
+
+```yaml
+id: FR-001
+date: 2026-07-19
+found_at: 人間
+slice: プロジェクト開始（画面設計・RFE-A）
+agents: [designer]
+cause_category: 設計手法の限界
+cause_key: agent-ui-ux-origination-weak
+pushed_to: [meta/adr/0018-redefine-designer-as-integrator.md]
+status: 対応済み
+principles: [P-10]
+```
+
+- 事象: designer（agent, model: opus）が2回にわたりRFE-A画面のUI/UXモックを発案したが、いずれも
+  人間評価で実用水準に届かなかった（「デザイン以前の問題」）。同じユースケースを人間が外部AI
+  （Gemini）に依頼したところ、タイムライン・ダッシュボード＋クリック予約＋自分の予約管理という設計が
+  実用水準に到達し、スパイクで実動作も確認できた
+- 原因の仮説: 本テンプレートの機械化された正しさは、正しさが規則で定義できるバックエンド（契約・
+  シナリオ・API仕様の整合）では機能するが、フロントエンドのプロダクト/UX品質は"発案"を要する。
+  この"発案"はAIエージェント単独（少なくとも現行の内部agentの構成・model・プロンプト）では弱く、
+  規程やプロンプトの調整では埋まらない可能性が高い
+- 押し込み先: designer役を「発案者」から「design integrator（外部設計の統合役）」へ再定義した
+  （meta/adr/0018、ADR-0017をsupersede）。内部AIは発案せず、外部AI（Gemini等）へのブリーフ作成・
+  実行の仲介（当面は人間-in-the-loop）・契約との突き合わせ（reconciliation）・承認可能なモックへの
+  仕上げに徹する
+- 補足: この学びはADR-0017（designerを発案者と定義）をsupersedeする形で構造化した。同一原因の再発
+  検出用に cause_key を`agent-ui-ux-origination-weak`とする（今後、他プロジェクト・他agentで同種の
+  「発案の弱さ」が観測されたら、このキーを再利用すること）
+
+---
+
+## FR-002: 狭い・薄いデザインブリーフが、外部AIによる凡庸な設計を生んだ
+
+```yaml
+id: FR-002
+date: 2026-07-19
+found_at: 人間
+slice: プロジェクト開始（design integrator実行スパイク・自動化検証）
+agents: [designer, orchestrator]
+cause_category: 設計手法の限界
+cause_key: narrow-brief-yields-weak-external-design
+pushed_to: [meta/adr/0019-automate-external-design-via-cli.md, meta/templates/design-brief.md]
+status: 対応済み
+principles: [P-10]
+```
+
+- 事象: designerの(b)外部AI実行を自動化するスパイク（Gemini CLIヘッドレス実行）の中で、同一モデル
+  （gemini-3.5-flash）に対し、体験全体・現状の不満点を要件として明示し「既存APIに縛られず理想を
+  描いてよい」と指示したリッチなブリーフでは実用水準の設計（タイムライン・ダッシュボード）が得られた
+  一方、「パネル1枚を簡潔に」という狭いブリーフでは凡庸な結果しか得られなかった
+- 原因の仮説: FR-001の原因の仮説（"発案"はAIエージェント単独では弱い）は一部不正確だった。同じ
+  モデルでも入力（ブリーフ）の豊かさ次第で出力品質が大きく変わることが分かった。つまり弱さの所在は
+  モデルそのものではなく、**発注情報（ブリーフ）の具体性・要件の明示度**にある。designerの(a)ブリーフ
+  作成が下流品質を決める、というADR-0018の主張の直接の実証でもある
+- 押し込み先: designer役定義（.claude/agents/designer.md・meta/agents/designer.md）の(a)に「リッチな
+  ブリーフ」の必須要素（目的・対象ユースケース・ドメインルール・現状の不満点を要件として明示・「既存
+  APIに縛られず理想を」という指示・採用済みデザインシステムの指定・成果物の指定）を明記し、雛形
+  meta/templates/design-brief.mdを新設した（meta/adr/0019）
+- 補足: FR-001とは異なるcause_keyとした（FR-001は「エージェント単独の発案が弱い」という当初の仮説、
+  FR-002は「弱さの正体はブリーフの薄さであり、モデルではない」という、それを精緻化する発見のため）。
+  今後、同種の「入力の具体性が出力品質を左右する」事象が観測されたら、このキーを再利用すること
+
+---
+
+## FR-003: ADR-0019が規定した外部AI伝送方式（Gemini CLI）が、設計成果物でなく実装計画を返した
+
+```yaml
+id: FR-003
+date: 2026-07-20
+found_at: 人間
+slice: プロジェクト開始（design integrator実行・受け皿構築）
+agents: [architect, orchestrator]
+cause_category: 検証の不足
+cause_key: agentic-cli-unsuitable-for-design-delegation
+pushed_to: [meta/adr/0020-correct-external-design-transport.md]
+status: 対応済み
+principles: [P-08, P-10]
+```
+
+- 事象: meta/adr/0019は、designerの(b)外部AI実行をGemini CLI（`@google/gemini-cli`）のヘッドレス
+  実行で自動化すると規定した。実際にこの経路を使ってブリーフを渡したところ、設計成果物ではなく
+  実装計画＋「進めてよいか」の確認が返った。genericな部品リストのみで視覚的発想が無かった。Gemini
+  CLIはエージェント型のコーディングCLI（Claude Codeと同種）であり、「計画を立てて実装しにいく」道具
+  であって、設計を委託する用途には適さないことが判明した
+- 原因の仮説: ADR-0019起草時点で「CLI経由の自動実行が動く」ことは実証されていたが、**返ってきた
+  成果物が実際に「設計」として使える中身かどうかは十分に検証されていなかった**。ツールが動作すること
+  （疎通確認）と、そのツールが目的（設計の委託）に適した出力を返すことは別の検証軸であり、前者だけ
+  確認して後者を確認しないままADRに規定してしまった
+- 押し込み先: 伝送方式をGenerative Language APIの直接呼び出し（`generateContent`）に訂正した
+  （meta/adr/0020）。CLI経由の自動化（案A）は取り下げ、developer宿題もAPI直叩き版に差し替えた
+- 補足: 傍証として、人間がGeminiアプリ（チャット）ではflash-liteでも十分な設計が返ったと報告して
+  おり、モデルの能力の問題ではなく伝送方式（エージェント型CLI vs 素のプロンプト→テキストAPI）の問題
+  だったと裏付けられた。同一原因の再発検出用にcause_keyを`agentic-cli-unsuitable-for-design-delegation`
+  とする（今後、他の外部ツール連携でも「ツールが動くこと」と「目的に適した出力を返すこと」を分けて
+  検証すること）
+
+---
+
+## FR-004: 独立作成した同水準ブリーフでも外部AI単発実行の出力骨格に分散があり、承認水準への到達は保証されない
+
+```yaml
+id: FR-004
+date: 2026-07-20
+found_at: 人間
+slice: プロジェクト開始（designerフロー再現性検証）
+agents: [designer, orchestrator]
+cause_category: 設計手法の限界
+cause_key: external-design-single-run-skeletal-variance
+pushed_to: [meta/templates/design-brief.md]
+status: 対応済み
+principles: [P-10]
+```
+
+- 事象: designerフロー(a)(b)の再現性を検証するため、過去の試行の記憶を持たないdesignerに、既存
+  ブリーフ・成果物・reconciliationを一切見せず、同一スコープ（空き確認／予約／自分の予約・キャンセル）
+  のブリーフを独立に書かせた（試行2、`design/briefs-trial2/room-availability-and-booking-brief.md`）。
+  同一モデル（`gemini-3-flash-preview`）・同一伝送（`meta/tools/commission_design_api.py`によるAPI
+  直叩き）で得た成果物（`src/design-preview/BookingDesignTrial2.tsx`）は、8節構成・情報密度こそ承認
+  済みの試行1（`design/briefs/room-booking-experience-brief.md` → `BookingDesign.tsx`）と同水準に
+  達したにもかかわらず、**画面の骨格が退行した**——試行1は全部屋横断のタイムライン（帯・一望・予約者名
+  表示）だったのに対し、試行2は部屋を1つ選んでから日付・スロットを見るステップフロー（人間が元々
+  嫌っていた「部屋＋日付を指定して見ないと分からない」構図、かつ「予約済」表示のみで誰の予約かは
+  見えない）に退行した。描画・機能は正常（エラーなし）だが、人間評価では試行1が明確に上
+- 原因の仮説: 差の要因を特定できた。試行1の最終ブリーフには人間由来の不満点4件（検索ゲート不要・
+  タイムライン可視化・誰が押さえているか見えるようにしたい・クリックで予約したい）が「解決したい
+  問題」節に入っていたのに対し、独立に書かれた試行2のブリーフは同じ節に軽い2点（識別子の手入力を
+  減らしたい・空き確認と予約を地続きにしたい）しか持てなかった——記憶を持たないdesignerは人間の元々
+  の不満を知り得ないため。つまり**外部AIの単発実行には出力骨格そのものの分散が本質的に存在し、ブリーフ
+  の構成・密度が同水準でも骨格まで一致する保証はない**。ただし「解決したい問題」節の充実度がこの分散
+  を抑える主要な梃子であることも同時に確認できた。過去の実測では不満点なしのブリーフでもタイムライン
+  に到達した回があり、「不満点が無くても当たりを引きうる」ことと「あると床が上がる（外れを引きにくく
+  なる）」ことは両立する
+- 押し込み先: `meta/templates/design-brief.md`の「解決したい問題」節を、**任意のままだが、人間由来の
+  不満点・要望が既に存在する場合は必ず記入することを推奨**する記述に改訂した。原因が「designerや
+  orchestratorの挙動の誤り」ではなく「単発生成という仕組みが本来的に持つ分散」であるため、agentの
+  挙動を正す形の押し込みではなく、発注情報（ブリーフ）の作り方を強化する形の押し込みとした。FR-002と
+  同じ作用点（ブリーフの中身が出力品質を左右する）だが、FR-002が「ブリーフ全体の薄さ」を問題にしたのに
+  対し、本件は「同水準に充実したブリーフでも、不満点という特定の一節の有無だけで骨格が割れうる」という
+  より狭く・より強い実証であるため、cause_keyは分けた
+- 補足（friction-log記載の要否についての判断）: 本件は「AIが迷った・誤った・曖昧な指示で事故った」もの
+  ではなく、正しく機能した仕組み（designerが自発的にpackage.json・src/components/ui/を確認して部品を
+  具体名で列挙する等）の上で観測された**確率的な出力分散**であり、friction-log冒頭の定義（P-05）から
+  厳密には外れる面がある。それでもFRとして記録する判断をした理由: (1) 具体的な押し込み先（雛形の推奨
+  強化）が実際に生じており、これは「上の段（人間の比較評価）で見つかった差を下の段（テンプレート）の
+  検証に反映する」（P-10）に該当する、(2) 試行1を基準にする根拠（なぜ試行2ではないか）を将来の
+  designer・orchestratorが参照できる形で残す必要がある、(3) FR-002・FR-003と同じ「(a)(b)の出力品質」
+  という系譜にあり、cause_keyの再利用可能性を将来に残す価値がFR化のコストを上回ると判断した。今後、
+  同一モデル・同水準ブリーフでも骨格が割れる事象が観測されたら、このキーを再利用すること
+
+---
+<!-- 記入のコツはmeta/templates/friction-log.mdを参照 -->
+</content>
+</invoke>

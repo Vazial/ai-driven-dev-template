@@ -1,0 +1,348 @@
+/*
+  画面モック 共有スタイル — 会議室の空き状況を確認する画面(スライスRFE-A)
+  意匠: shadcn/ui(Radix + Tailwind)の "neutral" テーマを近似した埋め込みCSS。
+    人間がデザインシステムにshadcn/uiを選定した決定(2026-07-19)に基づく、
+    先に却下された自作CSS版(旧mock.css)を supersede する置き換え。
+  重要: これはshadcnの意匠の「視覚的近似」であり、src/のcopy-inコンポーネントではない。
+    実体のshadcnコンポーネントは後でdeveloperがsrc/に置く(ADR-0004の境界: モックは視覚の近似、
+    実装が実体)。このCSSはビルド対象外・検証パイプライン外・出荷経路に乗らない。
+  自己完結: 外部CDN・Webフォント・JSに一切依存せず、このファイル同梱のみで単体レンダリングできる。
+  忠実度(ADR-0004改訂版 §1): 実レイアウト・余白・視覚階層・状態ごとの見えを含む。
+    確定配色/確定コピー/レスポンシブ/実装(React)は含まない。ここでの配色はshadcn既定の代表値。
+*/
+
+/* ---- shadcn/ui neutral デザイントークン(light)の近似 ---- */
+:root {
+  --background: hsl(0 0% 100%);
+  --foreground: hsl(240 10% 3.9%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(240 10% 3.9%);
+  --muted: hsl(240 4.8% 95.9%);
+  --muted-foreground: hsl(240 3.8% 46.1%);
+  --border: hsl(240 5.9% 90%);
+  --input: hsl(240 5.9% 90%);
+  --primary: hsl(240 5.9% 10%);
+  --primary-foreground: hsl(0 0% 98%);
+  --secondary: hsl(240 4.8% 95.9%);
+  --secondary-foreground: hsl(240 5.9% 10%);
+  --accent: hsl(240 4.8% 95.9%);
+  --destructive: hsl(0 84.2% 60.2%);
+  --destructive-foreground: hsl(0 0% 98%);
+  --ring: hsl(240 5% 65%);
+  --radius: 0.5rem;
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  /* shadcnはInterを使うが、CDN非依存のためsystem UIスタックで近似 */
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN",
+    "Noto Sans JP", Meiryo, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--foreground);
+  /* アプリシェルらしい極薄グレー地。白カードが浮いて視覚階層が出る */
+  background: hsl(240 5% 96%);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- 画面コンテナ ---- */
+.screen {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 40px 24px 64px;
+}
+
+.screen__title {
+  margin: 0 0 6px;
+  font-size: 24px;
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.screen__desc {
+  margin: 0 0 28px;
+  color: var(--muted-foreground);
+  font-size: 14px;
+}
+
+/* ---- Card (shadcn Card) ---- */
+.card {
+  background: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 2px 0 hsl(240 5% 10% / 0.05); /* shadow-sm */
+}
+
+.card + .card { margin-top: 20px; }
+
+.card__header {
+  padding: 20px 24px 0;
+}
+
+.card__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.card__desc {
+  margin: 4px 0 0;
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+
+.card__content {
+  padding: 20px 24px 24px;
+}
+
+/* ---- Form (shadcn Label + Input + Button) ---- */
+.query-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.label {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.input {
+  height: 40px;
+  width: 100%;
+  padding: 0 12px;
+  font-size: 14px;
+  color: var(--foreground);
+  background: var(--background);
+  border: 1px solid var(--input);
+  border-radius: calc(var(--radius) - 2px);
+  outline: none;
+}
+
+.input:focus {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px hsl(240 5% 65% / 0.35); /* focus ring 近似 */
+}
+
+.input[readonly] { color: var(--foreground); }
+
+.input-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+/* Button (shadcn default / outline variant) */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 18px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius) - 2px);
+  cursor: pointer;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.btn--primary { background: var(--primary); color: var(--primary-foreground); }
+.btn--primary:hover { background: hsl(240 5.9% 16%); }
+
+.btn--outline {
+  background: var(--background);
+  color: var(--foreground);
+  border-color: var(--input);
+}
+.btn--outline:hover { background: var(--accent); }
+
+.btn__icon { width: 16px; height: 16px; }
+
+/* ---- 空き時間帯リスト ---- */
+.result__heading {
+  margin: 0 0 2px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.result__caption {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
+.slot-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.slot-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--background);
+}
+
+.slot-time {
+  font-size: 15px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+/* Badge (shadcn Badge secondary) */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+}
+
+.badge--secondary { background: var(--secondary); color: var(--secondary-foreground); }
+
+.badge--dot::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: hsl(142 71% 45%); /* 空きを示す緑ドット(代表色) */
+}
+
+/* ---- Empty state (終日埋まり) ---- */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 40px 24px;
+}
+
+.empty__icon {
+  width: 44px;
+  height: 44px;
+  color: var(--muted-foreground);
+  margin-bottom: 16px;
+}
+
+.empty__title {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.empty__desc {
+  margin: 0;
+  max-width: 42ch;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
+/* ---- Alert (shadcn Alert destructive) ---- */
+.alert {
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--background);
+}
+
+.alert--destructive {
+  border-color: hsl(0 84.2% 60.2% / 0.5);
+  background: hsl(0 84.2% 60.2% / 0.04);
+  color: var(--destructive);
+}
+
+.alert__icon {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.alert__body { min-width: 0; }
+
+.alert__title {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.alert__desc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: hsl(0 74% 42%);
+}
+
+/* ---- モック運用の注記(承認補助。画面の一部ではない) ---- */
+.mock-note {
+  margin: 28px 0 0;
+  padding-top: 16px;
+  border-top: 1px dashed var(--border);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+}
+
+.mock-note a { color: hsl(240 5.9% 30%); }
+
+/* ---- index(入口)専用 ---- */
+.state-list, .nodecide-list {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+.state-list li, .nodecide-list li { margin: 6px 0; }
+
+.state-list a { color: var(--foreground); font-weight: 500; }
+
+.section-label {
+  margin: 24px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+
+code {
+  font-family: ui-monospace, "SFMono-Regular", "Menlo", "Consolas", monospace;
+  font-size: 12.5px;
+  background: var(--muted);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
