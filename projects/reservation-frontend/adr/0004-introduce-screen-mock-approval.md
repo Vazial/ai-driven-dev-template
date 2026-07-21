@@ -53,6 +53,13 @@ relates_to: [P-01, P-02]
 > activeContext.mdに記録）。既存のRFE-Aモック（design/mocks/rfe-a-availability-view/、静的HTML）は
 > この改訂によりさらに旧式となり、作り直しの際はshadcn/uiベースのTSX・受け皿方式に従う。escape hatch
 > の読み替え（伝送方式の訂正・ブリーフ構成の精緻化を含む）はmeta/adr/0020を参照。
+>
+> 改訂: 2026-07-20（追加・参照追記）RFE-Aの静的モックの**実ファイル**（旧 `design/mocks/rfe-a-availability-view/`
+> 配下のHTML/CSS）は**リポジトリから削除した**。理由: (1) 最終成果物にならない暫定物、(2) 上記改訂の
+> とおり形式がsuperseded（静的HTML→TSX×受け皿）、(3) `src/design-preview/BookingDesign.tsx`（試行1）
+> がRFE-Aのスコープを包含する。本ADR本文中の `design/mocks/rfe-a-availability-view/` への言及は、
+> **削除済みの旧モックへの歴史的な例示**として読むこと（実ファイルはもう存在しない）。§1・§2の正式な
+> 条文改訂（未着手）で置き場規約もあわせて整理する。
 
 ## 文脈
 

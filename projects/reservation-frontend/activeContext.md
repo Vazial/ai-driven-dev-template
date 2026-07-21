@@ -97,10 +97,11 @@ reproducibility-check/room-availability-and-booking-brief.md`、`design/verifica
 なら必ず記入することを推奨」する記述に改訂した。
 
 design.md・ARCHITECTURE.md・実プロジェクトの実装コード（design-preview以外）はまだ無い。既存のRFE-A
-モック（design/mocks/rfe-a-availability-view/、静的HTML）は、designer新設・design integrator再定義・
-shadcn選定・伝送方式訂正・成果物形式変更のいずれよりも前にarchitectが作成したものであり、内容の再検討
-は行っていない。**現行の方式（TSX＋src/design-preview/受け皿）とは既に形式が異なる**ため、作り直しが
-前提になる。
+モック（旧 design/mocks/rfe-a-availability-view/、静的HTML）は、designer新設・design integrator再定義・
+shadcn選定・伝送方式訂正・成果物形式変更のいずれよりも前にarchitectが作成したもの。**現行の方式
+（TSX＋src/design-preview/受け皿、meta/adr/0020でsuperseded）とは形式が異なり、かつBookingDesign.tsx
+（試行1）がRFE-Aのスコープを包含する**ため、この静的モックのファイルはリポジトリから削除した（最終
+成果物にならない暫定物のため。ADR-0004にも改訂ノートで記録）。
 
 ## 確定した主要な判断
 
@@ -183,9 +184,9 @@ shadcn選定・伝送方式訂正・成果物形式変更のいずれよりも�
    拡大判断・営業時間反映漏れの扱い・拒否理由提示の扱い等
 6. RFE-A契約（`contracts/availability-view.feature`）の人間承認。reconciliationの内容次第で、スライス
    構成自体の見直し（RFE-A以外の新スライス追加等）が要るかは未定
-7. design/mocks/rfe-a-availability-view/（RFE-Aモック、静的HTML）を、**shadcn/uiベースのTSXとして
-   `src/design-preview/`に作り直す**（作り直しかBookingDesign.tsxの洗練かは、上記5の人間判断を経て
-   決める）
+7. RFE-A（空き状況画面）の扱い: 旧 design/mocks/ の静的モックは削除済み。RFE-Aのスコープは
+   BookingDesign.tsx（試行1）が包含するため、専用の作り直しは不要の見込み。RFE-A契約の承認・
+   reconciliation結果を踏まえ、BookingDesign.tsxの洗練で対応するかを上記5の人間判断を経て決める
 8. refinementループの反復回数N・escape hatchの優先順位の具体化（ADR-0004 §6、引き続き未定）
 9. contracts/availability-view.feature（スライスRFE-A）の人間承認（項目6と同一）
 10. Playwright/L4-L5（VRT）の整備方針（提案済み。今回変更なし）に沿って、developer/testerが着手
@@ -239,10 +240,10 @@ shadcn選定・伝送方式訂正・成果物形式変更のいずれよりも�
   `src/design-preview/`の出荷経路除外の保証方法（developer宿題）が固まってから着手する想定だが、順序・
   タイミングは人間判断。**meta/adr/0021の骨格記録・記録用画像の置き場所も、この条文改訂で定める必要が
   ある**（本ADRでは決定しない）
-- 既存RFE-Aモックの作り直し: design/mocks/rfe-a-availability-view/配下の3状態HTMLは、現行の成果物形式
-  （TSX＋src/design-preview/受け皿）より前の形式で作られている。shadcn/uiベースのTSXとして作り直す
-  方針は決まったが、単純な差し替えかBookingDesign.tsxのreconciliation結果を踏まえた再設計かの
-  タイミング・進め方は未定
+- RFE-Aの静的モックの扱い: 旧 design/mocks/rfe-a-availability-view/ の3状態HTMLは、現行の成果物形式
+  （TSX＋src/design-preview/受け皿、meta/adr/0020）より前の形式であり、かつBookingDesign.tsxがRFE-A
+  スコープを包含するため、リポジトリから削除した。RFE-Aを独立に扱う必要が生じた場合の進め方
+  （BookingDesign.tsxの洗練か新規か）は未定
 - developer.mdの拘束が未整備: meta/adr/0017・0018の帰結で明記した通り、developer.md（各プロジェクト
   共通のA層役割規程）は「承認済みモックに忠実に実装する」という拘束を明示的には持たない（meta/agents.md
   4節の標準フローには明記した。改修ガバナンス（骨格保持・骨格変更は人間承認）も同節に追記済み）。実務上

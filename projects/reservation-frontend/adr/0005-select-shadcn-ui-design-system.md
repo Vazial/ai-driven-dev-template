@@ -130,8 +130,10 @@ shadcn/uiの組み合わせを再利用する2本目のReactフロントエン�
 - 波及する作業:
   - ADR-0004 §1「除外」への追記（shadcnの`src/`側実コンポーネントを直接参照しない旨の明示）
   - ADR-0003への追補（Tailwind/shadcn CLIのツールチェーン、本ADRに記載済み。ADR-0003本文は不変）
-  - 既存のRFE-Aモック（design/mocks/rfe-a-availability-view/）をdesignerがshadcnの意匠に近似する形で
+  - 既存のRFE-Aモック（旧 design/mocks/rfe-a-availability-view/）をdesignerがshadcnの意匠に近似する形で
     作り直す（activeContext.mdの既存論点、本ADR承認後に着手）
+    ※注記(2026-07-20): この静的モックの実ファイルは削除済み（superseded・最終成果物にならないため。
+    ADR-0004改訂ノート参照）。RFE-AスコープはBookingDesign.tsxが包含するため、独立の作り直しは不要の見込み
   - refinementループの反復回数N・escape hatchの代案の具体化（ADR-0004 §6、引き続き未定）
   - design.md新規作成時、L2依存境界ルールにshadcnのcopy-in層（例: `src/components/ui`）の扱いを
     明記する（architectが着手）
