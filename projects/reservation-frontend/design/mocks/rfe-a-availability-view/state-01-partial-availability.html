@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>モック: 会議室の空き状況を確認する — 状態1（一部の時間帯に予約がある / RFE-A-01）</title>
+<link rel="stylesheet" href="mock.css">
+</head>
+<body>
+<!--
+  画面モック — 会議室の空き状況を確認する画面(スライスRFE-A) — 状態1: 一部の時間帯に予約がある(RFE-A-01)
+  意匠: shadcn/ui(Radix + Tailwind) neutral テーマの視覚的近似(人間のデザインシステム選定 2026-07-19)。
+    旧・自作CSS版を supersede。実体のshadcnコンポーネントはdeveloperがsrc/に置く(モックは視覚の近似、
+    実装が実体。ADR-0004の境界)。このモックはsrc/を参照せず・出荷ビルドに乗らない自己完結の静的HTML/CSS。
+  承認者向けサマリ(meta/adr/0016): 会議室と日付を指定して確認すると、その日の空いている時間帯が
+    カード内に一覧(時間帯＋「空き」バッジ)で表示される。
+  対応する受け入れシナリオ: projects/reservation-frontend/contracts/availability-view.feature (RFE-A-01)
+    Given "会議室A"に"10:00"から"11:00"までの予約が存在する
+    When 予約者が"会議室A"の"2026-07-14"の空き状況画面を開く
+    Then 空いている時間帯として"09:00"から"10:00"と"11:00"から"18:00"が画面に表示される
+  対応する既存API: projects/reservation-system/contracts/reservation-api.yaml
+    GET /rooms/room-a/availability?date=2026-07-14
+    → 200 { roomId: "room-a", date: "2026-07-14",
+             availableSlots: [ {startTime:"09:00", endTime:"10:00"}, {startTime:"11:00", endTime:"18:00"} ] }
+    (availableSlotsは開始時刻の昇順。RSV-A解釈ポイント(5))
+  対応するADR: projects/reservation-frontend/adr/0004-introduce-screen-mock-approval.md(改訂版)
+  忠実度(ADR-0004 §1改訂版): 実レイアウト・余白・視覚階層・shadcn意匠の実際の見えを含む。
+    含まない: 実API接続・JS動的遷移・レスポンシブ/アニメ・確定コピーの一字一句・実装フレームワーク
+    (React)のコンポーネント構造・確定ブランド配色(ここでの配色はshadcn neutral既定の代表値)
+  下書きコピー(確定でない): ラベル・見出し・バッジ文言・ボタン文言は代表例。最終確定は実装/L5に残す
+  個人情報なし。プレースホルダ(会議室A / room-a / 2026-07-14)を使用
+-->
+<main class="screen">
+  <h1 class="screen__title">会議室の空き状況を確認する</h1>
+  <p class="screen__desc">会議室と日付を指定して、予約できる時間帯を確認します。</p>
+
+  <!-- 問い合わせフォーム(shadcn Card + Label + Input + Button の近似) -->
+  <section class="card" aria-label="検索条件">
+    <div class="card__content">
+      <form class="query-row">
+        <div class="field">
+          <label class="label" for="roomId">会議室</label>
+          <!-- 会議室の指定方式(自由入力/候補選択)は未確定。room-list摩擦(会議室一覧API不在)でブロック中。
+               ここでは既存契約の慣行に沿い roomId 指定の代表としてreadonlyで表示 -->
+          <input class="input" id="roomId" type="text" value="会議室A" readonly>
+        </div>
+        <div class="field">
+          <label class="label" for="date">日付</label>
+          <input class="input" id="date" type="text" value="2026-07-14" readonly>
+        </div>
+        <button class="btn btn--primary" type="button">
+          <svg class="btn__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path>
+          </svg>
+          確認する
+        </button>
+      </form>
+      <p class="input-hint">日付は <code>date</code> 必須パラメータ（RSV-A解釈ポイント(3)）。会議室の選び方は未確定。</p>
+    </div>
+  </section>
+
+  <!-- 結果: 空いている時間帯の一覧(shadcn Card + List + Badge の近似) -->
+  <section class="card" aria-labelledby="result-heading">
+    <div class="card__content">
+      <h2 id="result-heading" class="result__heading">空いている時間帯</h2>
+      <p class="result__caption">2026-07-14 の予約可能な時間帯（2件）</p>
+      <ul class="slot-list">
+        <!-- availableSlots[0] = 09:00-10:00 -->
+        <li class="slot-item">
+          <span class="slot-time">09:00 – 10:00</span>
+          <span class="badge badge--secondary badge--dot">空き</span>
+        </li>
+        <!-- availableSlots[1] = 11:00-18:00 -->
+        <li class="slot-item">
+          <span class="slot-time">11:00 – 18:00</span>
+          <span class="badge badge--secondary badge--dot">空き</span>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <p class="mock-note">
+    状態1（RFE-A-01）: <code>GET /rooms/room-a/availability?date=2026-07-14</code> → 200、
+    AvailabilityResponse.availableSlots（2件・開始時刻の昇順）。意匠は shadcn/ui neutral の近似、
+    配色・文言（「空き」バッジ、ボタン「確認する」等）は下書きの代表例で確定ではない。
+    <a href="index.html">画面モック一覧に戻る</a>
+  </p>
+</main>
+</body>
+</html>
