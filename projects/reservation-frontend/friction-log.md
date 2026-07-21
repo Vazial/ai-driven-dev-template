@@ -126,9 +126,9 @@ principles: [P-10]
 
 - 事象: designerフロー(a)(b)の再現性を検証するため、過去の試行の記憶を持たないdesignerに、既存
   ブリーフ・成果物・reconciliationを一切見せず、同一スコープ（空き確認／予約／自分の予約・キャンセル）
-  のブリーフを独立に書かせた（試行2、`design/briefs-trial2/room-availability-and-booking-brief.md`）。
+  のブリーフを独立に書かせた（試行2、`design/verification/reproducibility-check/room-availability-and-booking-brief.md`）。
   同一モデル（`gemini-3-flash-preview`）・同一伝送（`meta/tools/commission_design_api.py`によるAPI
-  直叩き）で得た成果物（`src/design-preview/BookingDesignTrial2.tsx`）は、8節構成・情報密度こそ承認
+  直叩き）で得た成果物（`design/verification/reproducibility-check/BookingDesignTrial2.tsx`）は、8節構成・情報密度こそ承認
   済みの試行1（`design/briefs/room-booking-experience-brief.md` → `BookingDesign.tsx`）と同水準に
   達したにもかかわらず、**画面の骨格が退行した**——試行1は全部屋横断のタイムライン（帯・一望・予約者名
   表示）だったのに対し、試行2は部屋を1つ選んでから日付・スロットを見るステップフロー（人間が元々

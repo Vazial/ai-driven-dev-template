@@ -68,9 +68,9 @@ govlintジョブに接続済み。一方、`src/design-preview/`の出荷経路�
 **続けて、designerフローの再現性検証を実施した**（2026-07-20）。過去の試行の記憶を持たない
 designerに、既存ブリーフ・成果物・reconciliationを一切見せず、同じスコープ（空き確認／予約／自分の
 予約・キャンセル）のブリーフを独立に書かせ（試行2、
-`design/briefs-trial2/room-availability-and-booking-brief.md`）、同一モデル（`gemini-3-flash-preview`）
+`design/verification/reproducibility-check/room-availability-and-booking-brief.md`）、同一モデル（`gemini-3-flash-preview`）
 ・同一伝送（`commission_design_api.py`によるAPI直叩き）で得た成果物
-（`src/design-preview/BookingDesignTrial2.tsx`）を無改変で受け皿に配置し、実プロジェクトで描画して
+（`design/verification/reproducibility-check/BookingDesignTrial2.tsx`）を無改変で受け皿に配置し、実プロジェクトで描画して
 試行1と比較した。
 
 **再現したもの**: (a)独立に、承認済みの試行1と**同じ8節構成・同水準の密度**のブリーフが書けた（雛形
@@ -90,8 +90,8 @@ designerに、既存ブリーフ・成果物・reconciliationを一切見せず�
 なしのフラットブリーフでもタイムラインに到達した回があり、**不満点が無くても当たりは引きうるが、
 あると床が上がる（外れを引きにくくなる）**という関係が確認できた。
 
-**人間の決定: 試行1を正とする。試行2は検証記録として保存する**（`design/briefs-trial2/
-room-availability-and-booking-brief.md`、`src/design-preview/BookingDesignTrial2.tsx`。受け皿の
+**人間の決定: 試行1を正とする。試行2は検証記録として保存する**（`design/verification/
+reproducibility-check/room-availability-and-booking-brief.md`、`design/verification/reproducibility-check/BookingDesignTrial2.tsx`。受け皿の
 `index.tsx`は試行1表示に戻し済み）。この知見はfriction-log FR-004として記録し、
 `meta/templates/design-brief.md`の「解決したい問題」節を「任意のままだが、人間由来の不満点が既にある
 なら必ず記入することを推奨」する記述に改訂した。
