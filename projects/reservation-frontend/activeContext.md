@@ -2,7 +2,7 @@
 
 > P-11: このファイルは常に「現在」だけを映す。更新は上書き。歴史はgitとADRが持つ。
 > 更新タイミング: スライスの区切り、エスカレーション発生時（permissions.md）
-> 最終更新: 2026-07-20
+> 最終更新: 2026-07-21
 
 ## 今どこにいるか
 
@@ -53,8 +53,33 @@ Glob/WriteのみでありBash等の実行手段を持たない**。実際の運�
 ブリーフ`design/briefs/room-booking-experience-brief.md`から外部AI（Gemini `gemini-3-flash-preview`）
 が`src/design-preview/BookingDesign.tsx`を返し、無改変で受け皿に配置、devサーバでの描画・人間承認まで
 到達した。続けて(c)reconciliationを実施し、`design/reconciliation/booking-design-reconciliation.md`
-として、新規API4件の要否・情報公開範囲の論点・契約シナリオの未表現状態を整理した（詳細は下記「未解決の
-論点」）。
+として、新規API4件の要否・情報公開範囲の論点・契約シナリオの未表現状態を整理した。
+
+**続けて、architectがreconciliationを拡張・統合した**（2026-07-21）: orchestratorが実機・ソースで
+見つけた実装レベルの不整合6件（会議室ごとの営業時間無視・予約検証の欠如・文言矛盾・守れない約束・
+キャンセル境界のバグ・認証なしの覗き見リスク）と、architect自身が追加で洗ったシナリオ充足・API仕様・
+ADR整合の論点を統合し、**不整合・論点22件の全てに分類タグ**（契約変更が要る／人間判断が要る／設計調整
+で足りる／実装時に直す）を付けた。**最大の分岐は認証の要否**（`reserverId`が無認証・自由入力である
+現行契約の前提の上に、設計が予約者名の表示・`reserverId`一致による自分の予約閲覧を乗せていたため）
+として整理された。
+
+**その最大の分岐について、人間が決定した**（2026-07-21、`projects/reservation-frontend/
+adr/0006-adopt-plan-b-no-auth-limited-disclosure.md`）: **案B（無認証を維持しつつ情報公開範囲を絞る）
+を当面採用。案C（軽量認証の導入）は将来オプションとして明示的に残す**。具体的な帰結:
+- 予約者名は画面に表示しない（タイムラインは「空き/予約済み（不可）」の二値状態表示にとどめる）
+- 「自分の予約」はサーバAPIを持たず、端末ローカル（localStorage等）で管理する
+- 占有情報を返す新規API（`GET /reservations?date=`・`GET /reservations?reserverId=`）は不採用。
+  `reservation-system/adr/0006`（空き枠のみを返す設計）の再検討も不要——`availableSlots`から
+  「空き/不可」の二値だけを導出すればよく、占有情報API不採用の判断と整合する
+- `reserverName`（表示名）フィールドはバックエンド契約に追加しない
+
+この決定により、**バックエンド契約（reservation-api.yaml）・reservation-system側の既存ADR
+（0003・0005・0006）はいずれも無変更**のまま維持される。reconciliationの不整合22件のうち**6件が
+解決済みとなり、残る未決は2件**（`GET /rooms`の採否、`PATCH /reservations/{id}`の要否）に絞られた。
+architectはreconciliationに「案Bが要求する設計調整（骨格内）」リスト（4項目、今は実装しない）を追記
+した——予約者名の除去・自分の予約のlocalstorage化・時間調整案内文の除去・タイムラインの空き/不可
+二値表現化。いずれも骨格（ヘッダー／タイムライン・会議室一覧・予約ダイアログ・自分の予約Sheetという
+主要ブロックの構成）の作り替えを伴わない（meta/adr/0021の凍結対象を尊重）。
 
 **developer宿題`meta/tools/commission_design_api.py`は実装・テスト・CI接続まで完了した**（meta/adr/0020）。
 Generative Language API直叩き、smokeテスト24件（ネットワーク不使用）、`.github/workflows/ci.yml`の
@@ -154,6 +179,11 @@ shadcn選定・伝送方式訂正・成果物形式変更のいずれよりも�
 - **escape hatchの読み替え**（meta/adr/0018・0020）: 外部AIの発案が実用水準に届かない場合の第一の代案
   は「(i)ブリーフ改訂／(ii)別の外部ツール・外部AIへの切替」。旧代案（既製UIテンプレート採用・視覚の
   野心を下げる）は最終手段として残る。反復回数N・優先順位は引き続き未定（ADR-0004 §6）
+- **認証方針は「案B（無認証・情報を絞る）」を当面採用**（`reservation-frontend/adr/0006`、承認済み・
+  2026-07-21）: 予約者名は画面に表示しない・「自分の予約」は端末ローカル管理・占有情報API新設と
+  `reservation-system/adr/0006`（空き枠のみ返す設計）の再検討は不要。**案C（軽量認証）は将来オプション
+  として残す**（採用時は新しいスライスの契約とADRとして扱う）。`reservation-system`側の既存ADR
+  （0003・0005・0006）はいずれも無変更
 
 ## 進行中 / 次にやること
 
@@ -177,59 +207,50 @@ shadcn選定・伝送方式訂正・成果物形式変更のいずれよりも�
    - **（新規・非ブロッキング・meta/adr/0021）レンダリング画像の記録（人間向けbefore/after資料）の
      取得・保存**: スクリーンショット機能の実現可能性検証を含む。動作しなくても骨格比較による改修
      ガバナンスは機能する
-5. **(c)reconciliationで判明した新API・契約ズレの人間判断**（`design/reconciliation/
-   booking-design-reconciliation.md`、詳細は下記「未解決の論点」）: 新規API4件の採否・情報公開範囲の
-   拡大判断・営業時間反映漏れの扱い・拒否理由提示の扱い等
-6. RFE-A契約（`contracts/availability-view.feature`）の人間承認。reconciliationの内容次第で、スライス
+5. **reconciliationの残未決（2件のみ。認証方針は決定済みのため縮小した）**（`design/reconciliation/
+   booking-design-reconciliation.md`）: (1)`GET /rooms`の採否、(2)`PATCH /reservations/{id}`の要否。
+   他の不整合はいずれも設計調整・実装時対応で足りると分類済み
+6. **「案Bが要求する設計調整」の実施**（`design/reconciliation/booking-design-reconciliation.md`
+   9節、4項目）: 予約者名の除去・自分の予約のlocalstorage化・時間調整案内文の除去・タイムラインの
+   空き/不可二値表現化。骨格を変えない範囲の洗練として、次のdesigner洗練サイクルまたはdeveloper実装
+   統合時に反映する
+7. RFE-A契約（`contracts/availability-view.feature`）の人間承認。reconciliationの内容次第で、スライス
    構成自体の見直し（RFE-A以外の新スライス追加等）が要るかは未定
-7. RFE-A（空き状況画面）の扱い: 旧 design/mocks/ の静的モックは削除済み。RFE-Aのスコープは
+8. RFE-A（空き状況画面）の扱い: 旧 design/mocks/ の静的モックは削除済み。RFE-Aのスコープは
    BookingDesign.tsx（試行1）が包含するため、専用の作り直しは不要の見込み。RFE-A契約の承認・
    reconciliation結果を踏まえ、BookingDesign.tsxの洗練で対応するかを上記5の人間判断を経て決める
-8. refinementループの反復回数N・escape hatchの優先順位の具体化（ADR-0004 §6、引き続き未定）
-9. contracts/availability-view.feature（スライスRFE-A）の人間承認（項目6と同一）
-10. Playwright/L4-L5（VRT）の整備方針（提案済み。今回変更なし）に沿って、developer/testerが着手
+9. refinementループの反復回数N・escape hatchの優先順位の具体化（ADR-0004 §6、引き続き未定）
+10. contracts/availability-view.feature（スライスRFE-A）の人間承認（項目7と同一）
+11. Playwright/L4-L5（VRT）の整備方針（提案済み。今回変更なし）に沿って、developer/testerが着手
     （**フロント実装は保留中**、designerの作りこみ優先のため着手時期は未定）
-11. 上記が揃い次第、design.md・ARCHITECTURE.mdを新規作成（architect）
-12. 会議室一覧取得APIの要否について、人間がbackend側activeContextへの転記・優先度判断を行う
+12. 上記が揃い次第、design.md・ARCHITECTURE.mdを新規作成（architect）
+13. `GET /rooms`の要否について、人間がbackend側activeContextへの転記・優先度判断を行う（項目5の(1)と
+    同一。認証方針の決定とは無関係に独立して判断できる）
 
 ## 未解決の論点
 
 - 利用者像: 想定利用環境（社内PC・共有端末・会議室前のキオスク等）、想定利用者範囲が未確認
-- 認証の有無: バックエンドAPIは無認証（reserverIdを自己申告する形）。フロントエンドもこれを踏襲する前提
-  でスタックを検討したが、なりすまし対策の要否は業務要件次第で未確認。**reconciliationで、この論点が
-  情報公開範囲の判断と直結することが判明した**（下記参照）
 - デザイン要件: 既存の社内デザインシステム・ブランドガイドラインの有無が未確認。shadcn/ui採用（ADR-0005）
   は組織側に既存ブランド制約が無いことを前提にしており、制約が判明した場合は再検討が要る
 - 想定スタックの制約: 組織として既存のフロントエンド標準スタックの指定が無いことを前提にADR-0003を
   ドラフトした。指定がある場合はADR-0003の再検討が要る
-- **会議室一覧の取得手段（バックエンドの新スライス候補・1件目）**: バックエンド契約
+- **`GET /rooms`（会議室一覧）の採否**（バックエンドの新スライス候補）: バックエンド契約
   （reservation-system/contracts/reservation-api.yaml）に会議室を一覧するAPIが無く、フロントエンドは
-  会議室IDを利用者が直接指定する前提で設計している。BookingDesign.tsxのreconciliationでも同じ不足が
-  確認された（`GET /rooms`、下記参照）
-- **BookingDesign.tsx（Gemini `gemini-3-flash-preview`設計）のreconciliationで判明した新API・契約
-  ズレ（最優先。`design/reconciliation/booking-design-reconciliation.md`参照）**。**当否・優先度は
-  人間判断。architectは決定しない**:
-  - `GET /rooms`（会議室一覧・横断表示）が無い（上記「会議室一覧の取得手段」と同根）
-  - `GET /reservations?date=`（特定日の全会議室・全予約の取得）が無い。**追加する場合、現行APIが
-    意図的に隠している予約者の識別情報を新たに公開することになり、無認証・自己申告モデルのままでは
-    なりすまし・覗き見のリスクが生じる**（情報公開範囲の業務判断を要する）
-  - `GET /reservations?reserverId=`（自分の予約一覧）が無い。同様に、無認証のまま提供すると他人の
-    reserverIdを入力するだけで他人の予約一覧を閲覧できてしまう
-  - `PATCH /reservations/{id}`（予約時間の変更）は設計内で未実装（案内文のみ先行）。優先度は他3件より
-    低いと考えられる材料あり
-  - フィールドの不一致: **会議名**（会議の目的・タイトルに相当するフィールドが現行契約に無い。今回の
-    BookingDesign.tsxはこのフィールドを扱っていないため表面化していない）、**予約者の表示名**
-    （`reserverName`。`reserverId`は自由文字列のみで表示用フィールドは無い）
-  - ドメインルールの表現状況: 最小予約時間（60分固定のため30分ルールが「使われていない」）、重複不可
-    （描画上の偶然でブロックされているだけで明示的な排他制御ではない）、営業時間（会議室ごとの
-    営業時間データを保持するが、タイムライン描画・クリック可否には反映されていない）、定員（表示のみ
-    で上限チェックなし）、キャンセル期限（判定式の境界がRSV-K-05の「15分前ちょうどは可能」と逆に
-    倒れている——モックの内部ロジックの話であり成果物は無改変。実装時に正す必要がある事実として記録）
-  - 契約シナリオのうち設計上の表現が確認できないもの: RFE-A-02/RSV-A-04（終日埋まっている）、
-    RFE-A-03/RSV-A-07（存在しない会議室）、RSV-C系・RSV-K系の拒否シナリオ（409/422/403/404）全般——
-    対応する拒否表示・発生させる導線が設計に無い
-  - これらはバックエンド（projects/reservation-system）側の新スライス候補になりうる。当否は人間が
-    判断し、必要ならbackend側activeContext.mdへの転記を行う（本プロジェクトの範囲外の意思決定）
+  会議室IDを利用者が直接指定する前提で設計している。**認証方針の決定（`reservation-frontend/adr/0006`）
+  とは無関係に独立して判断できる論点**として残る。採用時は`GET /rooms/{roomId}/rules`（RSV-R、既存
+  承認済み）との役割分担（レスポンス形状）も併せて決める必要がある
+- **`PATCH /reservations/{id}`（予約時間の変更）の要否**: 設計内でも未実装（案内文のみ先行）。機能
+  自体を追加するか、案内文を実態に合わせて修正するかの方針は未定（後者は既に設計調整として実施方針が
+  確定している。前者=機能追加の要否のみ未決）
+- **（解決済み・2026-07-21）認証の有無**: `reservation-frontend/adr/0006`により、**案B（無認証・情報を
+  絞る）を当面採用、案C（軽量認証）は将来オプション**と決定した。これに伴い、reconciliationが挙げて
+  いた新規API4件のうち2件（`GET /reservations?date=`・`GET /reservations?reserverId=`）とフィールド
+  `reserverName`の契約化は不採用が確定し、`reservation-system/adr/0006`の再検討も不要になった
+- **（解決済みに伴い縮小）BookingDesign.tsxのreconciliationで判明した論点**（詳細は
+  `design/reconciliation/booking-design-reconciliation.md`）: 22件のうち6件が上記決定で解決済み。
+  残る未決は`GET /rooms`・`PATCH /reservations/{id}`の2件のみ（重複するため上記2項目を参照）。他の
+  16件（うち14件）は[設計調整で足りる][実装時に直す]に分類済みで、骨格を保った洗練・実装統合の中で
+  対応する（一覧はreconciliation本体を参照）
 - L5（体験の質）の人間承認が、permissions.mdの「人間の承認ポイント」表（契約／設計骨格／step実装／
   信条規程の4接点）に明記されていない非対称を発見した。小さなA層整備候補として記録するのみで、対応の
   要否・優先度は未定（meta変更のため人間判断）
@@ -276,4 +297,3 @@ shadcn選定・伝送方式訂正・成果物形式変更のいずれよりも�
   対応済み
 - FR-004（独立作成した同水準ブリーフでも外部AI単発実行の出力骨格に分散があり、承認水準への到達は
   保証されない。押し込み先: meta/templates/design-brief.md「解決したい問題」節の推奨強化）。対応済み
-</content>
