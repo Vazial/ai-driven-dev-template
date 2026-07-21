@@ -17,12 +17,12 @@
  * 現在置かれている成果物:
  *   BookingDesign.tsx — ブリーフ design/briefs/room-booking-experience-brief.md に対して
  *   外部AI（Gemini）が返したもの（試行1・人間評価「原案としてOK」）。**無改変**。
- *   BookingDesignTrial2.tsx — 再現性検証（独立に書かれたブリーフ
- *   design/briefs-trial2/room-availability-and-booking-brief.md）に対して外部AIが
- *   返したもの（試行2）。**無改変**。いずれも内蔵ダミーデータのみで動く。
+ *   内蔵ダミーデータのみで動く。
  *
- * 表示しているのは試行1（人間承認済みの正）。試行2は再現性検証の記録として保存
- * （骨格の分散が観測された。詳細は activeContext.md・friction-log.md）。
+ * 再現性検証(試行2)のエビデンスは design/verification/reproducibility-check/ に集約している
+ * （BookingDesignTrial2.tsx はそこに記録として置いてある。骨格の分散が観測された。
+ * 詳細は activeContext.md・friction-log.md FR-004）。再描画したいときはそのTSXを
+ * このディレクトリに一時的に置く。
  */
 import { Toaster } from "@/components/ui/sonner"
 
