@@ -126,14 +126,14 @@ principles: [P-10]
 
 - 事象: designerフロー(a)(b)の再現性を検証するため、過去の試行の記憶を持たないdesignerに、既存
   ブリーフ・成果物・reconciliationを一切見せず、同一スコープ（空き確認／予約／自分の予約・キャンセル）
-  のブリーフを独立に書かせた（試行2、`design/verification/reproducibility-check/room-availability-and-booking-brief.md`）。
-  同一モデル（`gemini-3-flash-preview`）・同一伝送（`meta/tools/commission_design_api.py`によるAPI
-  直叩き）で得た成果物（`design/verification/reproducibility-check/BookingDesignTrial2.tsx`）は、8節構成・情報密度こそ承認
-  済みの試行1（`design/briefs/room-booking-experience-brief.md` → `BookingDesign.tsx`）と同水準に
-  達したにもかかわらず、**画面の骨格が退行した**——試行1は全部屋横断のタイムライン（帯・一望・予約者名
-  表示）だったのに対し、試行2は部屋を1つ選んでから日付・スロットを見るステップフロー（人間が元々
+  のブリーフを独立に書かせた（試行2）。同一モデル（`gemini-3-flash-preview`）・同一伝送
+  （`meta/tools/commission_design_api.py`によるAPI直叩き）で得た成果物は、8節構成・情報密度こそ承認
+  済みの試行1（`design/briefs/room-booking-experience-brief.md` → 受け皿の`BookingDesign.tsx`）と
+  同水準に達したにもかかわらず、**画面の骨格が退行した**——試行1は全部屋横断のタイムライン（帯・一望・
+  予約者名表示）だったのに対し、試行2は部屋を1つ選んでから日付・スロットを見るステップフロー（人間が元々
   嫌っていた「部屋＋日付を指定して見ないと分からない」構図、かつ「予約済」表示のみで誰の予約かは
   見えない）に退行した。描画・機能は正常（エラーなし）だが、人間評価では試行1が明確に上
+  （※試行2のブリーフ・成果物の実ファイルは検証エビデンスとして残さない。本記述で自己完結させる。他のFRと同様）
 - 原因の仮説: 差の要因を特定できた。試行1の最終ブリーフには人間由来の不満点4件（検索ゲート不要・
   タイムライン可視化・誰が押さえているか見えるようにしたい・クリックで予約したい）が「解決したい
   問題」節に入っていたのに対し、独立に書かれた試行2のブリーフは同じ節に軽い2点（識別子の手入力を
