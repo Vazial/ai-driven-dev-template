@@ -10,12 +10,13 @@
 #       paths./rooms/{roomId}/rules)。POST /reservations・POST /reservations/{reservationId}/cancel・
 #       GET /rooms/{roomId}/availabilityを含む既存部分は無変更。ROOM_NOT_FOUNDは既存コードを再利用し、
 #       ProblemResponse.codeの説明文への追記は行わない(新規コードではないため)
-# 改訂(ドラフト、人間承認待ち): 2026-07-22 スライスRSV-L「会議室の一覧を確認できる」のクエリ操作を追記予定
-#       (下記「RSV-L追記」ブロックと paths./rooms)。POST /reservations・POST /reservations/{reservationId}/cancel・
+# 改訂(ドラフト、人間承認待ち): 2026-07-22 GET /roomsのAPI形状(会議室一覧取得)を追記(下記「RSV-L追記」ブロックと
+#       paths./rooms)。POST /reservations・POST /reservations/{reservationId}/cancel・
 #       GET /rooms/{roomId}/availability・GET /rooms/{roomId}/rulesを含む既存部分は無変更。新規の拒否理由コードは
-#       無い(このクエリに拒否レスポンスが存在しないため、ProblemResponse.code説明文への追記も無い)。人間承認後に
-#       このコメントと下記「RSV-L追記」ブロックの「(ドラフト、人間承認待ち)」表記を「(承認済み: 承認日)」に
-#       architectが置き換える
+#       無い(このクエリに拒否レスポンスが存在しないため、ProblemResponse.code説明文への追記も無い)。この改訂は
+#       API形状のみを対象とし、受け入れシナリオ(一覧内容・name昇順・0件=空一覧)は対象外(実装スライスでtesterが
+#       RSV-Lとして起こす。IDは予約。詳細な裁定はadr/0007を参照)。人間承認後にこのコメントと下記「RSV-L追記」
+#       ブロックの「(ドラフト、人間承認待ち)」表記を「(承認済み: 承認日)」にarchitectが置き換える
 # 範囲: このスライスで使う操作だけを定義する。先のスライスの分は書かない
 #
 # ============================================================
@@ -156,7 +157,7 @@
 # ---- RSV-R追記ここまで ----
 # ============================================================
 #
-# ---- RSV-L「会議室の一覧を確認できる」追記(ドラフト: 2026-07-22、人間承認待ち) ----
+# ---- RSV-L「会議室の一覧を確認できる」追記(ドラフト: 2026-07-22、人間承認待ち。API形状のみ) ----
 # 4行目の要約:
 #   会議室の一覧を確認する: GET /rooms を呼ぶ。パスパラメータ・クエリパラメータは無い。
 #                          成功は200+全会議室の一覧(0件なら空配列)。拒否レスポンスは無い
@@ -178,8 +179,8 @@
 # 項目1・7・19)で判明した未契約の必要性。人間が「reservation-systemに追加する・フロントの必要から
 # 形を決める(consumer-driven contract)」ことを決定(2026-07-22)。詳細な裁定はadr/0007を参照
 #
-# 解釈ポイント(architectの判断。承認時に確認されたい。シナリオ側の解釈ポイントは
-# contracts/reservation-rooms.featureのヘッダも参照):
+# 解釈ポイント(architectの判断。承認時に確認されたい。受け入れシナリオ(一覧内容・name昇順・0件=空一覧)は
+# 本改訂の対象外とし、実装スライスでtesterがRSV-Lとして起こす。IDは予約(adr/0007を参照)):
 #   (1) 一覧の各要素(RoomSummary)にはroomId・name・businessHoursStart/End・capacityを含め、
 #       minReservationDurationMinutes(最小予約時間)は含めない。理由・代替案の検討はadr/0007を参照
 #       (要旨: システム共通の単一値を一覧要素ごとに複製すると二重管理のリスクを生む。/rulesを
@@ -415,7 +416,7 @@ paths:
                 code: ROOM_NOT_FOUND
                 message: 会議室が存在しません
   # ---- RSV-R追記ここまで ----
-  # ---- ここから RSV-L追記(ドラフト、人間承認待ち)。上のPOST /reservations・POST /reservations/{reservationId}/cancel・
+  # ---- ここから RSV-L追記(ドラフト、人間承認待ち。API形状のみ)。上のPOST /reservations・POST /reservations/{reservationId}/cancel・
   # GET /rooms/{roomId}/availability・GET /rooms/{roomId}/rulesは無変更 ----
   /rooms:
     get:
@@ -423,7 +424,7 @@ paths:
       summary: 会議室の一覧を確認する(RSV-L追記、ドラフト)
       responses:
         "200":
-          description: 会議室の一覧が返る(RSV-L-01/02)。並び順はname(表示名)の昇順。会議室が一件も無い場合は空配列(RSV-L-03)
+          description: 会議室の一覧が返る。並び順はname(表示名)の昇順。会議室が一件も無い場合は空配列。受け入れシナリオは実装スライスでtesterがRSV-Lとして起こす(adr/0007を参照)
           content:
             application/json:
               schema:

@@ -15,8 +15,11 @@ relates_to: []
 > 項目1)。人間は「reservation-systemにGET /roomsを追加する・フロントの必要から形を決める
 > (consumer-driven contract)」と決定済み。本ADRは、その形を具体的にどう設計したか(何を返すか・
 > 既存のGET /rooms/{roomId}/rulesとどう役割分担するか・表示名フィールドの扱い)を裁定する、
-> **未承認のドラフト**。契約本体(reservation-api.yaml・reservation-rooms.feature)のドラフトと合わせて
-> 人間のレビュー・承認を待つ(P-06)。
+> **未承認のドラフト**。契約本体(reservation-api.yamlのAPI形状追記)のドラフトと合わせて人間のレビュー・
+> 承認を待つ(P-06)。**受け入れシナリオ(一覧内容・name昇順・0件=空一覧)は本ADR・本契約改訂の対象外**とし、
+> 実装スライスでtesterがRSV-Lとして起こす(IDは予約)。理由: シナリオIDが契約検証(govlint)と実装検証
+> (Cucumber)を結合しており、実装を伴わないシナリオの下書きを契約に置けない構造上の制約による
+> (詳細はfriction-log.mdの当該記録を参照)。
 
 ## 文脈
 
@@ -60,6 +63,11 @@ design.mdの`rooms`テーブル定義、および`test-support-api.yaml`の`Room
    既存の全レスポンス(`ReservationResponse`・`AvailabilityResponse`等)がオブジェクトであるパターン
    との整合、および将来のページング・件数等のメタデータ追加への拡張余地を残すため
    (現時点ではページング・絞り込みクエリパラメータを持たない。P-02: 今必要な分だけ)。
+7. **受け入れシナリオ(一覧内容・name昇順・0件=空一覧)は、本ADR・本契約改訂では起こさない**。決定1〜6
+   が確定する「何を返すか」と、それを検証するシナリオを書く作業を、位相として分離する(validation/
+   decision ↔ scenario/implementation)。実装スライス着手時に、testerがこの契約(決定1〜6)から
+   受け入れシナリオをRSV-Lとして起こし、developerが実装して緑にする。ID(RSV-L-01等)は現時点では
+   予約のみで、契約ファイルには書かない。
 
 ## 検討した代替案
 
@@ -77,11 +85,17 @@ design.mdの`rooms`テーブル定義、および`test-support-api.yaml`の`Room
 
 ## 帰結
 
-- `reservation-api.yaml`に`GET /rooms`(RSV-L追記ブロック)を追加した(ドラフト、契約自体は別途人間
-  承認待ち)。`RoomSummary`・`RoomListResponse`スキーマを新設した
-- `contracts/reservation-rooms.feature`(新規、RSV-L-01〜03)を追加した
+- `reservation-api.yaml`に`GET /rooms`(RSV-L追記ブロック)を追加した(ドラフト、API形状のみ。契約
+  自体は別途人間承認待ち)。`RoomSummary`・`RoomListResponse`スキーマを新設した
 - `GET /rooms/{roomId}/rules`(RSV-R)・そのレスポンススキーマ(`RoomRulesResponse`)・
   `contracts/reservation-rules.feature`は無変更
+- **受け入れシナリオ層(`contracts/reservation-rooms.feature`、RSV-L)は今回起こさず、実装スライスに
+  持ち越す**。理由: シナリオIDがgovlint(契約側の参照整合)とCucumber(実装側の未定義ステップ検出)の
+  両方を結合しており、「実装より先にシナリオだけを下書きする」状態を構造的に作れないため(発見の経緯は
+  friction-log.mdに記録)。契約(API形状)とADR裁定はここで確定し、シナリオの起票と実装はセットで次の
+  スライスに委ねる。同様に`test-support-api.yaml`の`DELETE /test-support/rooms`(RSV-L-03の前提用に
+  一時追加したもの)も、消費者となるシナリオが存在しなくなったため削除した(実装スライスで必要に
+  なれば再導入する)
 - design.mdの`rooms`テーブル定義自体の変更は不要(`name`列は既存)。ただし「公開APIが`name`を返す
   ようになる」という設計骨格上の変化は、本契約の承認と同時にdesign.mdへ反映する(architectの通常の
   維持責務。今回の契約・本ADRがまだドラフトのため、design.md本体の更新は契約承認に随伴させ、現時点

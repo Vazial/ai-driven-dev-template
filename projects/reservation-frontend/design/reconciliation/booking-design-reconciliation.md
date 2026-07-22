@@ -5,14 +5,18 @@
 > シナリオ充足・API仕様・ADR整合の論点を統合し、全項目に分類タグを付けた。第2改訂（2026-07-21）は、
 > 最大の分岐だった認証方針（項目15・16）について人間が決定した結果を反映した
 > （`projects/reservation-frontend/adr/0006-adopt-plan-b-no-auth-limited-disclosure.md`、案B採用・
-> 案Cは将来オプション）。**第3改訂（本改訂、2026-07-22）は、残る未決2件のうち`GET /rooms`（項目1）
-> について人間が下した決定（reservation-systemに追加する・フロントの必要から形を決める＝
-> consumer-driven contract）を反映し、architectが契約ドラフトを起草した結果を記録する**
+> 案Cは将来オプション）。第3改訂（2026-07-22）は、残る未決2件のうち`GET /rooms`（項目1）について
+> 人間が下した決定（reservation-systemに追加する・フロントの必要から形を決める＝
+> consumer-driven contract）を反映し、architectが契約ドラフトを起草した結果を記録した
 > （`projects/reservation-system/contracts/reservation-api.yaml`のRSV-L追記、
-> `projects/reservation-system/contracts/reservation-rooms.feature`新規、
 > `projects/reservation-system/adr/0007-add-room-list-endpoint-and-rules-role-split.md`）。
-> 初版・第1・第2改訂の分析内容は削除せず、決定・ドラフト化による解決状況を追記して引き継ぐ。
-> 第4の並行ドキュメントではなく本ファイルの拡張。
+> **第4改訂（本改訂、2026-07-22）は、CIがRSV-L受け入れシナリオ層の構造的な問題（シナリオIDがgovlint
+> と実装検証を結合しており、実装より先にシナリオだけを置けない）を検出したことを受け、人間の決定で
+> 受け入れシナリオ層（`contracts/reservation-rooms.feature`）を今回の契約ドラフトから剥がした結果を
+> 反映する。API形状（`GET /rooms`）とADR-0007の役割分担・裁定は変更せず維持する。受け入れシナリオ
+> （一覧内容・name昇順・0件=空一覧）はRSV-Lとして実装スライスでtesterが起こす（IDは予約）**。
+> 初版・第1〜第3改訂の分析内容は削除せず、決定・ドラフト化・位相分離による解決状況を追記して引き継ぐ。
+> 第5の並行ドキュメントではなく本ファイルの拡張。
 >
 > 成果物（`src/design-preview/BookingDesign.tsx`、375行）は無改変。**骨格（おおまかなコンポーネント
 > 構成）は凍結対象**（meta/adr/0021）であり、本レポートは骨格の作り替えを一切提案しない。判断は人間が
@@ -26,20 +30,22 @@
 >   `projects/reservation-system/contracts/reservation-create.feature`（RSV-C、承認済み）
 >   `projects/reservation-system/contracts/reservation-cancel.feature`（RSV-K、承認済み）
 >   `projects/reservation-system/contracts/reservation-rules.feature`（RSV-R、承認済み）
->   `projects/reservation-system/contracts/reservation-rooms.feature`（RSV-L、**ドラフト・本改訂で新規**）
+>   `GET /rooms`（RSV-L、API形状はreservation-api.yamlにドラフトとして存在。受け入れシナリオ層は
+>   実装スライスに持ち越し、現時点では`.feature`を持たない）
 >   `projects/reservation-frontend/contracts/availability-view.feature`（RFE-A、ドラフト）
 >   `projects/reservation-system/adr/0001, 0003, 0004, 0005, 0006, 0007`（0007が本改訂の根拠。ドラフト）
 >   `projects/reservation-frontend/adr/0001, 0004, 0006`（0006が第2改訂の根拠）
 > 日付: 2026-07-20（初版）／2026-07-21（第1改訂・統合）／2026-07-21（第2改訂・認証方針決定の反映）／
->   2026-07-22（第3改訂・`GET /rooms`決定の反映）
+>   2026-07-22（第3改訂・`GET /rooms`決定の反映）／2026-07-22（第4改訂・RSV-L受け入れシナリオ層の剥離）
 
 ---
 
 ## 0. 要約
 
 **不整合・論点 合計22件**のうち、**6件は認証方針の決定（ADR-0006）により解決済み**、**1件
-（`GET /rooms`、項目1）は人間の決定（2026-07-22）を受けてarchitectが契約ドラフトを起草し、解決済み**
-（契約自体の人間承認は別途待つ）。**残る未決は15件**。
+（`GET /rooms`、項目1）は人間の決定（2026-07-22）を受けてarchitectが契約ドラフト（API形状＋ADR裁定）
+を起草し、解決済み**（契約自体の人間承認は別途待つ。受け入れシナリオ層は実装スライスに持ち越し）。
+**残る未決は15件**。
 
 | 分類 | 件数（残・未決分のみ） | 意味 |
 |---|---|---|
@@ -47,7 +53,7 @@
 | **[設計調整で足りる]** | 8件 | 骨格を保ったまま設計/文言を直せる |
 | **[実装時に直す]** | 6件 | 設計は（ADR-0001の想定通り）正しく、実装で吸収すればよい |
 | **解決済み（ADR-0006で決定）** | 6件 | 下記「1. 解決済みの項目」参照 |
-| **解決済み（`GET /rooms`決定・契約ドラフト化）** | 1件 | 下記「1. 解決済みの項目」参照 |
+| **解決済み（`GET /rooms`決定・API形状＋ADR裁定化）** | 1件 | 下記「1. 解決済みの項目」参照 |
 
 **最大の分岐だった認証の要否は決定済み**: `projects/reservation-frontend/adr/0006-adopt-plan-b-no-auth-
 limited-disclosure.md`により、**案B（無認証・情報を絞る）を当面採用、案C（軽量認証）は将来検討**と
@@ -57,9 +63,12 @@ limited-disclosure.md`により、**案B（無認証・情報を絞る）を当�
 
 **`GET /rooms`（会議室一覧）の採否も決定済み**: 人間が「reservation-systemに追加する・フロントの
 必要から形を決める（consumer-driven contract）」と決定（2026-07-22）。architectが契約ドラフト
-（`reservation-api.yaml`のRSV-L追記・`reservation-rooms.feature`新規）と役割分担の裁定
-（`reservation-system/adr/0007`、ドラフト）を起草した。`GET /rooms/{roomId}/rules`（RSV-R、既存承認
-済み）は無変更のまま維持され、一覧（概要）と`/rules`（予約前詳細）で役割を分担する。
+（`reservation-api.yaml`のRSV-L追記、API形状のみ）と役割分担の裁定（`reservation-system/adr/0007`、
+ドラフト）を起草した。`GET /rooms/{roomId}/rules`（RSV-R、既存承認済み）は無変更のまま維持され、
+一覧（概要）と`/rules`（予約前詳細）で役割を分担する。**受け入れシナリオ（一覧内容・name昇順・0件=
+空一覧）は今回の改訂では起こさず、実装スライスでtesterがRSV-Lとして起こす**（理由: シナリオIDが
+govlintとCucumberの両方を結合しており、実装を伴わないシナリオの下書きを契約に置けない構造上の制約。
+詳細はreservation-system/friction-log.md参照）。
 
 **残る未決事項は1件のみ**: `PATCH /reservations/{id}`（時間変更）の機能自体の要否。他は骨格を保った
 設計調整・実装時の対応で済む。
@@ -83,15 +92,15 @@ limited-disclosure.md`により、**案B（無認証・情報を絞る）を当�
 なる。導入する場合は新しいスライスの契約とADRとして扱う（`reservation-system/adr/0003`の帰結が既に
 明記している通り）。現時点では採用しない。
 
-### 1.2 `GET /rooms`の追加決定（2026-07-22決定、契約ドラフト化済み）
+### 1.2 `GET /rooms`の追加決定（2026-07-22決定、API形状＋ADR裁定化済み）
 
 | # | 不整合・論点 | 決定内容 |
 |---|---|---|
-| 1 | `GET /rooms`（会議室一覧）が契約に無い | **決定**: `reservation-system`に追加する。フロントの必要（id・name・capacity・営業時間の一覧取得）から形を決める（consumer-driven contract）。architectが契約ドラフトを起草した |
+| 1 | `GET /rooms`（会議室一覧）が契約に無い | **決定**: `reservation-system`に追加する。フロントの必要（id・name・capacity・営業時間の一覧取得）から形を決める（consumer-driven contract）。architectがAPI形状とADR裁定を起草した |
 
 具体的な形（人間承認待ちのドラフト）:
 
-- `GET /rooms`（新規）が、`roomId`・`name`（表示名）・`businessHoursStart`/`businessHoursEnd`・
+- `GET /rooms`（新規）が、`roomId`・`name`・`businessHoursStart`/`businessHoursEnd`・
   `capacity`を含む会議室一覧を返す。並び順は表示名の昇順、0件は200+空配列
 - `minReservationDurationMinutes`（最小予約時間）は一覧に**含めない**。システム共通の単一値であり、
   値の出処を`GET /rooms/{roomId}/rules`（RSV-R、既存承認済み・無変更）の1箇所に保つ判断
@@ -99,9 +108,10 @@ limited-disclosure.md`により、**案B（無認証・情報を絞る）を当�
 - `name`（表示名）フィールドは新設ではない。design.mdの`rooms`テーブル・test-support-api.yamlの
   シード用スキーマには元々存在していたが、公開APIで返されたことがこれまでなかった。本スライスで
   初めて公開する
-- 追加物: `projects/reservation-system/contracts/reservation-api.yaml`（RSV-L追記）、
-  `projects/reservation-system/contracts/reservation-rooms.feature`（新規、RSV-L-01〜03）、
-  `projects/reservation-system/adr/0007`（役割分担の裁定、ドラフト）
+- 追加物: `projects/reservation-system/contracts/reservation-api.yaml`（RSV-L追記、API形状のみ）、
+  `projects/reservation-system/adr/0007`（役割分担の裁定、ドラフト）。**受け入れシナリオ層
+  （`reservation-rooms.feature`、RSV-L）は本改訂では起こしていない**。実装スライス着手時にtesterが
+  RSV-Lとして起こす（IDは予約。理由はreservation-system/adr/0007・friction-log.md参照）
 - **人間が承認すべき点は残っている**（契約はドラフトのまま）: レスポンス形状・並び順・
   `minReservationDurationMinutes`を含めない判断・0件時の扱い（詳細は各契約ファイルの解釈ポイント、
   ADR-0007を参照）
@@ -113,7 +123,7 @@ limited-disclosure.md`により、**案B（無認証・情報を絞る）を当�
 | # | 不整合・論点 | 分類 | 対応する契約/シナリオ |
 |---|---|---|---|
 | 4 | `PATCH /reservations/{id}`（時間変更）が契約に無く、設計内でも未実装（案内文のみ先行） | **人間判断が要る**（機能要否）／文言は設計調整で足りる（下記9節） | — |
-| 7 | `GET /rooms/{roomId}/rules`（RSV-R、既存承認済み）が営業時間・定員・最小予約時間を提供済み。設計の固定`ROOMS`配列をこのAPI由来に置き換えれば、新規契約なしで営業時間反映・定員チェックの土台が作れる。**（2026-07-22追記）`GET /rooms`（RSV-L、ドラフト）が承認されれば、会議室ごとに`/rules`をN回呼ぶ代わりに、一覧取得1回で`ROOMS`配列全体を置き換えられる選択肢も増える** | **設計調整で足りる** | reservation-rules.feature, reservation-api.yaml RSV-R追記／reservation-rooms.feature（RSV-L、ドラフト） |
+| 7 | `GET /rooms/{roomId}/rules`（RSV-R、既存承認済み）が営業時間・定員・最小予約時間を提供済み。設計の固定`ROOMS`配列をこのAPI由来に置き換えれば、新規契約なしで営業時間反映・定員チェックの土台が作れる。**（2026-07-22追記）`GET /rooms`（RSV-L、API形状はドラフト）が承認・実装されれば、会議室ごとに`/rules`をN回呼ぶ代わりに、一覧取得1回で`ROOMS`配列全体を置き換えられる選択肢も増える** | **設計調整で足りる** | reservation-rules.feature, reservation-api.yaml RSV-R追記／reservation-api.yaml RSV-L追記（ドラフト。受け入れシナリオは実装スライスでRSV-Lとして起こす） |
 | 8 | 予約作成の検証（重複・定員・最小30分・営業時間）が一切ない（`handleBook`） | **実装時に直す**（ADR-0001が想定する「最終判定はAPI」の姿） | RSV-C-02/05/06/07/08/09/10 |
 | 9 | 予約ダイアログの文言「デフォルトで60分確保」と、実装の終了時刻計算（30分固定）が食い違う | **設計調整で足りる** | — |
 | 10 | 最小予約時間（30分）ルールが「使われていない」（固定60分により違反が構造的に起きないだけ） | **設計調整で足りる** | RSV-C-05 |
@@ -123,7 +133,7 @@ limited-disclosure.md`により、**案B（無認証・情報を絞る）を当�
 | 14 | キャンセル期限判定`isAfter(startTimeDate, addMinutes(now, 15))`が「15分前ちょうど」を拒否側に倒す（契約は"15分前まで可"） | **実装時に直す** | RSV-K-05 |
 | 17 | RFE-A-02/RSV-A-04（終日埋まっている）: 明示的な「空きなし」の状態表示が無い | **設計調整で足りる** | RFE-A-02, RSV-A-04 |
 | 18 | RFE-A-01（一部空きがある）: 契約は「空いている時間帯として…表示される」ことを明言するが、設計は予約バーの不在による間接表現のみで明示要素が無い | **設計調整で足りる** | RFE-A-01 |
-| 19 | RFE-A-03/RSV-A-07（存在しない会議室）: 固定`ROOMS`配列のため、この状態を発生させる導線が構造的に無い（項目1と連動）。**（2026-07-22追記）`GET /rooms`（RSV-L、ドラフト）が承認・実装されれば、`ROOMS`配列が動的な一覧に置き換わり、存在しない会議室IDへの導線（例: 一覧取得後にIDが変わる/削除される想定）を設計できる余地が生まれる。ただしこの状態を具体的にどう発生させるかは設計調整の範囲** | **設計調整で足りる** | RFE-A-03, RSV-A-07 |
+| 19 | RFE-A-03/RSV-A-07（存在しない会議室）: 固定`ROOMS`配列のため、この状態を発生させる導線が構造的に無い（項目1と連動）。**（2026-07-22追記）`GET /rooms`（RSV-L、API形状はドラフト）が承認・実装されれば、`ROOMS`配列が動的な一覧に置き換わり、存在しない会議室IDへの導線（例: 一覧取得後にIDが変わる/削除される想定）を設計できる余地が生まれる。ただしこの状態を具体的にどう発生させるかは設計調整の範囲** | **設計調整で足りる** | RFE-A-03, RSV-A-07 |
 | 20 | RSV-C系拒否シナリオ（重なり・30分未満・営業時間外・定員超過）に対応する拒否UIが無い | **実装時に直す**＋設計調整で足りる（8・13と同根） | RSV-C-02/05/06/07/08/09/10 |
 | 21 | RSV-K系拒否シナリオ（本人以外・二重キャンセル・存在しない予約）に対応する導線が無い | **実装時に直す**（13と同根） | RSV-K-02/08/09 |
 | 22 | 予約ダイアログの案内文「予約完了後、マイ予約から時間を調整可能」に対応するUI（時間変更）が存在しない（守れない約束） | **設計調整で足りる**（文言修正。案B決定によりPATCH不採用の間は文言を落とすべきことが確定） | — |
@@ -132,7 +142,7 @@ limited-disclosure.md`により、**案B（無認証・情報を絞る）を当�
 
 ## 3. 新規API要否の判断材料（詳細、更新版）
 
-### (1) `GET /rooms` — 会議室一覧の取得 [項目1・**解決済み（2026-07-22決定・契約ドラフト化）**]
+### (1) `GET /rooms` — 会議室一覧の取得 [項目1・**解決済み（2026-07-22決定・API形状＋ADR裁定化）**]
 
 - **UXでの必要性**: 高い。設計は`ROOMS`という固定配列（room-a/room-b/room-c、各々name・capacity・
   営業時間を保持）をヘッダーのタイムラインに表示している（`BookingDesign.tsx` L66-70）
@@ -145,7 +155,9 @@ limited-disclosure.md`により、**案B（無認証・情報を絞る）を当�
   `businessHoursEnd`・`capacity`を含む一覧（表示名昇順、0件は空配列）を返す。
   `minReservationDurationMinutes`は含めず、`GET /rooms/{roomId}/rules`（RSV-R、無変更）に一元化する。
   役割分担の裁定は`reservation-system/adr/0007`（ドラフト）、契約は`reservation-api.yaml`のRSV-L追記
-  ・`reservation-rooms.feature`（新規、RSV-L-01〜03）を参照
+  （API形状のみ）を参照。**受け入れシナリオ（一覧内容・name昇順・0件=空一覧）はRSV-Lとして実装
+  スライスでtesterが起こす**（IDは予約。理由: シナリオIDがgovlintとCucumberを結合する構造上の制約、
+  詳細はreservation-system/friction-log.md参照）
 
 ### (2)〜(3) `GET /reservations?date=` / `GET /reservations?reserverId=` [項目2・3・解決済み]
 
@@ -167,8 +179,9 @@ ADR-0006（frontend）により**不採用が決定**。詳細は上記「1. 解
 
 - **予約者の表示名（`reserverName`）**[項目5・**解決済み**]: ADR-0006により契約に追加しない、画面にも
   表示しない、と決定
-- **会議室の表示名（`name`）**[項目1・**解決済み（2026-07-22）**]: `GET /rooms`（RSV-L、ドラフト）で
-  初めて公開APIに露出する。データモデル自体（`rooms`テーブルの`name`列）は元から存在していた
+- **会議室の表示名（`name`）**[項目1・**解決済み（2026-07-22）**]: `GET /rooms`（RSV-L、API形状は
+  ドラフト）で初めて公開APIに露出する。データモデル自体（`rooms`テーブルの`name`列）は元から
+  存在していた
 - **会議の目的・タイトル**: 今回の設計には会議タイトル・目的に相当するフィールド・入力欄が存在しない。
   設計自体がこの情報を扱っていないため対応不要
 
@@ -183,8 +196,8 @@ ADR-0006（frontend）により**不採用が決定**。詳細は上記「1. 解
   （L51-52, L67-69）が、タイムライン描画・クリック可能なスロット生成（`generateTimeSlots(9, 21)`,
   L273）は全会議室に対して一律09:00-21:00の範囲を使っている。既に承認済みの`GET /rooms/{roomId}/rules`
   （RSV-R、businessHoursStart/businessHoursEnd）が同じ情報を会議室ごとに返す契約として既に存在し、
-  さらに`GET /rooms`（RSV-L、ドラフト）が一覧取得1回で全会議室分の同じ情報を返せるため、**新規契約
-  なしで解消できる（RSV-Lが承認されれば選択肢が増える）**
+  さらに`GET /rooms`（RSV-L、API形状はドラフト）が一覧取得1回で全会議室分の同じ情報を返せるため、
+  **新規契約なしで解消できる（RSV-Lが承認・実装されれば選択肢が増える）**
 - **定員**[項目12・実装時に直す]: 会議室ごとの定員は表示される（L265）が、予約人数入力（L344-353）には
   上限チェックが無い。`GET /rooms/{roomId}/rules`または`GET /rooms`の`capacity`で取得可能
 - **キャンセル期限（開始15分前まで）**[項目14・実装時に直す]: `handleCancel`（L129-143）の判定式
@@ -204,7 +217,7 @@ system/adr/0006`（空き枠のみを返す設計）は無変更のまま維持�
 |---|---|---|---|
 | RFE-A-01（一部空きがある）[項目18] | 「空いている時間帯として"09:00"から"10:00"と"11:00"から"18:00"が画面に表示される」 | 予約バーの不在による間接表現のみ。「空いている」ことを明言する要素が無い | 設計調整で足りる |
 | RFE-A-02 / RSV-A-04（終日埋まっている）[項目17] | 「空いている時間帯がないことが画面で分かる」 | 明示的な空状態表示は無い | 設計調整で足りる |
-| RFE-A-03 / RSV-A-07（存在しない会議室）[項目19] | 「会議室が存在しないことを伝える案内が画面に表示される」 | 固定`ROOMS`配列（3件）のみを前提とし、存在しない会議室IDを指定する導線自体が存在しない | 設計調整で足りる（`GET /rooms`〔RSV-L、ドラフト〕の承認・実装後に導線を設計できる） |
+| RFE-A-03 / RSV-A-07（存在しない会議室）[項目19] | 「会議室が存在しないことを伝える案内が画面に表示される」 | 固定`ROOMS`配列（3件）のみを前提とし、存在しない会議室IDを指定する導線自体が存在しない | 設計調整で足りる（`GET /rooms`〔RSV-L、API形状はドラフト〕の承認・実装後に導線を設計できる） |
 | RSV-C-02 等（時間帯の重なり→409拒否）[項目20] | 「予約は"時間帯が既存の予約と重なっている"という理由で拒否される」 | 拒否表示なし | 実装時に直す |
 | RSV-C-05/08/09/10（30分未満・営業時間外・定員超過→422拒否）[項目20] | 理由付きで拒否される | そもそも違反状態を作れない | 実装時に直す |
 | RSV-K-02（本人以外のキャンセル→403拒否）[項目21] | 「予約は"予約した本人ではない"という理由で拒否される」 | 他人の予約へのキャンセル導線自体が存在しない | 実装時に直す |
@@ -247,10 +260,10 @@ system/adr/0006`（空き枠のみを返す設計）は無変更のまま維持�
    に合わせて修正するにとどめるかの方針
 
 **加えて、`GET /rooms`の契約ドラフト自体（`reservation-api.yaml`のRSV-L追記・
-`reservation-rooms.feature`・`reservation-system/adr/0007`）はまだ人間の承認を経ていない**。決定した
-のは「追加すること・consumer-drivenで形を決めること」であり、architectが起草した具体的な形（レスポンス
-形状・並び順・`minReservationDurationMinutes`を含めない判断など）は、通常の契約承認プロセスで確認が
-必要。
+`reservation-system/adr/0007`）はまだ人間の承認を経ていない**。決定したのは「追加すること・
+consumer-drivenで形を決めること」であり、architectが起草した具体的な形（レスポンス形状・並び順・
+`minReservationDurationMinutes`を含めない判断など）は、通常の契約承認プロセスで確認が必要。
+**受け入れシナリオ（RSV-L）は今回の承認対象に含まれない**。実装スライス着手時にtesterが起こす。
 
 他の項目（7・8・9・10・11・12・13・14・17・18・19・20・21・22）はいずれも[設計調整で足りる]
 [実装時に直す]に分類済みであり、骨格を保った洗練・実装統合の中で対応できる。
@@ -282,8 +295,8 @@ ADR-0006（案B採用）に伴い、`BookingDesign.tsx`に対して次の調整�
 
 ## 10. `GET /rooms`決定に伴う設計調整（骨格内・実装リスト。今は実装しない）
 
-`GET /rooms`（RSV-L、ドラフト）が承認・実装された場合、`BookingDesign.tsx`に対して次の調整が可能に
-なる。いずれも骨格を変えない実装統合の対象（今は実装しない）:
+`GET /rooms`（RSV-L、API形状はドラフト）が承認・実装された場合、`BookingDesign.tsx`に対して次の調整が
+可能になる。いずれも骨格を変えない実装統合の対象（今は実装しない）:
 
 1. **固定`ROOMS`配列を`GET /rooms`のレスポンスに置き換える**（項目7・19に対応）。これにより会議室
    ごとの営業時間がタイムライン描画に正しく反映できるようになり（現状は全室一律9-21時のハードコード）、
@@ -293,3 +306,6 @@ ADR-0006（案B採用）に伴い、`BookingDesign.tsx`に対して次の調整�
 3. **最小予約時間（30分）は`GET /rooms`からは取得できない**点に注意（項目10）。ADR-0007の判断により
    `minReservationDurationMinutes`は`GET /rooms/{roomId}/rules`のみが返す。予約フォームでの検証には
    引き続き`/rules`の呼び出しが必要
+4. **本項目の実装着手には、`GET /rooms`の受け入れシナリオ（RSV-L）の起票・実装（backend側）が前提**
+   となる。現時点ではAPI形状とADR裁定のみが確定しており、受け入れシナリオ・実装は次スライスで
+   セットで着手される（reservation-system/activeContext.md参照）
