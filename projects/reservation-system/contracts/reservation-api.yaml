@@ -10,6 +10,13 @@
 #       paths./rooms/{roomId}/rules)。POST /reservations・POST /reservations/{reservationId}/cancel・
 #       GET /rooms/{roomId}/availabilityを含む既存部分は無変更。ROOM_NOT_FOUNDは既存コードを再利用し、
 #       ProblemResponse.codeの説明文への追記は行わない(新規コードではないため)
+# 改訂(ドラフト、人間承認待ち): 2026-07-22 GET /roomsのAPI形状(会議室一覧取得)を追記(下記「RSV-L追記」ブロックと
+#       paths./rooms)。POST /reservations・POST /reservations/{reservationId}/cancel・
+#       GET /rooms/{roomId}/availability・GET /rooms/{roomId}/rulesを含む既存部分は無変更。新規の拒否理由コードは
+#       無い(このクエリに拒否レスポンスが存在しないため、ProblemResponse.code説明文への追記も無い)。この改訂は
+#       API形状のみを対象とし、受け入れシナリオ(一覧内容・name昇順・0件=空一覧)は対象外(実装スライスでtesterが
+#       RSV-Lとして起こす。IDは予約。詳細な裁定はadr/0007を参照)。人間承認後にこのコメントと下記「RSV-L追記」
+#       ブロックの「(ドラフト、人間承認待ち)」表記を「(承認済み: 承認日)」にarchitectが置き換える
 # 範囲: このスライスで使う操作だけを定義する。先のスライスの分は書かない
 #
 # ============================================================
@@ -148,6 +155,58 @@
 #       の説明文(既存承認済みテキスト)への変更は行わない(新規コードではないため追記不要と判断)
 #
 # ---- RSV-R追記ここまで ----
+# ============================================================
+#
+# ---- RSV-L「会議室の一覧を確認できる」追記(ドラフト: 2026-07-22、人間承認待ち。API形状のみ) ----
+# 4行目の要約:
+#   会議室の一覧を確認する: GET /rooms を呼ぶ。パスパラメータ・クエリパラメータは無い。
+#                          成功は200+全会議室の一覧(0件なら空配列)。拒否レスポンスは無い
+#
+# リクエスト例(会議室の一覧を確認):
+#   GET /rooms
+#
+# 成功レスポンス例(200、会議室が2件登録されている場合):
+#   { "rooms": [
+#       { "roomId": "room-a", "name": "会議室A", "businessHoursStart": "09:00", "businessHoursEnd": "18:00", "capacity": 6 },
+#       { "roomId": "room-b", "name": "会議室B", "businessHoursStart": "08:00", "businessHoursEnd": "20:00", "capacity": 10 }
+#     ] }
+#   会議室が一件も登録されていない場合は "rooms": [] (空配列)
+#
+# 拒否理由コードとシナリオの対応: 無し。このクエリはパス・クエリパラメータを持たず、リクエストの
+#   妥当性で失敗する経路が存在しない(RSV-A/RSV-RのroomId不正→404に相当する概念が無い)
+#
+# 発端: reservation-frontend側の設計突き合わせ(design/reconciliation/booking-design-reconciliation.md
+# 項目1・7・19)で判明した未契約の必要性。人間が「reservation-systemに追加する・フロントの必要から
+# 形を決める(consumer-driven contract)」ことを決定(2026-07-22)。詳細な裁定はadr/0007を参照
+#
+# 解釈ポイント(architectの判断。承認時に確認されたい。受け入れシナリオ(一覧内容・name昇順・0件=空一覧)は
+# 本改訂の対象外とし、実装スライスでtesterがRSV-Lとして起こす。IDは予約(adr/0007を参照)):
+#   (1) 一覧の各要素(RoomSummary)にはroomId・name・businessHoursStart/End・capacityを含め、
+#       minReservationDurationMinutes(最小予約時間)は含めない。理由・代替案の検討はadr/0007を参照
+#       (要旨: システム共通の単一値を一覧要素ごとに複製すると二重管理のリスクを生む。/rulesを
+#       正とする)
+#   (2) name(表示名)フィールドは新設ではない。design.mdのroomsテーブル・test-support-api.yamlの
+#       RoomUpsertRequest/RoomResponseには2026-07-13時点から既に存在するが、公開APIのレスポンスに
+#       含まれたことはこれまでなかった。本スライスで初めて公開する(adr/0007)
+#   (3) レスポンスは配列を直接返さず、"rooms"キーを持つオブジェクト(RoomListResponse)でラップした。
+#       既存の全レスポンス(ReservationResponse・AvailabilityResponse等)がオブジェクトである
+#       パターンとの整合、および将来のページング・件数等のメタデータ追加への拡張余地のため
+#       (現時点でページング・絞り込みクエリパラメータは持たない。P-02: 今必要な分だけ)
+#   (4) 一覧の並び順はname(表示名)の昇順に固定した。roomIdはサーバ採番の不透明な識別子であり
+#       (test-support-api.yamlのRoomResponse例「roomId: 5f3a…(サーバ採番)」)順序に業務的な意味を
+#       持たせられない
+#   (5) 会議室が0件の場合は200+空配列("rooms": [])を返す。404にはしない。一覧クエリ自体は成功して
+#       おり、対象が0件であることと個々の会議室の不存在(ROOM_NOT_FOUND、RSV-A-07/RSV-R-03)は
+#       別の意味論であるため
+#   (6) このクエリも予約者の識別(reserverId等)を要求しない(RSV-A/RSV-R解釈ポイントと同じ理由。
+#       ADR-0003の精神=閲覧は公開情報、と整合)
+#   (7) クエリパラメータ(絞り込み)は現時点で持たない。少数の社内会議室を想定し全件を返せば足りる
+#       (人間の想定)。将来会議室数が増えた場合の絞り込み・ページングは別スライスで再検討する(P-02)
+#   (8) /rooms/{roomId}/rulesとの役割分担: /roomsは「一覧・存在の概要(表示・会議室選択用)」、
+#       /rulesは「個別会議室の予約前詳細(最小予約時間を含む検証用)」。/rulesの契約(reservation-
+#       rules.feature・本ファイルのRSV-R追記)は変更しない。役割分担の裁定はadr/0007を参照
+#
+# ---- RSV-L追記ここまで ----
 # ============================================================
 openapi: 3.0.3
 info:
@@ -357,6 +416,32 @@ paths:
                 code: ROOM_NOT_FOUND
                 message: 会議室が存在しません
   # ---- RSV-R追記ここまで ----
+  # ---- ここから RSV-L追記(ドラフト、人間承認待ち。API形状のみ)。上のPOST /reservations・POST /reservations/{reservationId}/cancel・
+  # GET /rooms/{roomId}/availability・GET /rooms/{roomId}/rulesは無変更 ----
+  /rooms:
+    get:
+      operationId: listRooms
+      summary: 会議室の一覧を確認する(RSV-L追記、ドラフト)
+      responses:
+        "200":
+          description: 会議室の一覧が返る。並び順はname(表示名)の昇順。会議室が一件も無い場合は空配列。受け入れシナリオは実装スライスでtesterがRSV-Lとして起こす(adr/0007を参照)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomListResponse"
+              example:
+                rooms:
+                  - roomId: room-a
+                    name: 会議室A
+                    businessHoursStart: "09:00"
+                    businessHoursEnd: "18:00"
+                    capacity: 6
+                  - roomId: room-b
+                    name: 会議室B
+                    businessHoursStart: "08:00"
+                    businessHoursEnd: "20:00"
+                    capacity: 10
+  # ---- RSV-L追記ここまで ----
 components:
   schemas:
     CreateReservationRequest:
@@ -490,6 +575,40 @@ components:
           minimum: 1
           description: 予約可能な最小時間(分)。システム共通の値で、会議室によらず同じ(RSV-C-05/RSV-A-05のルールと同一箇所を参照)
     # ---- RSV-R追記ここまで ----
+    # ---- RSV-L追記(ドラフト、人間承認待ち): 会議室一覧確認用スキーマ2つ ----
+    RoomListResponse:
+      type: object
+      required: [rooms]
+      properties:
+        rooms:
+          type: array
+          description: >
+            会議室の一覧。name(表示名)の昇順で返る。会議室が一件も登録されていない場合は空配列
+          items:
+            $ref: "#/components/schemas/RoomSummary"
+    RoomSummary:
+      type: object
+      required: [roomId, name, businessHoursStart, businessHoursEnd, capacity]
+      properties:
+        roomId:
+          type: string
+          description: 会議室ID
+        name:
+          type: string
+          description: 会議室の表示名(例"会議室A")。/rooms/{roomId}/rulesには含まれない(役割分担はadr/0007)
+        businessHoursStart:
+          type: string
+          pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          description: 営業時間の開始時刻(会議室ごとの現在の設定)
+        businessHoursEnd:
+          type: string
+          pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          description: 営業時間の終了時刻(会議室ごとの現在の設定)
+        capacity:
+          type: integer
+          minimum: 1
+          description: 定員(会議室ごとの現在の設定)
+    # ---- RSV-L追記ここまで。minReservationDurationMinutesは含めない(理由はadr/0007) ----
     ProblemResponse:
       type: object
       required: [code, message]
@@ -505,6 +624,7 @@ components:
             ROOM_NOT_FOUND(会議室が存在しない)
             ※RSV-K改訂でキャンセル系4コードを追記(人間裁定に基づく承認済みテキストの改訂)
             ※RSV-A改訂(承認済み 2026-07-16): ROOM_NOT_FOUNDを追記。既存9コードの意味・割り当ては無変更
+            ※RSV-L(ドラフト): 新規コードなし。GET /roomsに拒否レスポンスが無いため
         message:
           type: string
           description: 人間が読める説明
