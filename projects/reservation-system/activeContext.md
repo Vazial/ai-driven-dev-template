@@ -2,7 +2,7 @@
 
 > P-11: このファイルは常に「現在」だけを映す。更新は上書き。歴史はgitとADRが持つ。
 > 更新タイミング: スライスの区切り、エスカレーション発生時（permissions.md）
-> 最終更新: 2026-07-17
+> 最終更新: 2026-07-22
 
 ## 今どこにいるか
 
@@ -10,12 +10,15 @@
 
 **B層の再定義（人間と合意 2026-07-18）**: B層は「昇格で埋まる任意のカタログ」。A→B一方向依存（Bは前提でなく選択肢）、型=A/実体=B、低儀式・マッチ制。実プロジェクトで(スタック×役割)が実証され2本目が欲しがった時に、汎用スケルトンとして昇格して埋める（書き溜め禁止）。今は在庫ゼロ、reservation-systemが最初の種。
 
+**新スライス候補 RSV-L「会議室の一覧を確認できる」（GET /rooms、ドラフト・2026-07-22）**: reservation-frontend側の設計↔契約整合性監査（`reservation-frontend/design/reconciliation/booking-design-reconciliation.md`）で残っていた未決2件のうち1件。人間が「reservation-systemに追加する・フロントの必要から形を決める（consumer-driven contract）」と決定し、architectが契約ドラフトを起草した: `contracts/reservation-api.yaml`のRSV-L追記、`contracts/reservation-rooms.feature`（新規、RSV-L-01〜03）、`adr/0007`（役割分担の裁定、ドラフト）。**人間承認はまだ**。承認後は他スライスと同様に実装（domain/application/adapter・受け入れテスト）に着手する想定。既存の`GET /rooms/{roomId}/rules`（RSV-R）は無変更のまま維持（一覧＝概要、/rules＝予約前詳細、で役割分担）。design.md・ARCHITECTURE.mdへの反映は契約承認に随伴させ、まだ行っていない。
+
 ## 次にやること
 
 1. PR #14（B層を空に戻す＋root掃除＋govlint）→ CI → 人間マージ
 2. **② B層再定義をarchitecture-selection.mdに明文化**（architectが数行、低儀式。上記合意の転記。meta変更=マージで承認）。PR #14に同梱予定
 3. **① 承認アーティファクトの一般ルール化** → ADR-0016起草済み・PR中（ブランチ meta/adr-0016-approver-summary）。「人間が承認する成果物は先頭に承認者向けサマリを置く」をP-01の運用規約として明文化。原則P-12でなくADR（ADR-0011→0014の先例）。ADR-0002/0010はsupersedeせず包摂。機械検査は構造の有無のみ可能＝developer宿題。※ADR番号: 破棄したB層ADRの0015はtombstone欠番、本件は0016
 4. **クロスセッション経路の実地検証**: ルーティン化したスライスをフレッシュセッションに「HANDOFF読んで進めて」で拾わせる
+5. **RSV-L「会議室の一覧を確認できる」の契約ドラフト（人間承認待ち）**: `contracts/reservation-api.yaml`RSV-L追記・`contracts/reservation-rooms.feature`・`adr/0007`をレビューし、承認可否・修正要否を判断する。承認後はB層等と並行して実装スライスとして着手できる
 
 ## 確定した主要な判断
 
@@ -29,6 +32,7 @@
 ## 未着手の技術的宿題（スライス作業として消化）
 
 - スキーマ照合の新旧混在: RSV-Rの新規検証はyaml原本を直読み、既存(空き枠・拒否応答全般)は手写しのまま、予約作成・キャンセルの成功応答は未適用。段階移行の判断が要る(ADR-0007の全面適用)
+  - ※命名注意: 上記「ADR-0007」はスキーマ照合移行の文脈で以前から使われていた仮の参照名。2026-07-22に番号としてのADR-0007を「GET /rooms追加・役割分担」に採番したため、この宿題項目が指す先は再確認・改称が必要（架空の重複ではなく、記述の古さによる表記ゆれ。次にこの宿題に着手する時に正しいADR番号へ改める）
 - stepクラス`ReservationCreateSteps`への集約が4スライスで肥大。分割にはCucumberのglueインスタンス共有制約→DI(cucumber-picocontainer)追加の要否判断(build.gradle)
 
 ## 環境メモ
