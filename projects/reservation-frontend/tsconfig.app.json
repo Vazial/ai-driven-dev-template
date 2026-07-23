@@ -27,5 +27,10 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // design-preview（査読用の受け皿）は本番実装ではないため、本番ビルドの型検査対象から
+  // 除外する（meta/adr/0022 §2）。BookingDesign.tsx（承認済みモック）は無改変のまま
+  // 対象外にする。dev時の描画（design-preview.html 経由）はVite/esbuildの型検査を伴わない
+  // 変換のみで動くため、この除外の影響を受けない。
+  "exclude": ["src/design-preview"]
 }
