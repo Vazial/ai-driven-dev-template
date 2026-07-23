@@ -41,3 +41,21 @@ if (typeof window !== "undefined" && !window.ResizeObserver) {
   }
   window.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver;
 }
+
+// jsdom は Pointer Capture 系のAPI・scrollIntoView を実装していない。radix-ui の Select
+// （欠陥修正で新規導入、BookingDialog.tsxの開始/終了時刻選択）がトリガー・項目の
+// ポインタ操作でこれらを参照するため、テスト環境向けの最小スタブを用意する。
+if (typeof window !== "undefined" && typeof Element !== "undefined") {
+  if (!Element.prototype.hasPointerCapture) {
+    Element.prototype.hasPointerCapture = () => false;
+  }
+  if (!Element.prototype.setPointerCapture) {
+    Element.prototype.setPointerCapture = () => {};
+  }
+  if (!Element.prototype.releasePointerCapture) {
+    Element.prototype.releasePointerCapture = () => {};
+  }
+  if (!Element.prototype.scrollIntoView) {
+    Element.prototype.scrollIntoView = () => {};
+  }
+}

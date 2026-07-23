@@ -9,15 +9,21 @@
 //   - 表示名フィールドは出さない。予約者ID(reserverId)を自己申告で入力する（項目5・15/16の帰結）
 //   - 予約後の時間調整に関する案内文は出さない（PATCH /reservations/{id}は当面不採用、項目22）
 //
-// 最終判定はAPI応答が持つ（reservation-frontend/adr/0001、契約解釈ポイント(3)）。このダイアログは
-// ドメインルールを自前で再検証・先読みしない。確定の可否は常に createReservation の応答で決まる。
-import { useState } from "react";
+// 欠陥修正（人間レビュー）: クリックした空き帯の全体をそのまま予約していた（空き帯が9時間あれば
+// 9時間まるごと予約されてしまう）。時間帯を「読み取り専用テキスト」から「開始/終了を選べるSelect」に
+// 変更した（クリックした空き帯の範囲内・30分刻み、RSV-C-05の最小予約時間ルールに整合する既定値・
+// 選択肢の絞り込みはsrc/features/booking/timeOptions.tsに分離）。骨格（会議室・日付・予約者ID・
+// 参加人数・確定/キャンセルというダイアログの主要ブロック構成）は変えていない。
+//
+// 最終判定はAPI応答が持つ（reservation-frontend/adr/0001、契約解釈ポイント(3)）。UIでの選択肢の
+// 絞り込みは体験のためのものであり、ドメインルールの再検証・先読みではない。確定の可否は常に
+// createReservation の応答で決まる。
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -25,14 +31,25 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 import { createReservation } from "@/api/reservations";
 import type { RoomSummary } from "@/api/types";
+import {
+  computeDefaultTimeRange,
+  computeDefaultEndTime,
+  generateStartTimeOptions,
+  generateEndTimeOptions,
+  type BookingSlot,
+} from "./timeOptions";
 
-export type BookingSlot = {
-  startTime: string;
-  endTime: string;
-};
+export type { BookingSlot };
 
 export type BookingDialogProps = {
   open: boolean;
@@ -66,6 +83,33 @@ export default function BookingDialog({
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // 開始/終了時刻: クリックした空き帯(slot)の範囲内で選べるようにする(欠陥修正)。
+  // 既定値は空き帯の開始時刻から60分(空き帯がそれ未満なら空き帯の終了時刻まで、
+  // timeOptions.computeDefaultTimeRange)。呼び出し側(AvailabilityScreen)はkey propで
+  // 空き枠クリックごとにこのコンポーネントを再マウントするため、slotはこのインスタンスの
+  // 生存期間中は不変であり、useStateの初期化関数でslotから導出してよい。
+  const [startTime, setStartTime] = useState<string>(
+    () => (slot ? computeDefaultTimeRange(slot).startTime : ""),
+  );
+  const [endTime, setEndTime] = useState<string>(
+    () => (slot ? computeDefaultTimeRange(slot).endTime : ""),
+  );
+
+  const startOptions = useMemo(() => (slot ? generateStartTimeOptions(slot) : []), [slot]);
+  const endOptions = useMemo(
+    () => (slot ? generateEndTimeOptions(slot, startTime) : []),
+    [slot, startTime],
+  );
+
+  function handleStartTimeChange(newStartTime: string) {
+    setStartTime(newStartTime);
+    // 開始時刻を変えたら、終了時刻もその開始時刻に対する既定値(60分・空き帯の終了時刻が上限)に
+    // 引き直す。古い終了時刻を保ったまま開始だけ変えると、範囲外・逆転した組み合わせが残りうるため。
+    if (slot) {
+      setEndTime(computeDefaultEndTime(slot, newStartTime));
+    }
+  }
+
   async function handleConfirm() {
     if (!room || !slot || submitting) return;
     setSubmitting(true);
@@ -75,8 +119,8 @@ export default function BookingDialog({
       roomId: room.roomId,
       reserverId,
       date,
-      startTime: slot.startTime,
-      endTime: slot.endTime,
+      startTime,
+      endTime,
       attendeeCount,
     });
 
@@ -112,10 +156,38 @@ export default function BookingDialog({
             <div className="col-span-3">{date}</div>
           </div>
           <div className="grid grid-cols-4 items-center gap-4 text-sm">
-            <Label className="text-right">時間帯</Label>
-            <Badge variant="outline" className="w-fit col-span-3 text-base">
-              {slot ? `${slot.startTime}〜${slot.endTime}` : ""}
-            </Badge>
+            <Label htmlFor="startTime" className="text-right">
+              開始時刻
+            </Label>
+            <Select value={startTime} onValueChange={handleStartTimeChange}>
+              <SelectTrigger id="startTime" className="col-span-3 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {startOptions.map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {t}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-4 items-center gap-4 text-sm">
+            <Label htmlFor="endTime" className="text-right">
+              終了時刻
+            </Label>
+            <Select value={endTime} onValueChange={setEndTime}>
+              <SelectTrigger id="endTime" className="col-span-3 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {endOptions.map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {t}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="reserverId" className="text-right">
