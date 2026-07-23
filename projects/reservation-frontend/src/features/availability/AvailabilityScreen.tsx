@@ -1,14 +1,15 @@
-// RFE-A「会議室の空き状況を画面で確認できる」の本番画面。
+// RFE-A「会議室の空き状況を画面で確認できる」・RFE-B「空いている時間帯を予約できる」の本番画面。
 //
-// contracts/availability-view.feature（RFE-A-01/02/03）を満たす対象。BookingDesign.tsx
-// （src/design-preview/、承認済みモック）のタイムライン骨格（会議室ごとの横タイムライン・時間軸・
-// 開いた瞬間に一覧が見える）を保つ（meta/adr/0021、骨格の作り替えをしない）。
+// contracts/availability-view.feature（RFE-A-01/02/03）・contracts/reservation-booking.feature
+// （RFE-B-01/02/03）を満たす対象。BookingDesign.tsx（src/design-preview/、承認済みモック）の
+// タイムライン骨格（会議室ごとの横タイムライン・時間軸・開いた瞬間に一覧が見える）・予約ダイアログ骨格
+// を保つ（meta/adr/0021、骨格の作り替えをしない。ダイアログ本体はBookingDialog.tsxに分離）。
 //
 // 適用した設計調整（reservation-frontend/adr/0006「案B」、design/reconciliation/
 // booking-design-reconciliation.md 9節）:
 //   - 予約者名は表示しない。予約バーは「空き」「予約済み（不可）」の二値状態表示にとどめる
 //   - 会議室ごとの営業時間をタイムライン描画に反映する（reconciliation項目7）
-//   - 予約作成・自分の予約・キャンセルはこのスライスのスコープ外（別スライス）
+//   - 自分の予約・キャンセルはこのスライスのスコープ外（別スライス）
 import { useEffect, useMemo, useState } from "react";
 import { addDays, format, subDays } from "date-fns";
 import { ja } from "date-fns/locale";
@@ -19,11 +20,13 @@ import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+import { Toaster } from "@/components/ui/sonner";
 
 import { listRooms } from "@/api/rooms";
 import { getRoomAvailability } from "@/api/availability";
-import type { ApiResult, AvailabilityResponse, RoomSummary } from "@/api/types";
+import type { ApiResult, AvailabilityResponse, AvailableTimeSlot, RoomSummary } from "@/api/types";
 import { deriveUnavailableRanges, rangeToPercent, timeToMinutes } from "./timeGrid";
+import BookingDialog, { type BookingSlot } from "@/features/booking/BookingDialog";
 
 const DEFAULT_AXIS_START = "09:00";
 const DEFAULT_AXIS_END = "18:00";
@@ -63,6 +66,16 @@ export default function AvailabilityScreen({ initialDate }: AvailabilityScreenPr
   const [rooms, setRooms] = useState<RoomSummary[]>([]);
   const [availabilityByRoom, setAvailabilityByRoom] = useState<AvailabilityByRoom>({});
 
+  // RFE-B: 予約ダイアログの状態。空き枠クリックで開き、会議室・日付・時間帯を引き継ぐ(RFE-B-01)
+  const [bookingRoom, setBookingRoom] = useState<RoomSummary | null>(null);
+  const [bookingSlot, setBookingSlot] = useState<BookingSlot | null>(null);
+  const [isBookingDialogOpen, setIsBookingDialogOpen] = useState(false);
+  // クリックのたびに増分し、BookingDialogをkeyとして再マウントしてフォーム状態をリセットする
+  // (BookingDialog.tsxの注記参照。エフェクトでのリセットは行わない)
+  const [bookingDialogKey, setBookingDialogKey] = useState(0);
+  // 予約確定の試行(成功/拒否のいずれでも)のたびに増分し、空き状況の再取得を発火させる
+  const [refreshTick, setRefreshTick] = useState(0);
+
   const formattedDate = format(currentDate, "yyyy-MM-dd");
 
   useEffect(() => {
@@ -89,13 +102,26 @@ export default function AvailabilityScreen({ initialDate }: AvailabilityScreenPr
     };
     // formattedDate は currentDate から一意に導出される値のため、依存配列は currentDate で足りる
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentDate]);
+  }, [currentDate, refreshTick]);
 
   const axis = useMemo(() => computeAxisRange(rooms), [rooms]);
   const marks = useMemo(() => hourMarks(axis.start, axis.end), [axis]);
 
+  function handleSlotClick(room: RoomSummary, slot: AvailableTimeSlot) {
+    // RFE-B-01: 空いている時間帯をクリックして予約ダイアログを開く
+    setBookingRoom(room);
+    setBookingSlot(slot);
+    setIsBookingDialogOpen(true);
+    setBookingDialogKey((k) => k + 1);
+  }
+
+  function handleBookingSettled() {
+    setRefreshTick((t) => t + 1);
+  }
+
   return (
     <div className="flex flex-col h-screen bg-slate-50 text-slate-900">
+      <Toaster />
       <header className="border-b bg-white px-6 py-3 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-4">
           <h1 className="text-xl font-bold tracking-tight text-blue-600">RoomReserve</h1>
@@ -161,11 +187,22 @@ export default function AvailabilityScreen({ initialDate }: AvailabilityScreenPr
                 axisStart={axis.start}
                 axisEnd={axis.end}
                 result={availabilityByRoom[room.roomId]}
+                onSlotClick={(slot) => handleSlotClick(room, slot)}
               />
             ))}
           </ScrollArea>
         </Card>
       </main>
+
+      <BookingDialog
+        key={bookingDialogKey}
+        open={isBookingDialogOpen}
+        onOpenChange={setIsBookingDialogOpen}
+        room={bookingRoom}
+        date={formattedDate}
+        slot={bookingSlot}
+        onSettled={handleBookingSettled}
+      />
     </div>
   );
 }
@@ -175,11 +212,13 @@ function RoomAvailabilityRow({
   axisStart,
   axisEnd,
   result,
+  onSlotClick,
 }: {
   room: RoomSummary;
   axisStart: string;
   axisEnd: string;
   result: ApiResult<AvailabilityResponse> | undefined;
+  onSlotClick: (slot: AvailableTimeSlot) => void;
 }) {
   return (
     <div
@@ -235,7 +274,8 @@ function RoomAvailabilityRow({
               );
             })}
 
-            {/* RFE-A-01: 空いている時間帯として明示的に表示される */}
+            {/* RFE-A-01: 空いている時間帯として明示的に表示される。
+                RFE-B-01: クリックすると予約ダイアログが開く(会議室・日付・時間帯を引き継ぐ) */}
             {result.data.availableSlots.map((slot, idx) => {
               const { left, width } = rangeToPercent(
                 slot.startTime,
@@ -246,7 +286,13 @@ function RoomAvailabilityRow({
               return (
                 <div
                   key={`free-${idx}`}
-                  className="absolute top-1 bottom-1 rounded-md border bg-emerald-50 border-emerald-200 text-emerald-700 text-xs flex items-center justify-center overflow-hidden px-1"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onSlotClick(slot)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") onSlotClick(slot);
+                  }}
+                  className="absolute top-1 bottom-1 rounded-md border bg-emerald-50 border-emerald-200 text-emerald-700 text-xs flex items-center justify-center overflow-hidden px-1 cursor-pointer hover:bg-emerald-100"
                   style={{ left: `${left}%`, width: `${width}%` }}
                 >
                   空き {slot.startTime}〜{slot.endTime}
