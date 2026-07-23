@@ -32,5 +32,8 @@
   // 除外する（meta/adr/0022 §2）。BookingDesign.tsx（承認済みモック）は無改変のまま
   // 対象外にする。dev時の描画（design-preview.html 経由）はVite/esbuildの型検査を伴わない
   // 変換のみで動くため、この除外の影響を受けない。
-  "exclude": ["src/design-preview"]
+  // テストファイル（*.test.ts(x)）もここでは除外する。Vitestは自身のトランスフォームで
+  // 実行するため本番ビルドの型検査対象に含める必要がなく、テスト専用の型（vitest globals等）
+  // を本番ビルドの関心から分離する。
+  "exclude": ["src/design-preview", "src/**/*.test.ts", "src/**/*.test.tsx", "src/test"]
 }
