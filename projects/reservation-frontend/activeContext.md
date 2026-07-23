@@ -2,7 +2,7 @@
 
 > P-11: このファイルは常に「現在」だけを映す。更新は上書き。歴史はgitとADRが持つ。
 > 更新タイミング: スライスの区切り、エスカレーション発生時（permissions.md）
-> 最終更新: 2026-07-22
+> 最終更新: 2026-07-23
 
 ## 今どこにいるか
 
@@ -133,22 +133,39 @@ shadcn選定・伝送方式訂正・成果物形式変更のいずれよりも�
 だけがCI上で実装と強く結びついている（govlintのL0が参照シナリオIDの定義を要求し、L4が定義済みシナリオ
 の実装を要求する。projects/reservation-system/friction-log.md FR-014）という構造から導かれた。
 **本プロジェクトへの適用として、断面①（契約形状・ADR・reconciliation・画面モック・design-preview受け
-皿）のうち、契約形状・ADR（0001〜0006）・reconciliationは既にmainにあるが、画面モック
-（`BookingDesign.tsx`）とdesign-preview受け皿はPRドラフトの段階で保留中であり、断面①はまだ未完**で
-ある。断面①を完成させるには、design-previewの出荷経路除外（developer宿題、下記参照）を実装した上で
-モック＋受け皿をmainに載せる必要がある。また、design-preview隔離の原則（受け皿≠本実装、本番ビルド・
-配信ルートに含めない）が、meta/adr/0021の宿題扱いから本ADRで正式な原則へ格上げされた（実現手段は
-引き続きdeveloper宿題のまま）。
+皿）の成果物は出揃った**——契約形状・ADR（0001〜0006）・reconciliationに加え、画面モック
+（`BookingDesign.tsx`）とdesign-preview受け皿も、**design-preview隔離（出荷経路除外）を実装した上で
+2026-07-23にmainへ載った（PR #9マージ）**。残るのは各project ADR（0001〜0006）の**正式承認（設計骨格
+承認点。現状`status: 提案中`）**である。また、design-preview隔離の原則（受け皿≠本実装、本番ビルド・
+配信ルートに含めない）が、meta/adr/0021の宿題扱いからADR-0022で正式な原則へ格上げされ、
+**その初適用として#9で実装された**（別Viteエントリ・tsconfig除外・import境界lint。BookingDesign.tsxは無改変）。
+
+**続けて、クロスプロジェクトの協調（consumer-driven契約・縦順序・越境の実行主体）が正式化された**
+（meta/adr/0023、ドラフト・人間承認待ち）。`GET /rooms`（`reservation-system/adr/0007`）の起草は、
+reservation-frontendの設計が初めてバックエンド契約を実際に駆動した実例（consumer-driven contract）
+であり、この初の実連動から得られた学びを制度化するものである。要点: (1)UIの設計がバックエンド契約の
+形を駆動してよい、(2)フロントは契約に対して作り・バック実装は独立トラックとする（プロジェクトを
+またいでPRを交互に出さない）、(3)**旧「フロントが必要とする能力がバックエンド契約に無い場合の運用」
+ルール（人間が転記）を更新**——AIは人間の決定なしに自動で越境編集しないというガードは維持しつつ、
+人間が「バックに持ち込む」と決定（authorize）したらarchitectが直接バックエンド契約を起草してよい。
+`GET /rooms`の起草自体が、この新しい経路の初適用である。**現状の正確な位置**: backend側は
+`reservation-system/adr/0007`・API形状ドラフトがmain上にあるが人間承認は未完了、受け入れシナリオ・
+実装は次スライス（独立トラック）として未着手。frontend側は自身の断面①（画面モック・design-preview
+受け皿）がまだ未完のまま（上記の通り）。「フロント断面①がmainに載った」と言えるのは、consumer-driven
+の交わり（契約の形の確定）の意味に限られ、frontend自身の断面①完成とは別である（meta/adr/0023の
+「確認事項」参照）。
 
 ## 確定した主要な判断
 
 - 設計パックはシンプルCRUDパック（フロントエンド向け翻訳）（ADR-0001、承認済み）
 - `projects/reservation-frontend/` を独立プロジェクトとして新設する。`reservation-system` とは統合しない
   （ADR-0002、承認済み。統合の是非を人間が再検討した上での維持決定）
-- **フロントが必要とする能力がバックエンド契約に無い場合の運用**（統合しない代わりの軽い調整ルール）:
-  フロントエンド側でこのactiveContext.mdの「未解決の論点」に記録し、バックエンド側の新スライス候補として
-  扱う。backend側（projects/reservation-system/activeContext.md）への転記・優先度判断は人間が行う
-  （AIが自動で越境編集しない）
+- **フロントが必要とする能力がバックエンド契約に無い場合の運用**（統合しない代わりの軽い調整ルール、
+  meta/adr/0023で更新）: フロントエンド側でこのactiveContext.mdの「未解決の論点」に記録する。**AIは
+  人間の決定なしに自動で越境編集しない**というガードは維持しつつ、人間が「バックに持ち込む」と決定
+  （authorize）したら、**architectが直接バックエンド契約（API仕様・ADR）を起草してよい**（人間が
+  物理的に転記する作業を担う必要はない）。`GET /rooms`（`reservation-system/adr/0007`）がこの経路の
+  初適用（旧: backend側activeContextへの転記・優先度判断を人間が行う、というルールを精緻化した）
 - 実装スタックはTypeScript + React + Vite（ADR-0003、承認済み）
 - 画面モックは「設計骨格」承認点に相乗りする（ADR-0004、承認前。§1・§2の条文改訂は未着手）
 - **設計フローは並行モデル**（meta/adr/0017）: architect（契約）とdesigner（design integrator）は、
@@ -204,12 +221,20 @@ shadcn選定・伝送方式訂正・成果物形式変更のいずれよりも�
   本プロジェクトはUIを持つため、断面①には画面モック・design-preview受け皿が伴う（非UIプロジェクトの
   reservation-systemでは伴わない）。design-preview隔離（本番出荷経路から分離）は本ADRで原則に格上げ
   された
+- **クロスプロジェクトの協調（consumer-driven契約・縦順序・越境の実行主体）を正式化**（meta/adr/0023、
+  ドラフト・人間承認待ち）: `GET /rooms`の実連動から得た学びを制度化。(1)UIの設計がバックエンド契約の
+  形を駆動してよい（consumer-driven）、(2)フロントは契約に対して作りバック実装は独立トラック（両者が
+  交わるのは契約とE2E結合の2点のみ、プロジェクトをまたいでPRを交互に出さない）、(3)越境は人間の
+  authorizeを経てarchitectが直接起草してよい（旧「人間が転記」ルールの更新）、の3点。既存ADR
+  （0002非統合・0022の2断面・0017の並行モデル・PRINCIPLES.md P-02の縦切り）とは直交・補完であり
+  上書きしない
 
 ## 進行中 / 次にやること
 
 1. meta/adr/0017〜0020（designer役新設・design integrator再定義・伝送方式訂正・成果物形式変更）—
    **メタ承認・マージ済み。対応不要**。meta/adr/0021（(b)実行主体の明確化・改修ガバナンス）・
-   meta/adr/0022（コミット/マージの2断面・design-preview隔離原則の格上げ）は**ドラフト・人間承認待ち**
+   meta/adr/0022（コミット/マージの2断面・design-preview隔離原則の格上げ）・meta/adr/0023
+   （クロスプロジェクトの協調の正式化）は**ドラフト・人間承認待ち**
 2. ADR-0004（画面モックを設計骨格の承認に含める）の人間承認。**§1・§2の正式な条文改訂（静的HTML/CSS
    方式→TSX＋受け皿方式への全面書き換え）が未着手**であり、承認前に片付けるか、承認後の別作業とするか
    は人間判断
@@ -229,8 +254,9 @@ shadcn選定・伝送方式訂正・成果物形式変更のいずれよりも�
      取得・保存**: スクリーンショット機能の実現可能性検証を含む。動作しなくても骨格比較による改修
      ガバナンスは機能する
 5. **reconciliationの残未決（2件のみ。認証方針は決定済みのため縮小した）**（`design/reconciliation/
-   booking-design-reconciliation.md`）: (1)`GET /rooms`の採否、(2)`PATCH /reservations/{id}`の要否。
-   他の不整合はいずれも設計調整・実装時対応で足りると分類済み
+   booking-design-reconciliation.md`）: (1)`GET /rooms`の採否（→下記13の通り決定・ドラフト済み、
+   backend側の人間承認が残る）、(2)`PATCH /reservations/{id}`の要否。他の不整合はいずれも設計調整・
+   実装時対応で足りると分類済み
 6. **「案Bが要求する設計調整」の実施**（`design/reconciliation/booking-design-reconciliation.md`
    9節、4項目）: 予約者名の除去・自分の予約のlocalstorage化・時間調整案内文の除去・タイムラインの
    空き/不可二値表現化。骨格を変えない範囲の洗練として、次のdesigner洗練サイクルまたはdeveloper実装
@@ -238,18 +264,25 @@ shadcn選定・伝送方式訂正・成果物形式変更のいずれよりも�
 7. RFE-A契約（`contracts/availability-view.feature`）の人間承認。reconciliationの内容次第で、スライス
    構成自体の見直し（RFE-A以外の新スライス追加等）が要るかは未定
 8. RFE-A（空き状況画面）の扱い: 旧 design/mocks/ の静的モックは削除済み。RFE-Aのスコープは
-   BookingDesign.tsx（試行1）が包含するため、専用の作り直しは不要の見込み。RFE-A契約の承認・
+   BookingDesign.tsxが包含するため、専用の作り直しは不要の見込み。RFE-A契約の承認・
    reconciliation結果を踏まえ、BookingDesign.tsxの洗練で対応するかを上記5の人間判断を経て決める
 9. refinementループの反復回数N・escape hatchの優先順位の具体化（ADR-0004 §6、引き続き未定）
 10. contracts/availability-view.feature（スライスRFE-A）の人間承認（項目7と同一）
 11. Playwright/L4-L5（VRT）の整備方針（提案済み。今回変更なし）に沿って、developer/testerが着手
     （**フロント実装は保留中**、designerの作りこみ優先のため着手時期は未定）
 12. 上記が揃い次第、design.md・ARCHITECTURE.mdを新規作成（architect）
-13. `GET /rooms`の要否について、人間がbackend側activeContextへの転記・優先度判断を行う（項目5の(1)と
-    同一。認証方針の決定とは無関係に独立して判断できる）
+13. **（更新）`GET /rooms`は人間により採用決定済み**（2026-07-22、consumer-driven contract）。
+    `reservation-system/adr/0007`とAPI形状のドラフトはmainにあるが、**backend側の人間承認はまだ未完了**
+    （status: 提案中）。承認され次第、reservation-system側でRSV-L受け入れシナリオ+実装が次スライスと
+    して進む（バック実装は独立トラック、meta/adr/0023）。フロント側で改めて転記・優先度判断を行う必要
+    はない（meta/adr/0023の新ルールにより、`GET /rooms`起草自体が「人間authorize→architect直接起草」
+    経路の実例として既に完了しているため）
 14. **（新規）meta/adr/0022の人間承認**。承認されれば、断面①（本プロジェクトでは契約形状・ADR・
     reconciliation・画面モック・design-preview受け皿）を完成させてからmainにコミット/マージする、
     という運用を以後のスライスに適用する
+15. **（新規）meta/adr/0023の人間承認**。承認されれば、クロスプロジェクトの協調（consumer-driven契約・
+    縦順序・越境の実行主体）がテンプレートの正式な運用規約になる。承認前でも、本ADRが記す新ルール
+    （人間authorize→architect直接起草）は`GET /rooms`の実例としてすでに機能している
 
 ## 未解決の論点
 
@@ -258,11 +291,11 @@ shadcn選定・伝送方式訂正・成果物形式変更のいずれよりも�
   は組織側に既存ブランド制約が無いことを前提にしており、制約が判明した場合は再検討が要る
 - 想定スタックの制約: 組織として既存のフロントエンド標準スタックの指定が無いことを前提にADR-0003を
   ドラフトした。指定がある場合はADR-0003の再検討が要る
-- **`GET /rooms`（会議室一覧）の採否**（バックエンドの新スライス候補）: バックエンド契約
-  （reservation-system/contracts/reservation-api.yaml）に会議室を一覧するAPIが無く、フロントエンドは
-  会議室IDを利用者が直接指定する前提で設計している。**認証方針の決定（`reservation-frontend/adr/0006`）
-  とは無関係に独立して判断できる論点**として残る。採用時は`GET /rooms/{roomId}/rules`（RSV-R、既存
-  承認済み）との役割分担（レスポンス形状）も併せて決める必要がある
+- **（解決済み・2026-07-22、backend側の人間承認のみ残る）`GET /rooms`（会議室一覧）の採否**: 人間が
+  採用を決定し（consumer-driven contract）、`reservation-system/adr/0007`・API形状ドラフトとして
+  起票済み（`GET /rooms/{roomId}/rules`との役割分担も同ADR内で解決済み）。**残るのは
+  reservation-system側の人間承認のみ**（`reservation-system/activeContext.md`参照）。この越境の
+  経路自体はmeta/adr/0023として正式化された（ドラフト・人間承認待ち）
 - **`PATCH /reservations/{id}`（予約時間の変更）の要否**: 設計内でも未実装（案内文のみ先行）。機能
   自体を追加するか、案内文を実態に合わせて修正するかの方針は未定（後者は既に設計調整として実施方針が
   確定している。前者=機能追加の要否のみ未決）
@@ -313,9 +346,13 @@ shadcn選定・伝送方式訂正・成果物形式変更のいずれよりも�
   局面で、どの程度の反復・人間レビューを挟むか（既存の未定論点「refinementループの反復回数N」と直結）
   の具体化がより重要になる
 - **（新規）meta/adr/0022の人間承認待ち**: パイプラインのコミット/マージを断面①（骨格合意）・断面②
-  （実装合意）の2断面に正式化するADR。本プロジェクトの現状（契約形状・ADR・reconciliationはmain済み、
-  画面モック・design-preview受け皿はPRドラフトで保留）が断面①未完の実例として本ADRの帰結に記録されて
-  いる。承認後は、design-previewの出荷経路除外の完了が断面①完成の前提条件になる
+  （実装合意）の2断面に正式化するADR。**その初適用として、本プロジェクトの断面①成果物（契約形状・ADR・
+  reconciliation・画面モック・design-preview受け皿）が#9マージで出揃った**（design-preview隔離を実装済み。
+  2026-07-23）。残るのは各project ADRの正式承認（設計骨格承認点）
+- **（新規）meta/adr/0023の人間承認待ち**: クロスプロジェクトの協調（consumer-driven契約・縦順序・
+  越境の実行主体）を正式化するADR。`GET /rooms`の実連動が初適用として本ADRの帰結に記録されている。
+  承認後は、旧「人間が転記」ルールが正式に「人間authorize→architect直接起草」に置き換わる（本
+  activeContextの記述は先行して更新済み）
 
 ## 直近のfriction
 
