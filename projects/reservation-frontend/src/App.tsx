@@ -4,15 +4,13 @@
 // architecturally 隔離する」）。この隔離はビルド設定（tsconfig.app.json の除外・
 // design-preview.html という別entry）とESLintの no-restricted-imports で担保する。
 //
-// 現時点は契約スライスの実装がまだ無いため、最小のプレースホルダを描画する
-// （断面②で実装が入る）。design-previewを開発時に見るには、`npm run dev` 起動後に
-// `design-preview.html` を開く（詳細: design-preview/index.tsx のコメント）。
+// RFE-A「会議室の空き状況を画面で確認できる」スライスの実装として、本番ルートに
+// AvailabilityScreen を配線する（contracts/availability-view.feature）。
+// 予約作成・自分の予約・キャンセルは別スライス（今回は未実装）。
+import AvailabilityScreen from "@/features/availability/AvailabilityScreen";
+
 function App() {
-  return (
-    <main>
-      <p>reservation-frontend: 実装は断面②（実装合意）で追加されます。</p>
-    </main>
-  )
+  return <AvailabilityScreen />;
 }
 
 export default App

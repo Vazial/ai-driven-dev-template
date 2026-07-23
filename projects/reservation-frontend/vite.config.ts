@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import path from 'node:path'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
@@ -21,5 +22,13 @@ export default defineConfig({
       // よりそのまま配信される（このinput指定の対象外でも動作に影響しない）。
       input: path.resolve(__dirname, 'index.html'),
     },
+  },
+  test: {
+    // フロントのテスト基盤の最小構成（RFE-Aスライドで新設）。Vitest + React Testing
+    // Library（Vite標準）。design-previewはテスト対象外（本番実装ではないため）。
+    environment: 'jsdom',
+    setupFiles: ['./src/test/setup.ts'],
+    css: true,
+    exclude: ['**/node_modules/**', 'src/design-preview/**'],
   },
 })
