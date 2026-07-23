@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>reservation-frontend — design preview (dev only)</title>
+  </head>
+  <body>
+    <!--
+      design-preview（査読用の受け皿）専用の dev 限定エントリ。
+      本番エントリ index.html とは別ファイルであり、`vite build` の既定エントリ
+      （index.html のみ）には含まれない。`npm run dev` 起動後にこのファイルを開くと
+      design-preview（BookingDesign.tsx 等）が描画される。meta/adr/0022 §2。
+    -->
+    <div id="root"></div>
+    <script type="module" src="/src/design-preview/main.tsx"></script>
+  </body>
+</html>

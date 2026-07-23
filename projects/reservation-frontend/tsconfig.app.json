@@ -1,0 +1,36 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "esnext",
+    "types": ["vite/client"],
+    "allowArbitraryExtensions": true,
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Path aliases */
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+
+    /* Linting */
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["src"],
+  // design-preview（査読用の受け皿）は本番実装ではないため、本番ビルドの型検査対象から
+  // 除外する（meta/adr/0022 §2）。BookingDesign.tsx（承認済みモック）は無改変のまま
+  // 対象外にする。dev時の描画（design-preview.html 経由）はVite/esbuildの型検査を伴わない
+  // 変換のみで動くため、この除外の影響を受けない。
+  "exclude": ["src/design-preview"]
+}
