@@ -1,8 +1,12 @@
-// モックデータ。実バックエンドは叩かない（RFE-Aスライス、meta/adr/0023「フロント先行・縦切り」）。
+// モックデータ。実バックエンドは叩かない（RFE-A/RFE-Bスライス、meta/adr/0023「フロント先行・縦切り」）。
 //
 // 会議室A（room-a）は contracts/availability-view.feature の Background（営業時間09:00〜18:00、
 // 定員6人）に合わせてある。日付ごとの予約データはRFE-A-01/02のシナリオが要求する状態
 // （一部空き／終日埋まり）をそのまま再現できるように用意した。
+//
+// MOCK_RESERVATIONS はRFE-Bスライス（src/api/reservations.ts の createReservation）が予約成立時に
+// push する、モックAPI内の唯一の「予約台帳」でもある。getRoomAvailability（RFE-A）はこの配列から
+// 空き時間帯を再計算するため、予約作成の成否がそのままタイムライン表示に反映される。
 import type { RoomSummary } from "./types";
 import type { TimeRange } from "./availabilityLogic";
 
@@ -30,13 +34,44 @@ export const MOCK_ROOMS: RoomSummary[] = [
   },
 ];
 
-type MockReservation = TimeRange & { roomId: string; date: string };
+export type MockReservation = TimeRange & {
+  reservationId: string;
+  roomId: string;
+  date: string;
+  /** 予約者ID（自己申告、案B。ADR-0006により画面には表示しない） */
+  reserverId: string;
+  attendeeCount: number;
+};
 
 export const MOCK_RESERVATIONS: MockReservation[] = [
   // RFE-A-01: "会議室A"に"10:00"から"11:00"までの予約が存在する
-  { roomId: "room-a", date: "2026-07-14", startTime: "10:00", endTime: "11:00" },
+  {
+    reservationId: "seed-1",
+    roomId: "room-a",
+    date: "2026-07-14",
+    startTime: "10:00",
+    endTime: "11:00",
+    reserverId: "seed-user",
+    attendeeCount: 2,
+  },
   // RFE-A-02: "会議室A"に"09:00"から"18:00"までの予約が存在する（終日埋まり、別日で再現）
-  { roomId: "room-a", date: "2026-07-15", startTime: "09:00", endTime: "18:00" },
+  {
+    reservationId: "seed-2",
+    roomId: "room-a",
+    date: "2026-07-15",
+    startTime: "09:00",
+    endTime: "18:00",
+    reserverId: "seed-user",
+    attendeeCount: 4,
+  },
   // 他の会議室にも参考データを持たせる（全部屋横断タイムラインの一望性を示すため）
-  { roomId: "room-b", date: "2026-07-14", startTime: "13:00", endTime: "14:00" },
+  {
+    reservationId: "seed-3",
+    roomId: "room-b",
+    date: "2026-07-14",
+    startTime: "13:00",
+    endTime: "14:00",
+    reserverId: "seed-user",
+    attendeeCount: 2,
+  },
 ];
