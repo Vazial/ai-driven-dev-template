@@ -29,6 +29,8 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     css: true,
-    exclude: ['**/node_modules/**', 'src/design-preview/**'],
+    // e2e/ はPlaywright（L4相当、reservation-frontend/adr/0007）専用のテストランナー
+    // (playwright.config.ts の testDir)。Vitest（L1）の対象外にする。
+    exclude: ['**/node_modules/**', 'src/design-preview/**', 'e2e/**'],
   },
 })
