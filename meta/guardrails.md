@@ -8,7 +8,7 @@
 | 項目 | 内容 | 強制手段 |
 |---|---|---|
 | コミット規約 | Conventional Commits（feat / fix / refactor / test / docs / chore） | commitlint |
-| ブランチ運用 | trunk-based。1スライス=1短命ブランチ=1PR | 運用 + PRテンプレ |
+| ブランチ運用 | trunk-based。1スライス=1短命ブランチ=1PR。命名は `<type>/<project>-<slice>`（meta scopeは例外的に `meta/<slug>`）。meta/adr/0026 決定2 | 運用 + PRテンプレ |
 | AIができること | ブランチ作成、コミット、PR作成 | — |
 | 人間のみができること | mainへのマージ | branch protection |
 | 禁止操作 | force push、mainへの直接push、ブランチ/タグの削除 | branch protection + agent権限設定 |
@@ -16,7 +16,8 @@
 ## 2. PR・CI
 
 - PRテンプレート必須項目: 「対象契約（シナリオID）」「DoD充足のエビデンス（CI結果）」
-- CI必須チェック: L1 → L2 → L3 → L4（verification.md参照）。全て緑でなければマージ不可（required checks）
+- CI構成（meta/adr/0026 決定1）: L0（govlint、`.github/workflows/govlint.yml`）はリポジトリ横断の共有ゲートで**常時実行・pathsフィルタなし**。各プロジェクトのL1〜L4は `.github/workflows/ci-<project>.yml` に分割し、自プロジェクト配下（`projects/<project>/**` と当該ワークフロー自身）の変更時のみ起動する。**新プロジェクトの参入は `ci-<project>.yml` を1本足すだけ**（共有ファイル・他プロジェクトのワークフローは編集しない）
+- CI必須チェック: 当該プロジェクトの L1 → L2 → L3 → L4（verification.md参照）＋ L0（govlint）。全て緑でなければマージ不可（required checks）。**pathsフィルタとrequired checksの噛み合わせ**（無関係PRで起動しないジョブがrequiredのまま滞留する既知の癖）は meta/adr/0026 決定1.3 の3案を参照。required checks一覧の変更は人間承認（meta/permissions.md「ゲート変更」）
 
 ## 3. シークレット・破壊的操作
 
