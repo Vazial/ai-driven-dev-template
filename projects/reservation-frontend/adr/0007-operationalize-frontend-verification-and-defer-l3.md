@@ -1,14 +1,20 @@
 ---
 id: 0007
 scope: project/reservation-frontend
-status: 提案中
+status: superseded
 date: 2026-07-26
 approved_by: null
 supersedes: []
-superseded_by: null
+superseded_by: 0008
 relates_to: [P-01, P-02, P-05, P-06, P-10, FR-005]
 ---
 # ADR-0007: フロント検証を実装フェーズへ運用化する（L1/L4のCIゲート化・Playwright E2E導入）。L3の型生成をconsumer-driven契約に合わせてdeferする
+
+> **（superseded注記）** 本ADRのL3（型生成）に関する結論（`meta/adr/0023`のconsumer-driven契約との
+> 前提逆転を理由にdeferする）は、`meta/adr/0025`（クロスプロジェクトのSSoT一元化。「形を決める権利」
+> と「形を保管する場所」を分離）の制定により前提が解消されたため、`reservation-frontend/adr/0008`が
+> supersedeする。L1/L4のCIゲート化・Playwright E2E導入・L2/L5を今回のスコープに含めない判断は、
+> ADR-0008がそのまま引き継いでおり、内容として失われるものはない（本文はP-06により編集しない）。
 
 > **承認者向けサマリ**: `reservation-frontend/adr/0003`（承認済み）は、フロント検証の方式（L1: Vitest+lint、
 > L2: 境界ルール、L3: `reservation-api.yaml`からの型生成、L4: Playwright E2E）を既に決定していたが、
@@ -182,3 +188,7 @@ relates_to: [P-01, P-02, P-05, P-06, P-10, FR-005]
   （活動記録上、design.md・ARCHITECTURE.mdの新規作成は別途「進行中/次にやること」項目として残っている）。
   本ADRは検証・CIインフラの運用化であり、モジュール構成・境界そのものを変えるものではないため、
   仮に両ファイルが存在していたとしても更新対象にはならない
+
+---
+> **（上記「帰結」のL3関連2行はADR-0008により内容として上書きされた。本文はP-06により編集しないため
+> そのまま残すが、L3の再検討条件・結論は`reservation-frontend/adr/0008`を正とする。**
