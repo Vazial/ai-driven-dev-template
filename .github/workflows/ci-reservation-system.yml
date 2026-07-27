@@ -1,40 +1,29 @@
-name: CI
+name: CI reservation-system
 
-# L1 → L2 → L3 → L4 の順に実行する(meta/verification.md)。
-# 下の段が落ちたら上の段は実行しない(needs で直列化)。
-# 実コマンドはスライスRSV-C時点の構成(Java 21 / Gradle wrapper / PostgreSQL)。
+# reservation-system(バックエンド)のCIチェーン。
+# L1 → L2 → L3 → L4 の順に実行する(meta/verification.md)。下の段が落ちたら上の段は
+# 実行しない(needs で直列化)。実コマンドはスライスRSV-C時点の構成(Java 21 / Gradle / PostgreSQL)。
+#
+# meta/adr/0026 決定1.2: このプロジェクト配下(と本ワークフロー自身)が変わった時だけ起動する。
+# 他プロジェクトのPRではこのチェーンは走らない。新プロジェクトは ci-<project>.yml を1本足すだけ。
 
 on:
   pull_request:
     branches: [main]
+    paths:
+      - "projects/reservation-system/**"
+      - ".github/workflows/ci-reservation-system.yml"
   push:
     branches: [main]
+    paths:
+      - "projects/reservation-system/**"
+      - ".github/workflows/ci-reservation-system.yml"
 
 defaults:
   run:
     working-directory: projects/reservation-system
 
 jobs:
-  # L1より前段。統治文書(ADR・friction-log・契約)の機械検証(meta/adr/0012)。
-  # A層の検証であり実装スタックに依存しないため、他の段と並行に走らせる。
-  govlint:
-    name: "L0: 統治文書の整合(govlint)"
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: .
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: govlint自身の単体テスト(検証ツールもテストで担保。meta/adr/0014)
-        run: python -m unittest meta.tools.test_govlint
-      - name: ADR・friction-log・契約IDの整合を検証
-        run: python meta/tools/govlint.py
-      - name: commission_design_api.pyの単体テスト(ネットワーク不使用。meta/adr/0014・0020)
-        run: python -m unittest meta.tools.test_commission_design_api
-
   l1-unit-lint:
     name: "L1: 実装の内部品質(単体テスト・lint・mutation)"
     runs-on: ubuntu-latest
@@ -134,49 +123,3 @@ jobs:
             exit 1
           fi
           echo "SUTログはクリーン(WARN/ERRORなし)"
-
-  # フロントエンド(reservation-frontend)のCIチェーン(reservation-frontend/adr/0007)。
-  # ADR-0007により、フロントのチェーンはL1→L4(L2は既存lintの一部、L3はconsumer-driven契約に
-  # 合わせてdefer)。バックエンド(L0〜L4、上記)とは独立したジョブ列であり、互いを待たない。
-  l1-frontend-unit-lint:
-    name: "L1(frontend): 実装の内部品質(単体テスト・lint)"
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: projects/reservation-frontend
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: projects/reservation-frontend/package-lock.json
-      - name: 依存関係インストール
-        run: npm ci
-      - name: lint(ESLint)
-        run: npm run lint
-      - name: 単体テスト(Vitest)
-        run: npm run test
-
-  l4-frontend-e2e:
-    name: "L4(frontend): 仕様の充足(Playwright E2E)"
-    runs-on: ubuntu-latest
-    needs: l1-frontend-unit-lint
-    defaults:
-      run:
-        working-directory: projects/reservation-frontend
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: projects/reservation-frontend/package-lock.json
-      - name: 依存関係インストール
-        run: npm ci
-      - name: Playwright(Chromium)ブラウザバイナリの導入
-        run: npx playwright install --with-deps chromium
-      - name: 本番ビルドの健全性確認(dist/にdesign-previewが含まれないこと。meta/adr/0022 §2)
-        run: npm run build
-      - name: E2E(受け入れシナリオの走破。contracts/*.feature = SSOT。実バックエンドは叩かない)
-        run: npm run test:e2e
