@@ -208,4 +208,47 @@ principles: [P-10]
   に委ねる
 
 ---
+
+## FR-006: 生成ツールのpeer衝突を、根本原因を言語化しないまま.npmrc（全体抑制）でCIを通す回避策としてコミットした
+
+```yaml
+id: FR-006
+date: 2026-07-27
+found_at: 人間
+slice: RSV-Lフロントconform（yamlからの型生成導入、ADR-0008初適用）
+agents: [developer, orchestrator]
+cause_category: 回避策の常態化（根本原因の未究明）
+cause_key: workaround-suppresses-globally-without-root-cause
+pushed_to: [projects/reservation-frontend/adr/0008-derive-frontend-types-from-ssot-yaml.md]
+status: 対応済み
+principles: [P-01]
+```
+
+- 事象: 型生成のため`openapi-typescript`をdevDependencyに追加した際、その peer（`typescript@^5.x`）
+  と本プロジェクトのTS6が衝突し、developerがローカルで`--legacy-peer-deps`を使って導入した。
+  orchestratorはこれを受け、CIの`npm ci`（`--legacy-peer-deps`を持たない）がERESOLVEで落ちたのを
+  見て、`.npmrc`に`legacy-peer-deps=true`を置く修正をコミットした。これは**プロジェクト全体の
+  peerチェックを無効化する回避策**であり、根本（`openapi-typescript`は生成ツールでありdevDependency
+  である必要がない＝`npm ci`が解決を迫られる筋合いがない）に気づかないまま「CIを緑にする」ことを
+  優先していた。人間の指摘（「`legacy-peer-deps`は設定すべきなのか？ バージョン不一致が起きて
+  いるのか？」）を受けて再検討し、生成ツールを`npx`実行にしてdevDependencyから外し、`.npmrc`を廃した
+  根本修正に置き換えた（`npm ci`はクリーンに通り、`gen:api`もnpx経由で動作、生成物は差分なし）
+- 原因の仮説: バージョン不一致自体は実在するが（`openapi-typescript@7`のpeerが`typescript@^5.x`で
+  TS6を範囲外にしている）、機能は健全でpeer宣言が未追従なだけだった。真の問題は不一致そのものより、
+  **orchestratorが回避策（`.npmrc`の全体抑制）を、その妥当性・根本原因を1行も言語化しないまま
+  コミットした判断**にある。緑CIを正しさの代理指標に使い、workaroundが「なぜ必要か・より正しい形は
+  ないか」を精査する手順を飛ばした。これは単発のミスではなく、サブエージェント成果を根本原因の
+  検証なしに通す傾向の一例である（同種の傾向として、直前スライスで断面①承認を人間の明示回答なしに
+  フラグ化した件がある。そちらはtesterのコンテキスト遮断が検出した）
+- 押し込み先: `projects/reservation-frontend/adr/0008`の帰結に「生成ツールはdevDependencyでなく
+  `npx`実行とし、生成物（`schema.d.ts`）をコミット対象とする」規約を追記（他プロジェクトが生成を
+  導入する際の規約も兼ね、2本目が現れた時点でB層昇格を検討）。検証手順としては、**回避策を1つでも
+  含むコミットの前に、その回避策の根本原因を最低1行で言語化する**という運用規律に一般化できるが、
+  これはorchestrator全体の運用（勢いより正しさ・学びの即時記録）に関わるメタ論点であり、本FRの射程を
+  超える。今セッションの振り返りとして別途meta層に起票する（本FRはその一事例として参照される）
+- 補足: 本FRは`reservation-frontend`スコープの技術的frictionとして先に記録するもので、背景にある
+  「実装精度・フィードバックループの低下」という、より大きなメタ論点（人間が本セッションで指摘）は
+  含まない。それは振り返りで課題を洗い出したうえでmeta層に起票する
+
+---
 <!-- 記入のコツはmeta/templates/friction-log.mdを参照 -->
