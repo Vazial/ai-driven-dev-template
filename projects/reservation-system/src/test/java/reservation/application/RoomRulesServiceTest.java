@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.LocalTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -75,6 +76,11 @@ class RoomRulesServiceTest {
         @Override
         public Optional<Room> findById(String roomId) {
             return Optional.ofNullable(store.get(roomId));
+        }
+
+        @Override
+        public List<Room> findAll() {
+            return List.copyOf(store.values());
         }
     }
 }

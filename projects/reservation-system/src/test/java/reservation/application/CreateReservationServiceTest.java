@@ -138,6 +138,11 @@ class CreateReservationServiceTest {
         public Optional<Room> findById(String roomId) {
             return Optional.ofNullable(store.get(roomId));
         }
+
+        @Override
+        public List<Room> findAll() {
+            return List.copyOf(store.values());
+        }
     }
 
     /** ReservationRepositoryポートのインメモリフェイク。 */

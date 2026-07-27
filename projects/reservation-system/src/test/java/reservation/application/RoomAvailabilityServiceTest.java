@@ -99,6 +99,11 @@ class RoomAvailabilityServiceTest {
         public Optional<Room> findById(String roomId) {
             return Optional.ofNullable(store.get(roomId));
         }
+
+        @Override
+        public List<Room> findAll() {
+            return List.copyOf(store.values());
+        }
     }
 
     /** ReservationRepositoryポートのインメモリフェイク(キャンセル済みを除外する実DBの絞り込みを再現)。 */

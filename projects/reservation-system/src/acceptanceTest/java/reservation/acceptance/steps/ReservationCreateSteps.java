@@ -29,6 +29,10 @@ public class ReservationCreateSteps {
     @Before
     public void 全予約を削除してシナリオ間の独立性を保つ() {
         dsl.resetAllReservations();
+        // 会議室も毎シナリオ前にゼロ件へ戻す。RSV-L-01の「一覧は2件返る」が、他スライスのGivenで
+        // 作られた会議室の累積で崩れないようにするため(各既存Givenは"会議室{string}が存在する"で
+        // 都度作り直すので、事前の全削除は他スライスの前提を壊さない)。
+        dsl.resetAllRooms();
         dsl.fixCurrentTimeToBaseDate();
     }
 
@@ -136,5 +140,37 @@ public class ReservationCreateSteps {
     @Then("予約ルールの確認は{string}という理由で拒否される")
     public void 予約ルールの確認は拒否される(String reasonText) {
         dsl.assertReservationRejected(reasonText);
+    }
+
+    // ---- RSV-L: 会議室の一覧を確認できる ----
+
+    @Given("会議室が一件も登録されていない")
+    public void 会議室が一件も登録されていない() {
+        dsl.resetAllRooms();
+    }
+
+    @When("予約者が会議室の一覧を確認する")
+    public void 予約者が会議室の一覧を確認する() {
+        dsl.listRooms();
+    }
+
+    @Then("会議室の一覧は2件返り、1件目は{string}、2件目は{string}である")
+    public void 会議室の一覧は2件返り(String firstName, String secondName) {
+        dsl.assertRoomListOrder(firstName, secondName);
+    }
+
+    @Then("{string}については営業時間{string}から{string}、定員{int}人であることが一覧に含まれる")
+    public void 営業時間と定員が一覧に含まれる(String roomName, String start, String end, int capacity) {
+        dsl.assertRoomIncludedInList(roomName, start, end, capacity);
+    }
+
+    @Then("一覧のどの要素にも最小予約時間は含まれない")
+    public void 一覧のどの要素にも最小予約時間は含まれない() {
+        dsl.assertNoRoomHasMinReservationDuration();
+    }
+
+    @Then("会議室の一覧は空である")
+    public void 会議室の一覧は空である() {
+        dsl.assertRoomListEmpty();
     }
 }

@@ -79,6 +79,18 @@ public class TestSupportController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * 全会議室の削除。会議室が一件も存在しない状態を作るためのGiven seam
+     * (契約: test-support-api.yaml deleteAllRooms、消費者はRSV-L-02)。
+     * reservationsとroomsの間にDB上のFK制約は無い(V1マイグレーション参照)ため、削除順は問わない。
+     */
+    @DeleteMapping("/test-support/rooms")
+    @Transactional
+    public ResponseEntity<Void> deleteAllRooms() {
+        rooms.deleteAll();
+        return ResponseEntity.noContent().build();
+    }
+
     /** 現在時刻を固定する。時刻依存シナリオ(RSV-K: 開始15分前の境界判定)の検証に使う(design.md)。 */
     @PutMapping("/test-support/clock")
     public ResponseEntity<Void> setClock(@Valid @RequestBody ClockRequest request) {
