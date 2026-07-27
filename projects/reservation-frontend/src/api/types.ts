@@ -1,38 +1,27 @@
 // API層の型定義。
 //
-// これは「emerging contract」である（meta/adr/0023）: バックエンド契約
-// （projects/reservation-system/contracts/reservation-api.yaml）の形状に合わせて定義しているが、
-// GET /rooms（RSV-L）はまだ人間承認前のドラフト、GET /rooms/{roomId}/availability（RSV-A）は
-// 承認済み。今はモック実装のみが存在し、実バックエンドとは繋がっていない。将来、実バックエンドに
-// conform する際はこの型がAPI仕様への formalize の出発点になる。
+// 契約型（サーバとの境界にあるリクエスト/レスポンス形状）は、SSoT（バックエンドの
+// projects/reservation-system/contracts/reservation-api.yaml）から `openapi-typescript` で
+// 生成した src/api/schema.d.ts を単一の生成元とし、ここではそこから再エクスポートするだけに
+// とどめる（ADR-0008・meta/adr/0025）。フロントは契約の2つ目の写しを持たない。生成物を更新する
+// には `npm run gen:api` を実行する（生成元: `../reservation-system/contracts/reservation-api.yaml`）。
+//
+// 名前の差はここで吸収する: フロントの呼び出し名 `CreateReservationInput` は yaml では
+// `CreateReservationRequest` という名前で定義されている。呼び出し側のコードを壊さないよう、
+// このファイルでエイリアスして従来名のまま公開する。
+import type { components } from "./schema.d.ts";
 
-/** GET /rooms のレスポンス要素（RoomSummary、reservation-api.yaml RSV-L追記・ドラフト） */
-export type RoomSummary = {
-  roomId: string;
-  /** 会議室の表示名。予約者の氏名等の個人情報とは無関係（ADR-0006とは無関係の情報） */
-  name: string;
-  /** 営業時間の開始時刻（HH:mm） */
-  businessHoursStart: string;
-  /** 営業時間の終了時刻（HH:mm） */
-  businessHoursEnd: string;
-  capacity: number;
-};
+/** GET /rooms のレスポンス要素（RoomSummary、reservation-api.yaml RSV-L追記・承認済み） */
+export type RoomSummary = components["schemas"]["RoomSummary"];
+
+/** GET /rooms のレスポンス全体（RoomListResponse、reservation-api.yaml RSV-L追記・承認済み） */
+export type RoomListResponse = components["schemas"]["RoomListResponse"];
 
 /** GET /rooms/{roomId}/availability の成功時に含まれる空き時間帯（AvailableTimeSlot） */
-export type AvailableTimeSlot = {
-  /** 開始時刻（HH:mm） */
-  startTime: string;
-  /** 終了時刻（HH:mm）。時間帯は半開区間で、終了時刻ちょうどは空き時間に含まない */
-  endTime: string;
-};
+export type AvailableTimeSlot = components["schemas"]["AvailableTimeSlot"];
 
 /** GET /rooms/{roomId}/availability の成功レスポンス（AvailabilityResponse） */
-export type AvailabilityResponse = {
-  roomId: string;
-  /** YYYY-MM-DD */
-  date: string;
-  availableSlots: AvailableTimeSlot[];
-};
+export type AvailabilityResponse = components["schemas"]["AvailabilityResponse"];
 
 /**
  * 拒否レスポンス（ProblemResponse）。
@@ -40,40 +29,19 @@ export type AvailabilityResponse = {
  * （TIME_SLOT_CONFLICT・TOO_SHORT・INVALID_TIME_SLOT・OUTSIDE_BUSINESS_HOURS・EXCEEDS_CAPACITY）
  * も返る（projects/reservation-system/contracts/reservation-api.yaml 参照）。
  */
-export type ProblemResponse = {
-  code: string;
-  message: string;
-};
+export type ProblemResponse = components["schemas"]["ProblemResponse"];
 
-/** 成功/拒否を型で表現する結果型。実バックエンド conform 後もこの形のまま使える想定 */
+/** 成功/拒否を型で表現する結果型。契約型ではなくフロント固有のエルゴノミクス型のため生成対象に含めない */
 export type ApiResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: ProblemResponse };
 
 /**
- * POST /reservations のリクエストボディ相当（CreateReservationRequest、
- * reservation-api.yaml。RSV-C「予約を作成できる」、承認済み）。
+ * POST /reservations のリクエストボディ相当（yamlでの名前は CreateReservationRequest、
+ * reservation-api.yaml。RSV-C「予約を作成できる」、承認済み）。呼び出し側の名前を保つため
+ * ここでエイリアスする。
  */
-export type CreateReservationInput = {
-  roomId: string;
-  /** 予約する人のID。案B（reservation-frontend/adr/0006）により自己申告・無認証 */
-  reserverId: string;
-  /** YYYY-MM-DD */
-  date: string;
-  /** 開始時刻（HH:mm） */
-  startTime: string;
-  /** 終了時刻（HH:mm）。時間帯は半開区間で、終了時刻ちょうどは占有に含まない */
-  endTime: string;
-  attendeeCount: number;
-};
+export type CreateReservationInput = components["schemas"]["CreateReservationRequest"];
 
 /** POST /reservations の成功レスポンス相当（ReservationResponse、reservation-api.yaml） */
-export type ReservationResponse = {
-  reservationId: string;
-  roomId: string;
-  reserverId: string;
-  date: string;
-  startTime: string;
-  endTime: string;
-  attendeeCount: number;
-};
+export type ReservationResponse = components["schemas"]["ReservationResponse"];

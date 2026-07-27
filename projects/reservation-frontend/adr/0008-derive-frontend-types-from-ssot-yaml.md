@@ -1,9 +1,9 @@
 ---
 id: 0008
 scope: project/reservation-frontend
-status: 提案中
+status: 承認済み
 date: 2026-07-26
-approved_by: null
+approved_by: "人間裁定 2026-07-27。ADR本体承認(PR#20マージ)に加え、最終選択(決定5)として生成(openapi-typescript)を選択"
 supersedes: [0007]
 superseded_by: null
 relates_to: [P-01, P-02, P-03, P-04, P-05, P-06, P-08]
@@ -140,6 +140,11 @@ RSV-Lは既に到達しつつある（契約は起草済み、人間承認待ち
 
 本ADRの推奨（生成）にかかわらず、生成 vs 契約テストの最終選択は人間が承認する。承認時に確認すべき
 点は上記比較表と、下記「検討した代替案」を参照。
+
+**人間の選択（2026-07-27）**: **生成（openapi-typescript）** を採用する。実装スライス
+`feat/reservation-frontend-generate-api-types`（RSV-Lフロントconform）でこれを初適用し、
+`src/api/schema.d.ts` を `../reservation-system/contracts/reservation-api.yaml`（SSoT）から生成、
+手書き契約型を導出に置き換える。
 
 ## 検討した代替案
 
