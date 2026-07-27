@@ -1,9 +1,9 @@
 ---
 id: 0007
 scope: project/reservation-system
-status: 提案中
+status: 承認済み
 date: 2026-07-22
-approved_by: null
+approved_by: "人間裁定 2026-07-27。RSV-L断面②(reservation-rooms.feature)着手時に承認。断面①承認材料はrsv-l-room-list-ssot-reconciliation.md"
 supersedes: []
 superseded_by: null
 relates_to: []

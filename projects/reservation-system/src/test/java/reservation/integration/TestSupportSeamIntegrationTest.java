@@ -76,4 +76,15 @@ class TestSupportSeamIntegrationTest extends AbstractPostgresIntegrationTest {
                 "/test-support/reservations", HttpMethod.DELETE, HttpEntity.EMPTY, Void.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
     }
+
+    @Test
+    void 全会議室を削除でき_会議室が一件も存在しない状態になる() {
+        upsertRoom("会議室A", 6);
+
+        ResponseEntity<Void> response = rest.exchange(
+                "/test-support/rooms", HttpMethod.DELETE, HttpEntity.EMPTY, Void.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        assertThat(roomSpringData.count()).isEqualTo(0);
+    }
 }

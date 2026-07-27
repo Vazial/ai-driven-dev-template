@@ -4,14 +4,19 @@
 # 有効範囲: Springプロファイル`acceptance`のみ。本番構成にこれらのエンドポイントは存在しない
 #
 # 改訂: 2026-07-22 — 2026-07-22に一時追加した DELETE /test-support/rooms（会議室が一つも存在しない前提を
-#   作るためのドラフトRSV-L向け）を削除した。受け入れシナリオ層(RSV-L)を実装より先に置けない構造上の理由
+#   作るためのドラフトRSV-L向け）を削除した。受け入れテスト用の新しいseamを実装より先に置けない構造上の理由
 #   (govlint L0とCucumber L4がシナリオIDで結合しているため、詳細はfriction-log.md参照)により、RSV-Lの
 #   受け入れシナリオ自体を今回のスライスから剥がしたため、この seam を使う消費者が存在しなくなった。
 #   P-02(今必要な分だけ)・FR-013(built-ahead-of-need)の教訓に従い、消費者のいない seam を残さない。
 #   実装スライスでRSV-Lの受け入れシナリオが起こされる際、必要であれば同じ形で再導入する
+# 改訂: 2026-07-27 — contracts/reservation-rooms.feature(RSV-L-02「会議室が一件も無いとき空の一覧が返る」)
+#   の起票により、上記で削除した DELETE /test-support/rooms の消費者ができたため再導入した。仕様は
+#   2026-07-22時点でドラフトされていたものと同型(204・ボディなし)。RoomUpsertRequest/RoomResponse等
+#   既存スキーマの変更は無い
 #
-# 3行でわかるこのseam
+# 4行でわかるこのseam
 #   部屋を用意する:   POST /test-support/rooms(同名は設定上書き)。応答のroomIdで名前→IDを解決する
+#   部屋を全部消す:   DELETE /test-support/rooms(会議室が一つも存在しない前提を作る。RSV-L-02が消費者)
 #   状態を初期化する: DELETE /test-support/reservations(全予約削除+時計を実時刻に戻す)
 #   時計を固定する:   PUT /test-support/clock に {"now": "2026-07-14T09:45:00"}(オフセットなしのローカル日時)
 openapi: 3.0.3
@@ -47,6 +52,14 @@ paths:
                 businessHoursStart: "09:00"
                 businessHoursEnd: "18:00"
                 capacity: 6
+    delete:
+      operationId: deleteAllRooms
+      summary: >
+        登録されている会議室を全て削除する(会議室が一件も存在しない状態を作るためのGiven seam)。
+        contracts/reservation-rooms.featureのRSV-L-02が消費者
+      responses:
+        "204":
+          description: 削除完了(ボディなし)
   /test-support/reservations:
     delete:
       operationId: deleteAllReservations
