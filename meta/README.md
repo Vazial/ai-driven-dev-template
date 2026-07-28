@@ -11,6 +11,7 @@
 | 規程 | verification.md | 多段保証モデル | developer / reviewer、CI設計 |
 | 規程 | architecture-selection.md | 設計パック選定 | architect（プロジェクト開始時） |
 | 規程 | agents.md | agent役割分担と標準フロー | 全agent |
+| 規程 | agent-runtime-mapping.md | Claude Code / Codex間の役割agent起動先・モデル対応表 | orchestrator / role agent起動時 |
 | 規程 | guardrails.md | 運用ルールの索引（実体は設定） | リポジトリ初期設定時 |
 | 決定 | adr/ | A層自身の決定履歴（1決定1枚・編集禁止。meta/adr/0001。メタデータはfrontmatter＝機械検証対象。meta/adr/0012） | 規程変更の提案・監査時 |
 | 道具 | tools/govlint.py | 統治文書（ADR・friction-log・契約ID）の機械検証。CIのL0で実行（meta/adr/0012） | CI・統治文書を書く時 |

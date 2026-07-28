@@ -29,7 +29,8 @@ When a task is delegated to one of these roles (only with the authorization requ
 
 1. read the selected `meta/agents/<role>.md` in full;
 2. include the role name and that file path in the dispatch routing;
-3. select the runtime model named by its `model` frontmatter; and
+3. read `meta/agent-runtime-mapping.md` and select the Codex runtime model mapped to
+   that role; and
 4. state only routing: the task/slice, authoritative documents to read, requested
    artifact, and applicable existing rules. Do not inject domain decisions or answers.
 
@@ -39,10 +40,15 @@ before taking task action. `tools` in role frontmatter records the intended capa
 boundary. If a runtime cannot technically restrict tools per agent, the boundary remains
 mandatory behavior; do not represent it as sandbox-enforced.
 
-### Codex model mapping
+### Runtime mapping and parallel operation
 
-The `model` value in each role definition is a Codex runtime identifier, not a Claude
-alias. The current mapping is `sonnet` -> `gpt-5.6-terra` and `opus` -> `gpt-5.6-sol`.
-If the named runtime is unavailable, do not silently substitute a different model:
-report the unavailable mapping and request a human decision or a documented mapping
-update.
+`meta/agents/*.md` remains the shared role contract. Runtime-specific model selection
+is defined only by `meta/agent-runtime-mapping.md`; do not rewrite role definitions for
+Codex. Read that table before dispatching a role agent. If its Codex model is
+unavailable, do not silently substitute a different model: report the unavailable
+mapping and request a human decision or a documented mapping update.
+
+Claude and Codex may develop the repository in parallel. Before starting a slice, read
+the active context and inspect relevant open PRs. Do not edit another runtime's
+unmerged project or shared `meta/**` changes without first coordinating through the
+project branch and PR review.
