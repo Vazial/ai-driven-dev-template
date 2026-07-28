@@ -1,9 +1,9 @@
 ---
 id: 0028
 scope: meta
-status: 提案中
+status: 承認済み
 date: 2026-07-28
-approved_by: null
+approved_by: "本PRのマージをもって承認（人間裁定 2026-07-28: ADR-0028の内容を承認し、project統合ブランチ＋ruleset作成をAIの自動実行とする修正を含めて格上げ）"
 supersedes: []
 superseded_by: null
 relates_to: [P-01, P-04, P-06, P-07]
@@ -29,7 +29,12 @@ guardrails.mdはtrunk-basedとして「1スライス=1短命ブランチ=1PR」�
 
 `main`をリリース可能なブランチ、`project/<project>`を各プロジェクトの長期統合ブランチとする。
 
-1. 新しいプロジェクトを開始する時、人間が`main`から `project/<project>` を作成し、GitHub rulesetを設定する。
+1. 新しいプロジェクトを開始する時、人間がchatでプロジェクト開始をauthorizeし、**AIが**`main`から
+   `project/<project>` を作成し、GitHub Rulesets REST API（`gh api repos/:owner/:repo/rulesets`、
+   admin権限が要る）で保護rulesetを設定する。rulesetは既存の `protect main` と同一構成
+   （`pull_request`：PR経由のみ・直push不可／`non_fast_forward`／`deletion`／`required_status_checks`：
+   `L0: 統治文書の整合(govlint)` を必須）で、対象refを `refs/heads/project/<project>` に差し替える。
+   人間は作成結果を確認する。AIがadmin権限のトークンを持たない環境では、人間が代替する。
 2. 各スライスは最新の `project/<project>` から短命ブランチを作成する。名称は
    `<type>/<project>-<slice>` とする。
 3. スライスのPRは対応する `project/<project>` をbaseとする。CIが緑で人間の必要な承認が揃った場合のみ、
@@ -59,7 +64,11 @@ guardrails.mdはtrunk-basedとして「1スライス=1短命ブランチ=1PR」�
 
 - このPRには、Codex向けのAGENTS.md、guardrails.md、PRテンプレート、各CIワークフローの
   `project/**` 向けトリガーを同梱する。これらは本ADRと同じPRのマージで有効になる。
-- 新しい `project/<project>` ブランチの作成とGitHub ruleset設定はgit管理外のため、人間がmainから作成・設定する。
-  AIは設定完了を確認してから、スライス用ブランチのbaseとして利用する。
+- 新しい `project/<project>` ブランチの作成とruleset設定は、**AIが `gh` のadmin権限で GitHub Rulesets
+  REST API を用いて自動実行する**。旧記述「git管理外のため人間がmainから作成・設定する」は、rulesetが
+  APIでプログラム設定可能である事実に反していたため撤回した（rulesetの実体はGitHub設定に存在しgit
+  管理外だが、それは「人間が手作業で設定する」ことを意味しない）。rulesetのテンプレートは guardrails.md
+  §2 に記録し再現可能にする。人間の統制は「プロジェクト開始のauthorize（chat）」と「作成結果の確認」で
+  担保し、機械的な作成作業はAIが担う。AIがadmin権限のトークンを持たない環境では人間が代替する。
 - mainへの統合頻度はプロジェクトごとに固定しない。リリース可能なまとまりができた時点で、人間が
   `project/<project>` からmainへのPRを作成・マージする。
