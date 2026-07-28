@@ -17,3 +17,32 @@ Before creating, committing, pushing, or reporting a reviewable artifact or PR, 
 2. `meta/templates/pull-request.md`
 
 Follow the integration branch and PR target declared by `meta/guardrails.md`. Treat chat authorization as permission to draft unless the user explicitly approves the artifact. Report approval state from the artifact metadata and PR review state; a pushed branch or open PR is not itself human approval.
+
+## Role-agent dispatch
+
+`meta/agents/<role>.md` is the executable role contract for `architect`, `designer`,
+`developer`, `tester`, and `reviewer`. A role definition is not discovered or applied
+automatically by the Codex runtime.
+
+When a task is delegated to one of these roles (only with the authorization required by
+`meta/permissions.md`), the orchestrator must, before dispatching it:
+
+1. read the selected `meta/agents/<role>.md` in full;
+2. include the role name and that file path in the dispatch routing;
+3. select the runtime model named by its `model` frontmatter; and
+4. state only routing: the task/slice, authoritative documents to read, requested
+   artifact, and applicable existing rules. Do not inject domain decisions or answers.
+
+The selected role agent must read its role file, `meta/PRINCIPLES.md`, the active
+project's `activeContext.md`, and the role-specific sources named by the role file
+before taking task action. `tools` in role frontmatter records the intended capability
+boundary. If a runtime cannot technically restrict tools per agent, the boundary remains
+mandatory behavior; do not represent it as sandbox-enforced.
+
+### Codex model mapping
+
+The `model` value in each role definition is a Codex runtime identifier, not a Claude
+alias. The current mapping is `sonnet` -> `gpt-5.6-terra` and `opus` -> `gpt-5.6-sol`.
+If the named runtime is unavailable, do not silently substitute a different model:
+report the unavailable mapping and request a human decision or a documented mapping
+update.
