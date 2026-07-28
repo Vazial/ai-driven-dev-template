@@ -18,6 +18,29 @@ Before creating, committing, pushing, or reporting a reviewable artifact or PR, 
 
 Follow the integration branch and PR target declared by `meta/guardrails.md`. Treat chat authorization as permission to draft unless the user explicitly approves the artifact. Report approval state from the artifact metadata and PR review state; a pushed branch or open PR is not itself human approval.
 
+## Codex chat-first coordination
+
+Codex uses chat to agree the direction before creating a reviewable PR. Before starting a
+new slice, creating a replacement PR, or making a change that introduces a decision,
+present a concise agreement checkpoint containing:
+
+1. the goal and in-scope / out-of-scope work;
+2. the decision and alternatives, when a decision is required;
+3. the intended branch, PR scope, and verification; and
+4. whether an existing PR or another runtime's work is affected.
+
+Wait for the user's response that confirms the proposed scope before implementing and
+opening the PR. A response such as "進めて" is sufficient when the checkpoint has made
+the scope explicit. A chat agreement authorizes preparation and review of a PR; it does
+not by itself change the human approval requirement for ADRs, contracts, or other
+governance artifacts.
+
+Use the PR to review the implementation of the agreed scope and its verification
+results, not to introduce a new decision for the first time. If implementation exposes a
+new decision, a conflict, or a materially broader scope, stop and return to chat before
+changing or creating the PR. Mechanical follow-up that does not change the agreed scope
+(for example, reporting CI completion) does not need a new checkpoint.
+
 ## Role-agent dispatch
 
 `meta/agents/<role>.md` is the executable role contract for `architect`, `designer`,
