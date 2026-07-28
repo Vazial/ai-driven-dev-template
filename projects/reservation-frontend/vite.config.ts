@@ -23,6 +23,20 @@ export default defineConfig({
       input: path.resolve(__dirname, 'index.html'),
     },
   },
+  server: {
+    proxy: {
+      // 実バックエンド接続の初適用（reservation-frontend/adr/0009 決定2、人間承認 2026-07-28）。
+      // `GET /rooms`（reservation-system、既定ポート8080・context-pathなし）をdev serverの
+      // proxyで同一オリジンに見せる。バックエンド側にはCORS設定を一切追加しない（越境なし、
+      // meta/adr/0023）。opt-in（VITE_USE_REAL_ROOMS_API=trueの時のみ src/api/rooms.ts が
+      // `/rooms` を実際に叩く）なので、この設定自体は常に有効でも既定のモック開発フローに
+      // 影響しない。
+      '/rooms': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+    },
+  },
   test: {
     // フロントのテスト基盤の最小構成（RFE-Aスライドで新設）。Vitest + React Testing
     // Library（Vite標準）。design-previewはテスト対象外（本番実装ではないため）。
