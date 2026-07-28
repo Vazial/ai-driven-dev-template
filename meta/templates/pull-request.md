@@ -1,8 +1,8 @@
 # PR: <スライス名 / 変更の一文要約>
 
 ## 統合先
-<!-- スライスPRはdevelop、リリース可能なまとまりをmainへ昇格するPRはmain。meta/adr/0028 -->
-- base branch: develop / main（昇格PR）
+<!-- スライスPRはproject/<project>、プロジェクトをmainへ昇格するPRと共有ガバナンスPRはmain。meta/adr/0028 -->
+- base branch: project/<project> / main（昇格PR・meta PR）
 
 ## 対象契約（必須）
 <!-- このPRが満たす承認済みシナリオのID。契約に紐付かないPRは原則出さない（リファクタ等はその旨明記） -->
