@@ -12,6 +12,9 @@ export default defineConfig([
     // 対応表）。BookingDesign.tsx（承認済みモック）は無改変で置かれており、lintの対象に
     // しない（未使用importの掃除等、モック自体への手当てはしない）。
     'src/design-preview',
+    // schema.d.ts は openapi-typescript による生成物（SSoT=reservation-api.yamlからの導出、
+    // ADR-0008）。手編集禁止であり、lintの対象にしない（`npm run gen:api` で再生成する）。
+    'src/api/schema.d.ts',
   ]),
   {
     files: ['**/*.{ts,tsx}'],

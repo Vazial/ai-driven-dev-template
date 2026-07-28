@@ -2,9 +2,32 @@
 
 > P-11: このファイルは常に「現在」だけを映す。更新は上書き。歴史はgitとADRが持つ。
 > 更新タイミング: スライスの区切り、エスカレーション発生時（permissions.md）
-> 最終更新: 2026-07-23
+> 最終更新: 2026-07-27
 
 ## 今どこにいるか
+
+**developerが、フロントの契約型をSSoT（バックエンドyaml）から生成する方式への切替を完了した**
+（2026-07-27、ADR-0008「承認済み」・人間が決定5＝生成(`openapi-typescript`)を選択、PR#20マージ後）。
+RSV-L（`GET /rooms`）の断面①がbackend側で人間承認され（`reservation-system/contracts/
+reservation-api.yaml`、承認済み: 2026-07-27）、`design/reconciliation/
+rsv-l-room-list-ssot-reconciliation.md`が示していたドリフト（`RoomListResponse`型の不在）を、
+生成方式への切替そのもので解消した。実施内容:
+- `openapi-typescript`をdevDependencyに追加、`npm run gen:api`で`../reservation-system/
+  contracts/reservation-api.yaml`（SSoT）から`src/api/schema.d.ts`（生成物、コミット対象）を生成
+- `src/api/types.ts`を「手書きの写し」から「生成物からの再エクスポート」に切替。契約型
+  （`RoomSummary`・`RoomListResponse`（新規）・`AvailabilityResponse`・`AvailableTimeSlot`・
+  `ProblemResponse`・`ReservationResponse`）は`components["schemas"][...]`から導出。名前差
+  （yamlの`CreateReservationRequest` ↔ フロントの`CreateReservationInput`）はエイリアスで吸収。
+  `ApiResult<T>`はフロント固有のエルゴノミクス型として手書きのまま維持（生成対象外）
+- `src/api/rooms.ts`の`listRooms()`を、`RoomListResponse`（`{ rooms: [...] }`）を受け取り
+  `.rooms`を剥離するアダプタに変更。公開シグネチャ`Promise<RoomSummary[]>`・name昇順ソートは無変更
+- `eslint.config.js`に`src/api/schema.d.ts`（生成物、手編集禁止）をlint対象外として追記
+- 検証: Vitest 42件緑・ESLint緑・`tsc -b && vite build`緑・Playwright e2e 4件緑（全て維持、
+  RoomListResponse以外の想定外ドリフトは無し）
+- 副次対応: `npm install`が`typescript@~6.0.2`と`openapi-typescript`のpeer要求(`^5.x`)で
+  ERESOLVEになったため`--legacy-peer-deps`で導入。この結果`@testing-library/dom`（peer依存、
+  従来はnpmの自動peerインストールで暗黙に入っていた）がnode_modulesから外れ42件全滅する副作用が
+  出たため、`@testing-library/dom`を明示devDependencyとして追加して復旧した
 
 **フロント実装（developer/testerの着手）は保留し、designerの作りこみを優先している。**
 
@@ -271,12 +294,11 @@ reservation-frontendの設計が初めてバックエンド契約を実際に駆
 11. Playwright/L4-L5（VRT）の整備方針（提案済み。今回変更なし）に沿って、developer/testerが着手
     （**フロント実装は保留中**、designerの作りこみ優先のため着手時期は未定）
 12. 上記が揃い次第、design.md・ARCHITECTURE.mdを新規作成（architect）
-13. **（更新）`GET /rooms`は人間により採用決定済み**（2026-07-22、consumer-driven contract）。
-    `reservation-system/adr/0007`とAPI形状のドラフトはmainにあるが、**backend側の人間承認はまだ未完了**
-    （status: 提案中）。承認され次第、reservation-system側でRSV-L受け入れシナリオ+実装が次スライスと
-    して進む（バック実装は独立トラック、meta/adr/0023）。フロント側で改めて転記・優先度判断を行う必要
-    はない（meta/adr/0023の新ルールにより、`GET /rooms`起草自体が「人間authorize→architect直接起草」
-    経路の実例として既に完了しているため）
+13. **（更新・2026-07-27）`GET /rooms`（RSV-L）のAPI形状はbackend側で人間承認済み**
+    （`reservation-system/contracts/reservation-api.yaml`、承認済み: 2026-07-27）。フロント側は
+    このSSoTからdeveloperが型を生成する形に切替済み（本ファイル冒頭「今どこにいるか」参照。ADR-0008
+    決定5＝生成の初適用）。受け入れシナリオ・実バックエンド実装はreservation-system側の独立トラック
+    として別途進む（meta/adr/0023）
 14. **（新規）meta/adr/0022の人間承認**。承認されれば、断面①（本プロジェクトでは契約形状・ADR・
     reconciliation・画面モック・design-preview受け皿）を完成させてからmainにコミット/マージする、
     という運用を以後のスライスに適用する
@@ -291,11 +313,11 @@ reservation-frontendの設計が初めてバックエンド契約を実際に駆
   は組織側に既存ブランド制約が無いことを前提にしており、制約が判明した場合は再検討が要る
 - 想定スタックの制約: 組織として既存のフロントエンド標準スタックの指定が無いことを前提にADR-0003を
   ドラフトした。指定がある場合はADR-0003の再検討が要る
-- **（解決済み・2026-07-22、backend側の人間承認のみ残る）`GET /rooms`（会議室一覧）の採否**: 人間が
-  採用を決定し（consumer-driven contract）、`reservation-system/adr/0007`・API形状ドラフトとして
-  起票済み（`GET /rooms/{roomId}/rules`との役割分担も同ADR内で解決済み）。**残るのは
-  reservation-system側の人間承認のみ**（`reservation-system/activeContext.md`参照）。この越境の
-  経路自体はmeta/adr/0023として正式化された（ドラフト・人間承認待ち）
+- **（解決済み・2026-07-27）`GET /rooms`（会議室一覧）の採否**: 人間が採用を決定し
+  （consumer-driven contract）、`reservation-system/adr/0007`・API形状は人間承認済み
+  （`reservation-api.yaml`、承認済み: 2026-07-27）。フロント側もADR-0008決定5（生成方式）に
+  沿って型導出を完了した（本ファイル冒頭参照）。この越境の経路自体はmeta/adr/0023として
+  正式化された（ドラフト・人間承認待ち）
 - **`PATCH /reservations/{id}`（予約時間の変更）の要否**: 設計内でも未実装（案内文のみ先行）。機能
   自体を追加するか、案内文を実態に合わせて修正するかの方針は未定（後者は既に設計調整として実施方針が
   確定している。前者=機能追加の要否のみ未決）
