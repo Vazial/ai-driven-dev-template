@@ -8,9 +8,9 @@ name: L0 govlint
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, develop]
   push:
-    branches: [main]
+    branches: [main, develop]
 
 jobs:
   govlint:

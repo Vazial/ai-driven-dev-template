@@ -9,12 +9,12 @@ name: CI reservation-frontend
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, develop]
     paths:
       - "projects/reservation-frontend/**"
       - ".github/workflows/ci-reservation-frontend.yml"
   push:
-    branches: [main]
+    branches: [main, develop]
     paths:
       - "projects/reservation-frontend/**"
       - ".github/workflows/ci-reservation-frontend.yml"

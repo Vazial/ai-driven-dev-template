@@ -50,9 +50,9 @@ mainと開発中の統合状態を分けたいという要望が生じた。
 
 ## 帰結
 
-- 承認後、guardrails.mdとPRテンプレートをこの運用に更新し、GitHubのブランチ保護・CI対象ブランチも
-  `develop`を含むよう設定する。
-- `develop`は人間がmainから作成する。AIはこのADRの承認・設定完了を確認してから、スライス用ブランチの
-  baseとして利用する。
+- このPRには、Codex向けのAGENTS.md、guardrails.md、PRテンプレート、各CIワークフローの`develop`向け
+  トリガーを同梱する。これらは本ADRと同じPRのマージで有効になる。
+- `develop`の作成とGitHub ruleset設定はgit管理外のため、人間がmainから作成・設定する。AIはこのADRの
+  承認・マージと設定完了を確認してから、スライス用ブランチのbaseとして利用する。
 - mainへの統合頻度は固定しない。リリース可能なまとまりができた時点で、人間が`develop`からmainへの
   PRを作成・マージする。
