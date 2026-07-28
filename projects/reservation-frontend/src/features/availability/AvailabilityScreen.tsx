@@ -65,6 +65,10 @@ export default function AvailabilityScreen({ initialDate }: AvailabilityScreenPr
   const [currentDate, setCurrentDate] = useState<Date>(initialDate ?? new Date());
   const [rooms, setRooms] = useState<RoomSummary[]>([]);
   const [availabilityByRoom, setAvailabilityByRoom] = useState<AvailabilityByRoom>({});
+  // listRooms() が失敗した(実APIモードでのネットワーク層の失敗等)場合の最小限の汎用失敗表示
+  // フラグ(ADR-0009 決定4)。ProblemResponseの型は使わない(契約が定義する構造化エラーではない
+  // ため)。過剰なリトライ・凝ったUIは作らない(P-05)。
+  const [roomsLoadFailed, setRoomsLoadFailed] = useState(false);
 
   // RFE-B: 予約ダイアログの状態。空き枠クリックで開き、会議室・日付・時間帯を引き継ぐ(RFE-B-01)
   const [bookingRoom, setBookingRoom] = useState<RoomSummary | null>(null);
@@ -82,8 +86,17 @@ export default function AvailabilityScreen({ initialDate }: AvailabilityScreenPr
     let cancelled = false;
 
     async function load() {
-      const roomList = await listRooms();
+      let roomList: RoomSummary[];
+      try {
+        roomList = await listRooms();
+      } catch {
+        // ADR-0009 決定4: ネットワーク層の失敗はProblemResponseに押し込めず、ここでは
+        // 最小限の汎用失敗表示に落とす(文言はP-05に沿って最小限に留める)。
+        if (!cancelled) setRoomsLoadFailed(true);
+        return;
+      }
       if (cancelled) return;
+      setRoomsLoadFailed(false);
       setRooms(roomList);
 
       const entries = await Promise.all(
@@ -177,10 +190,17 @@ export default function AvailabilityScreen({ initialDate }: AvailabilityScreenPr
           </div>
 
           <ScrollArea className="h-[calc(100vh-200px)]">
-            {rooms.length === 0 && (
+            {roomsLoadFailed && (
+              // ADR-0009 決定4: listRooms()の実fetch失敗時の最小限の汎用失敗表示。
+              // ProblemResponse型は使わない(契約が定義する構造化エラーではないため)。
+              <p role="alert" className="p-6 text-sm text-red-600">
+                読み込みに失敗しました
+              </p>
+            )}
+            {!roomsLoadFailed && rooms.length === 0 && (
               <p className="p-6 text-sm text-slate-500">会議室を読み込んでいます…</p>
             )}
-            {rooms.map((room) => (
+            {!roomsLoadFailed && rooms.map((room) => (
               <RoomAvailabilityRow
                 key={room.roomId}
                 room={room}
