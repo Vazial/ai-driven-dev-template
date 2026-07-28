@@ -257,7 +257,7 @@ principles: [P-01]
 ```yaml
 id: FR-007
 date: 2026-07-28
-found_at: orchestrator
+found_at: L5
 slice: 実API接続（GET /rooms、ADR-0009）
 agents: [architect, developer, orchestrator]
 cause_category: 検証の不足
