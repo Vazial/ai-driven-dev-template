@@ -1,9 +1,9 @@
 ---
 id: 0028
 scope: meta
-status: 提案中
+status: 承認済み
 date: 2026-07-28
-approved_by: null
+approved_by: "本PRのマージをもって承認（人間裁定 2026-07-28: ADR-0028の内容を承認し、project統合ブランチ＋ruleset作成をAIの自動実行とする修正を含めて格上げ）"
 supersedes: []
 superseded_by: null
 relates_to: [P-01, P-04, P-06, P-07]
