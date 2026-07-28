@@ -1,9 +1,9 @@
 ---
 id: 0001
 scope: project/toyama-weekend-radar
-status: 提案中
+status: 承認済み
 date: 2026-07-28
-approved_by: null
+approved_by: "人間裁定（PR #28のレビュー, 2026-07-28）"
 supersedes: []
 superseded_by: null
 relates_to: [P-09]
