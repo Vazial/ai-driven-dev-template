@@ -39,7 +39,7 @@ slice: プロジェクト開始
 agents: [architect]
 cause_category: 承認状態の確認漏れ
 cause_key: draft-approval-state-not-confirmed
-pushed_to: [meta/permissions.md, meta/templates/adr.md, meta/templates/pull-request.md]
+pushed_to: [AGENTS.md, meta/permissions.md, meta/guardrails.md, meta/templates/adr.md, meta/templates/pull-request.md]
 status: 対応済み
 principles: [P-01, P-07, P-08]
 ```
@@ -48,6 +48,6 @@ principles: [P-01, P-07, P-08]
   未取得であることを、PR作成後の進行説明で明確に区別しなかった。
 - 原因の仮説: permissions.mdが定める「契約・ADRは人間の承認で確定」という状態遷移を、PRが存在することと
   混同した。
-- 押し込み先: 新規規程は追加しない。既存のpermissions.md、ADR雛形の`status: 提案中`、PRテンプレートの
-  「人間の承認が必要な差分」を、以後の報告で必ず明示する。PR #28は提案中であり、人間のレビュー・承認待ち
-  である。
+- 押し込み先: 新規規程は追加しない。Codex向けのAGENTS.mdに、PR操作・レビュー可能な成果物を扱う前に
+  guardrails.mdとPRテンプレートを読むこと、および起草許可と正式承認を区別することを追加した。PR #28は
+  提案中であり、人間のレビュー・承認待ちである。
