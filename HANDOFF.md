@@ -11,10 +11,11 @@
 
 ## どこから読むか
 
-1. **projects/<プロジェクト>/activeContext.md** — 「今どこにいて次に何をするか」の唯一のSSOT（P-11）。フレッシュセッションはここで進行中のスライスに合流する。現在の適用先は `projects/reservation-system/`
-2. **meta/PRINCIPLES.md** — 全agentが常時ロードする信条
-3. **meta/agents.md** — agent体制（architect / designer / developer / tester / reviewer。designerはUIを持つプロジェクトのみ登場、meta/adr/0017）と、コンテキスト分離の理由と、スライスの標準フロー
-4. **meta/README.md** — A層の文書索引（残りの規程・雛形・道具はここから辿る）
+1. **activeContext.md（ルート）** — テンプレ管理・全プロジェクトの一覧と状態・クロスプロジェクトの協調状態の「現在」（P-11、meta/adr/0033）。フレッシュセッションはまずここを開き、全体像と作業対象のプロジェクトを掴む。跨り状態はこのファイルが唯一の所有者。
+2. **projects/<プロジェクト>/activeContext.md** — 作業対象プロジェクト**内部**の「今どこにいて次に何をするか」（P-11）。ルートのプロジェクト一覧からポインタで辿る。進行中のスライスにここで合流する。
+3. **meta/PRINCIPLES.md** — 全agentが常時ロードする信条
+4. **meta/agents.md** — agent体制（architect / designer / developer / tester / reviewer。designerはUIを持つプロジェクトのみ登場、meta/adr/0017）と、コンテキスト分離の理由と、スライスの標準フロー
+5. **meta/README.md** — A層の文書索引（残りの規程・雛形・道具はここから辿る）
 
 必要に応じて meta/verification.md（多段保証L1〜L5）、meta/permissions.md（権限・エスカレーション）を参照する。
 

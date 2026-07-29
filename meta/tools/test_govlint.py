@@ -23,6 +23,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 import tempfile
+from datetime import date
 import textwrap
 import unittest
 from pathlib import Path
@@ -235,6 +236,64 @@ class TestCheckAdrLinks(GovlintTestCase):
         adrs = govlint.check_adrs()
         govlint.check_adr_links(adrs)
         self.assertTrue(any("superseded_by '9999' が同じscope" in e for e in govlint.errors))
+
+
+class TestReportPendingAdrs(GovlintTestCase):
+    """提案中ADRの棚卸しREPORT（meta/adr/0035）。
+
+    todayを固定して呼ぶ（実日付に結合したアサーションは日が変わるだけで壊れる）。
+    """
+
+    TODAY = date(2026, 7, 29)
+
+    def _pending(self, adr_id: str, drafted: str) -> str:
+        return VALID_ADR.replace("id: 0001", f"id: {adr_id}").replace(
+            "status: 承認済み", "status: 提案中"
+        ).replace('approved_by: "test"', "approved_by: null").replace(
+            "date: 2026-01-01", f"date: {drafted}"
+        )
+
+    def test_approved_adr_is_not_reported(self) -> None:
+        write(self.root / "meta" / "adr" / "0001-sample.md", VALID_ADR)
+        govlint.report_pending_adrs(govlint.check_adrs(), today=self.TODAY)
+        self.assertEqual(govlint.reports, [])
+
+    def test_pending_adr_is_reported_with_age(self) -> None:
+        write(self.root / "meta" / "adr" / "0001-sample.md", self._pending("0001", "2026-07-18"))
+        govlint.report_pending_adrs(govlint.check_adrs(), today=self.TODAY)
+        joined = "\n".join(govlint.reports)
+        self.assertIn("提案中のまま滞留しているADR 1本", joined)
+        self.assertIn("meta/adr/0001-sample.md", joined)
+        self.assertIn("11日経過", joined)
+
+    def test_reported_in_descending_age_order(self) -> None:
+        write(self.root / "meta" / "adr" / "0001-old.md", self._pending("0001", "2026-07-18"))
+        write(self.root / "meta" / "adr" / "0002-new.md", self._pending("0002", "2026-07-28"))
+        govlint.report_pending_adrs(govlint.check_adrs(), today=self.TODAY)
+        lines = [r for r in govlint.reports if r.strip().startswith("提案中:")]
+        self.assertEqual(len(lines), 2)
+        self.assertIn("0001-old.md", lines[0])
+        self.assertIn("0002-new.md", lines[1])
+
+    def test_report_does_not_produce_errors(self) -> None:
+        """REPORTは終了コードを1にしない（P-04: 意味判定をERRORに載せない）。"""
+        write(self.root / "meta" / "adr" / "0001-sample.md", self._pending("0001", "2026-07-18"))
+        govlint.report_pending_adrs(govlint.check_adrs(), today=self.TODAY)
+        self.assertEqual(govlint.errors, [])
+
+    def test_project_scope_pending_adr_is_reported(self) -> None:
+        content = self._pending("0004", "2026-07-18").replace(
+            "scope: meta", "scope: reservation-frontend"
+        )
+        write(self.root / "projects" / "reservation-frontend" / "adr" / "0004-x.md", content)
+        govlint.report_pending_adrs(govlint.check_adrs(), today=self.TODAY)
+        self.assertTrue(any("projects/reservation-frontend/adr/0004-x.md" in r for r in govlint.reports))
+
+    def test_malformed_date_is_reported_without_age(self) -> None:
+        """dateの形式不正は check_adrs がERRORにする。REPORT側は落ちずに日数不明として出す。"""
+        write(self.root / "meta" / "adr" / "0001-sample.md", self._pending("0001", "2026/07/18"))
+        govlint.report_pending_adrs(govlint.check_adrs(), today=self.TODAY)
+        self.assertTrue(any("経過日数不明" in r for r in govlint.reports))
 
 
 # ---------------------------------------------------------------- friction-log

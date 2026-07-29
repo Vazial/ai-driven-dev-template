@@ -7,6 +7,7 @@
   [ERROR] シナリオIDの整合     … .feature内でIDが一意か、API仕様が参照するIDが実在するか
   [REPORT] cause_keyの再出現   … 同一原因の2回目以降＝構造的欠陥のシグナル（人間が判断する。失敗させない）
   [REPORT] 未対応FRの棚卸し
+  [REPORT] 提案中ADRの棚卸し   … status: 提案中 のまま滞留しているADR（meta/adr/0035）
 
 終了コード: ERRORが1件でもあれば1、なければ0（REPORTは0のまま）。
 
@@ -16,6 +17,7 @@ from __future__ import annotations
 
 import re
 import sys
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -124,6 +126,39 @@ def check_adr_links(adrs: dict[str, dict]) -> None:
             errors.append(f"{rel}: superseded_by が設定されているが status が 'superseded' でない")
 
 
+def report_pending_adrs(adrs: dict[str, dict], today: date | None = None) -> None:
+    """status: 提案中 のまま滞留しているADRを、経過日数の降順で棚卸しする（meta/adr/0035）。
+
+    ERRORにしない: 「このADRは承認されるべきか」「保留は妥当か」は意味判定であり機械が確定できない。
+    日数の閾値でCIを赤にすると、正当な保留（判断材料は残すが決定はまだ、という意図的な状態）が罰され、
+    回避のために内容を伴わない承認が押される。機械は「見えていないものを見せる」までを担う（P-04）。
+    """
+    today = today or date.today()
+    pending: list[tuple[int, str, str]] = []
+    for entry in adrs.values():
+        fm, rel = entry["fm"], entry["path"]
+        if fm.get("status") != "提案中":
+            continue
+        try:
+            drafted = date.fromisoformat(str(fm.get("date")))
+        except (TypeError, ValueError):
+            # dateの形式不正は check_adrs が既にERRORとして報告済み。ここでは日数を出さない
+            pending.append((-1, rel, str(fm.get("date"))))
+            continue
+        pending.append(((today - drafted).days, rel, str(fm.get("date"))))
+
+    if not pending:
+        return
+    pending.sort(key=lambda row: (-row[0], row[1]))
+    reports.append(
+        f"提案中のまま滞留しているADR {len(pending)}本（承認するか、意図した保留かを判断すること。"
+        f"meta/adr/0035）"
+    )
+    for age, rel, drafted in pending:
+        age_text = f"{age}日経過" if age >= 0 else "経過日数不明（dateが不正）"
+        reports.append(f"  提案中: {rel}（起草 {drafted} / {age_text}）")
+
+
 # ---------------------------------------------------------------- friction-log
 FR_BLOCK_RE = re.compile(r"^## (FR-\d+):.*?\n+```yaml\n(.*?)\n```", re.S | re.M)
 
@@ -228,6 +263,7 @@ def check_scenario_ids() -> None:
 def main() -> int:
     adrs = check_adrs()
     check_adr_links(adrs)
+    report_pending_adrs(adrs)
     check_friction_logs()
     check_scenario_ids()
 
