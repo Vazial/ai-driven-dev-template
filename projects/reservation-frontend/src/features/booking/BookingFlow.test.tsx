@@ -278,4 +278,41 @@ describe("予約フロー(RFE-B)", () => {
     expect(await screen.findByText("空き 09:00〜14:00")).toBeInTheDocument();
     expect(await screen.findByText("空き 15:00〜18:00")).toBeInTheDocument();
   });
+
+  // 追加検証（既存シナリオ番号なし。3本目の実接続＝POST /reservations の実APIモードで初めて
+  // 到達しうる経路）: 実APIモードでは、契約が定義しない応答・fetch自体の失敗が例外として伝播する
+  // （ADR-0009 決定4）。読み取り側（AvailabilityScreen）が既にそうしているのと同様、確定操作でも
+  // 例外を受けて汎用の失敗表示に落とし、ダイアログを開いたまま保つことを固定する。
+  // これが無いと、実モードのバック未起動時にクリックが無反応（未処理のPromise reject）になる。
+  it("予約確定が例外で失敗した場合、汎用の失敗表示が出てダイアログは開いたままになる", async () => {
+    mockedListRooms.mockResolvedValue([ROOM_A]);
+    mockedGetRoomAvailability.mockResolvedValue({
+      ok: true,
+      data: {
+        roomId: "room-a",
+        date: "2026-07-14",
+        availableSlots: [WIDE_AVAILABLE_SLOT],
+      },
+    });
+    mockedCreateReservation.mockRejectedValue(new TypeError("Failed to fetch"));
+
+    const user = userEvent.setup();
+    render(<AvailabilityScreen initialDate={new Date("2026-07-14T00:00:00")} />);
+
+    await user.click(await screen.findByText("空き 09:00〜18:00"));
+    const dialog = await screen.findByRole("dialog");
+
+    await user.type(within(dialog).getByLabelText("予約者ID"), "suzuki");
+    await user.click(within(dialog).getByRole("button", { name: "予約を確定する" }));
+
+    // 失敗が画面で分かる（拒否理由ではなく汎用の文言）
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("予約できませんでした");
+
+    // ダイアログはまだ開いたまま（確定できていない）
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    // 確定ボタンが再び押せる状態に戻っている（submitting が解除されている）
+    expect(within(dialog).getByRole("button", { name: "予約を確定する" })).toBeEnabled();
+  });
 });

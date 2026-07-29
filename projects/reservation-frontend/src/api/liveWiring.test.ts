@@ -44,7 +44,7 @@ describe("実API配線: fetchパスは Vite proxy プレフィックスでカバ
     expect(proxiedPrefixes().length).toBeGreaterThan(0);
   });
 
-  it("rooms・availability の実fetchが叩くパスが、全て proxy プレフィックス配下にある", async () => {
+  it("rooms・availability・reservations の実fetchが叩くパスが、全て proxy プレフィックス配下にある", async () => {
     const prefixes = proxiedPrefixes();
 
     const urls: string[] = [];
@@ -52,21 +52,38 @@ describe("実API配線: fetchパスは Vite proxy プレフィックスでカバ
       "fetch",
       vi.fn(async (url: string) => {
         urls.push(url);
-        // rooms は {rooms:[]}、availability は {availableSlots:[]} を期待する。両方を満たす形で返す
-        return fetchResponse({ rooms: [], roomId: "r", date: "d", availableSlots: [] });
+        // rooms は {rooms:[]}、availability は {availableSlots:[]}、reservations は
+        // ReservationResponse を期待する。すべてを満たす形で返す
+        return fetchResponse({
+          rooms: [],
+          roomId: "r",
+          date: "d",
+          availableSlots: [],
+          reservationId: "rsv-1",
+        });
       }),
     );
 
     vi.stubEnv("VITE_USE_REAL_ROOMS_API", "true");
     vi.stubEnv("VITE_USE_REAL_AVAILABILITY_API", "true");
+    vi.stubEnv("VITE_USE_REAL_RESERVATIONS_API", "true");
     vi.resetModules();
     const rooms = await import("./rooms");
     const availability = await import("./availability");
+    const reservations = await import("./reservations");
 
     await rooms.listRooms();
     await availability.getRoomAvailability("room-x", "2026-07-14");
+    await reservations.createReservation({
+      roomId: "room-x",
+      reserverId: "user-001",
+      date: "2026-07-14",
+      startTime: "10:00",
+      endTime: "11:00",
+      attendeeCount: 4,
+    });
 
-    expect(urls.length).toBe(2);
+    expect(urls.length).toBe(3);
     for (const url of urls) {
       const covered = prefixes.some((p) => url.startsWith(p));
       expect(
@@ -76,5 +93,8 @@ describe("実API配線: fetchパスは Vite proxy プレフィックスでカバ
     }
     // availability が実際に /availability を叩いていることも固定する（パスの取り違え防止）
     expect(urls.some((u) => u.includes("/availability"))).toBe(true);
+    // `POST /reservations` は `/rooms` の前方一致ではカバーされない。専用の proxy ルールが
+    // 消える・改名されると越境が必要になるため、このパスが独立に proxy 配下であることを固定する
+    expect(urls.some((u) => u.startsWith("/reservations"))).toBe(true);
   });
 });

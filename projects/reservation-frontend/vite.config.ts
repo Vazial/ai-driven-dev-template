@@ -35,6 +35,15 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
+      // 実バックエンド接続の3本目（`POST /reservations`）。availability（2本目）は
+      // `/rooms/{roomId}/availability` だったため上の `/rooms` ルールの前方一致で無料でカバーされたが、
+      // `/reservations` はその外側にあるため独立したルールが要る。この配線の不変条件
+      // （実fetchのパスが proxy プレフィックス配下にある＝越境が不要）は
+      // src/api/liveWiring.test.ts が機械ゲートする（meta/adr/0032: 配線・結合は機械検証する）。
+      '/reservations': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
     },
   },
   test: {
