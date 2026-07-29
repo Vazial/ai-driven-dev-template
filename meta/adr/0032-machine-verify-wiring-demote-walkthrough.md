@@ -1,9 +1,9 @@
 ---
 id: 0032
 scope: meta
-status: 提案中
+status: 承認済み
 date: 2026-07-29
-approved_by: null
+approved_by: "本PRのマージをもって承認（人間裁定 2026-07-29）。frontmatterへの記録が漏れていたため2026-07-29に追記した（ルートactiveContextは承認済みとして先行記述していた）"
 supersedes: []
 superseded_by: null
 relates_to: [P-01, P-05, P-10]
