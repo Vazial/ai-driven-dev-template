@@ -2,18 +2,24 @@
 
 > P-11: このファイルは常に「現在」だけを映す。更新は上書き。歴史はgitとADRが持つ。
 > 役割（meta/adr/0033）: このファイルは **reservation-frontend 内部**の状態のみを持つ。テンプレ管理・全プロジェクト・**クロスプロジェクトの状態はリポジトリ直下の `activeContext.md`（ルート）が唯一の所有者**。跨り事実はここに複製せず、ルートを参照する。
-> 最終更新: 2026-07-29
-
 ## 今どこにいるか
 
-**rooms・availability の実バックエンド接続が完了した**（PR #35、2本目＝ADR-0009 決定6(b)）。`GET /rooms`（adr/0009）に続き `GET /rooms/{roomId}/availability` を実接続。方式は環境変数で独立にopt-in（`VITE_USE_REAL_ROOMS_API`・`VITE_USE_REAL_AVAILABILITY_API`、既定モック）。検証ゲートは**層状の機械検証**（meta/adr/0032）——形の互換性＝SSoT yaml経由の推移的ゲート、配線＝`liveWiring.test.ts`、実モード分岐＝fetchモックの単体テスト。走破は安定ゲートにしない。L1/L4緑（Vitest 48件・ESLint・`tsc -b && vite build`・Playwright e2e）。
+**予約作成（`POST /reservations`）の実バックエンド接続が完了した**（3本目。`GET /rooms`＝adr/0009、`GET /rooms/{roomId}/availability`＝adr/0009 決定6(b) に続く）。**初の「書き込み」の実接続**であり、読み取り2本とは次の点が違った:
+
+- **proxy ルールの新設が必要**だった。`/reservations` は既存の `/rooms` プレフィックスの前方一致でカバーされない（availability は `/rooms/{id}/availability` なので無料でカバーされていた）。`liveWiring.test.ts` がこの配線を機械ゲートする。
+- **部分的な実接続が「書き込み結果の可視性」を分断する**（FR-007＝識別子空間の分断と同型の別種）。予約作成だけ実APIにすると、作成した予約は実バックに入りモック側のタイムラインには現れない。対処もFR-007と同じ——フラグは1本ずつ独立に保ち（adr/0009 決定1）、「実用上は3つ同時に true でないと通しで機能しない」制約をコードに明記した。
+- **確定操作に例外の受けが必要**だった。実モードでは `createReservation` が throw しうる（adr/0009 決定4）が、`BookingDialog.handleConfirm` に catch が無く、バック未起動時にクリックが無反応になる穴があった。汎用の失敗表示に落とすよう修正し、回帰テストを追加した（修正を外すと落ちることを確認済み）。
+- **契約とモックの差を意図的に埋めていない**: 契約は `POST /reservations` に **404 を定義していない**（201/409/422のみ）。モックは存在しない会議室を ROOM_NOT_FOUND で拒否するため、実モードでは同じ状況が汎用の失敗（例外）になる。埋めるには契約側に404を足す＝人間承認の要る契約変更なので、実装側で勝手に解釈しない（adr/0009 決定4）。
+
+検証ゲートは**層状の機械検証**（meta/adr/0032）——形の互換性＝SSoT yaml経由の推移的ゲート、配線＝`liveWiring.test.ts`、実モード分岐＝fetchモックの単体テスト。走破は安定ゲートにしない。L1/L4緑（Vitest 56件・ESLint・`tsc -b && vite build`・Playwright e2e 4件）。
 
 > 接続方式（Vite proxy・越境なし）・契約SSoT・consumer-driven の詳細は**ルート `activeContext.md` のクロスプロジェクト節**を参照（複製しない）。
 
 実装の現状:
 - 画面: RFE-A（空き状況タイムライン、`src/features/availability/`）・RFE-B（予約ダイアログ、`src/features/booking/`）実装済み。案B（adr/0006）の設計調整（予約者名非表示・空き/予約済みの二値表示）反映済み。
 - 型: SSoT yaml から生成（adr/0008、`npm run gen:api` → `src/api/schema.d.ts`）。
-- 実接続の範囲: **rooms・availability のみ**実API opt-in。**予約作成・キャンセル（`src/api/reservations.ts`）はモックのまま**。
+- 実接続の範囲: **rooms・availability・予約作成の3本**が実API opt-in（`VITE_USE_REAL_ROOMS_API`・`VITE_USE_REAL_AVAILABILITY_API`・`VITE_USE_REAL_RESERVATIONS_API`、いずれも既定モック）。
+- **キャンセルは未着手**（API関数・UI・受け入れシナリオのいずれも無い）。バック側は RSV-K が完成済みなので、足りていないのはフロントだけ。
 - design-preview 隔離: 本番ビルドの entry を `index.html` に固定済み（adr/0022 §2、`design-preview.html` は dev 限定）。
 
 ## 確定した主要な判断（プロジェクトADR）
@@ -32,8 +38,8 @@
 
 ## 次にやること（プロジェクト内部）
 
-1. **予約作成・キャンセルの実接続**（`reservations.ts` はモックのまま）。rooms・availability に続く実接続候補。結合ゲートは ADR-0032 の層状機械検証に倣う。
-2. **「自分の予約」（端末ローカル/localStorage）スライス**（案B、adr/0006）— 未着手。
+1. **キャンセル ＋「自分の予約」（端末ローカル/localStorage）スライス**（案B、adr/0006）— 未着手。**これは実接続作業ではなく新規スライス**であり、受け入れシナリオの起草（architect）→ 人間承認 → tester/developer 並行、という標準フローが要る。現在の契約は RFE-A（3件）・RFE-B（3件）の6シナリオのみで、キャンセルのシナリオは存在しない。
+2. **`.env.example` に `VITE_USE_REAL_RESERVATIONS_API` を追記する** — 未実施。Claude Code の権限設定が `.env*` の読み取りを拒否するため（guardrails §3、意図されたガード）、このファイルだけAIが触れなかった。人間または別ランタイムが追記する。
 3. **骨格（おおまかなコンポーネント構成）の記述・保存・比較の実現**（改修ガバナンスの判定機構、meta/adr/0021）— 未着手・優先度高。レンダリング画像の記録は非ブロッキング宿題。
 4. **ADR-0004・0005 の人間承認**、および ADR-0004 §1§2 の条文改訂（静的HTML/CSS → TSX＋受け皿方式）。
 5. **`PATCH /reservations/{id}`（予約時間変更）の要否** — 未決（案内文を実態に合わせるか、機能追加するか）。
