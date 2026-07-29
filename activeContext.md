@@ -14,10 +14,12 @@ AI駆動開発のメタテンプレート。正しさを機械検証（L0〜L5�
 **直近で確定したメタ判断**:
 - meta/adr/0031（承認済み）: クロスプロジェクト結合CIの置き場 `ci-integration.yml`（両プロジェクトpaths和集合で起動）を定義。必須方針は緩い運用（案i）から。実ジョブの中身はスライスに委譲。
 - meta/adr/0032（承認済み）: 配線・結合の検証は機械化する。走破（ADR-0024）は「未知探索」と「意味理解の要る検証（control surface・UX・L5）」に限り、**安定した回帰ゲートにはしない**。
+- meta/adr/0033（承認済み）: activeContextを2階層に（ルート＝テンプレ管理・全プロジェクト・跨り／プロジェクト内＝そのプロジェクト）。本ファイルがルート。
+- meta/adr/0034（承認済み）: activeContext更新をPRテンプレDoDの必須チェック（関所）に載せ、accretion（追記肥大）を禁じ、手書き「最終更新」日付を廃止（gitが持つ）。
 
-**進行中のメタ論点**:
-- meta/adr/0033（本モデル、提案中）: activeContextの2階層化。本ファイルがその初適用。per-project activeContextの「プロジェクト内部だけに絞る」スリム化は各プロジェクト次回タッチ時（遡及一括しない）。
-- `meta/verification.md`・`meta/guardrails.md` への織り込み宿題: 「配線・結合は機械化／走破は探索と意味理解に限る」（ADR-0032帰結）、結合CIカテゴリの記述（ADR-0031帰結、`ci-integration.yml` 新設時）。
+**進行中のメタ論点・宿題**:
+- `meta/verification.md`・`meta/guardrails.md` への織り込み: 「配線・結合は機械化／走破は探索と意味理解に限る」（ADR-0032帰結）、結合CIカテゴリの記述（ADR-0031帰結、`ci-integration.yml` 新設時）。
+- per-project activeContextのスリム化（2階層モデルへ・ADR-0033/0034）: reservation-frontendは実施済み（PR #39）。**reservation-systemは未実施**（プロジェクトブランチ未作成のため、次回作業時にブランチ作成と同時）。
 
 ## 全プロジェクトの一覧・状態
 
