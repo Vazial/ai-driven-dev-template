@@ -3,11 +3,9 @@
 > P-11: このファイルは常に「現在」だけを映す。更新は上書き。歴史はgitとADRが持つ。
 > 役割（meta/adr/0033）: テンプレ自身の方法論の現在／全プロジェクトの一覧・状態／プロジェクト間の協調状態を持つ。
 > **クロスプロジェクトの状態はこのファイルが唯一の所有者**。プロジェクト内部の状態は各 `projects/<p>/activeContext.md` が持つ（跨り事実は複製せずここを参照する）。
-> 最終更新: 2026-07-29
-
 ## テンプレ管理の現在
 
-AI駆動開発のメタテンプレート。正しさを機械検証（L0〜L5）に置き、人間承認を4点（契約／設計骨格／step実装／規程変更）に集約する。ClaudeとCodexが同一リポジトリを並行開発する（meta/adr/0029、`meta/agent-runtime-mapping.md`）。
+AI駆動開発のメタテンプレート。正しさを機械検証（L0〜L5）に置き、人間承認を4点（契約／設計骨格／step実装／規程変更）に集約する。ClaudeとCodexが同一リポジトリを並行開発する（meta/adr/0036、`meta/agent-runtime-mapping.md`）。
 
 **ブランチ運用（meta/adr/0028、承認済み）**: `main`＝リリース可能。`project/<project>`＝各プロジェクトの長期統合ブランチ。スライスは `project/<project>` から `<type>/<project>-<slice>` を切りPRで戻す。`project/<project>` の作成＋保護rulesetは**AIが `gh` の admin権限で自動作成**する（人間はchatでauthorize＋結果確認）。`meta/**` の共有ガバナンス変更は例外的に base=main（ADR-0026直列化）。
 
@@ -16,9 +14,9 @@ AI駆動開発のメタテンプレート。正しさを機械検証（L0〜L5�
 - meta/adr/0032（承認済み）: 配線・結合の検証は機械化する。走破（ADR-0024）は「未知探索」と「意味理解の要る検証（control surface・UX・L5）」に限り、**安定した回帰ゲートにはしない**。**規程本体への織り込み完了**（`meta/verification.md` L3詳細＋§3.4＋L5手段＋対応表、`meta/guardrails.md` §2、`meta/agents.md` 断面②検証）。
 - meta/adr/0033（承認済み）: activeContextを2階層に（ルート＝テンプレ管理・全プロジェクト・跨り／プロジェクト内＝そのプロジェクト）。本ファイルがルート。
 - meta/adr/0034（承認済み）: activeContext更新をPRテンプレDoDの必須チェック（関所）に載せ、accretion（追記肥大）を禁じ、手書き「最終更新」日付を廃止（gitが持つ）。
+- meta/adr/0036（承認済み）: `.claude/agents/<role>.md` をClaude/Codex共通の唯一の役割定義原本とし、重複していた `meta/agents/<role>.md` を廃止した。runtime別のモデル選択は `meta/agent-runtime-mapping.md` が持つ。
 
 **進行中のメタ論点・宿題**:
-- **agent役割定義のSSOT修正（人間裁定 2026-07-30、ADR-0036と移行を同一PRでレビュー待ち）**: `.claude/agents/<role>.md` を役割定義の唯一の原本とする。重複していた `meta/agents/<role>.md` は廃止し、CodexもClaude側の原本とruntime対応表を読む構成へ移行した。役割の責務・モデル対応は変更していない。L0（govlint・単体テスト）は通過済みで、PRのマージをADR承認とする。
 - meta/adr/0035（承認済み）: ADRの承認記録をPR1本で閉じる。ADRを含むPRは承認方式を二択で明示し（**(i)マージ＝承認**＝起草時に `status: 承認済み` ＋ `approved_by` を書く・既定／**(ii)記録のみ・承認は後日**＝意図した保留に限る）、滞留はgovlintの `[REPORT] 提案中ADRの棚卸し`（経過日数つき）で可視化する。ERROR化はしない（意味判定。P-04）。FR-015が一次データ。
 - **提案中のまま滞留しているADRが10本ある**（2026-07-29時点、最古11日。govlintのREPORTに毎回出る）。ADR-0035は一括承認しない方針のため、**人間が個別に判断する必要がある**。優先度が高いのは規程本体がすでに依存している2本——`meta/adr/0026`（ブランチ運用・CI構成を `meta/guardrails.md` が根拠にしている）と `meta/adr/0024`（走破。承認済みの `0032` が前提にしている）。
 - 結合CIカテゴリの記述（ADR-0031帰結）の `meta/guardrails.md` §2「CI構成」への反映は、`ci-integration.yml` の実ファイルを作る実装スライスとセットで行う（ADR-0031が明示的にそう定めている）。
@@ -30,7 +28,8 @@ AI駆動開発のメタテンプレート。正しさを機械検証（L0〜L5�
 |---|---|---|---|
 | reservation-system（会議室予約バックエンド） | Claude | 垂直スライス5本（RSV-C/K/A/R/L）完了・API一通り緑・main。現在の新規作業なし | `projects/reservation-system/activeContext.md` |
 | reservation-frontend（会議室予約フロント） | Claude | availability実接続完了（PR #35、`project/reservation-frontend`）。rooms＋availability両方が実API opt-in。設計フェーズの宿題（design-preview隔離・骨格記録等）は残る | `projects/reservation-frontend/activeContext.md` |
-| toyama-weekend-radar | Codex | foundation確立中（`project/toyama-weekend-radar` ブランチ・main未昇格）。詳細はCodex所有 | 同ブランチ上のactiveContext |
+| toyama-weekend-radar | Codex | 休止。foundationは`project/toyama-weekend-radar`に保持し、Dining Radarへ注力する | 同ブランチ上のactiveContext |
+| toyama-dining-radar | Codex | プロジェクト開始準備。富山県庁周辺の月例ランチ会向け店舗提案を対象とする | `project/toyama-dining-radar`作成後にactiveContextを配置 |
 
 ## クロスプロジェクトの協調状態
 
