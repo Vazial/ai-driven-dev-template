@@ -41,6 +41,13 @@ export type MockReservation = TimeRange & {
   /** 予約者ID（自己申告、案B。ADR-0006により画面には表示しない） */
   reserverId: string;
   attendeeCount: number;
+  /**
+   * キャンセルされた日時（RFE-Kのcancelledベース、RFE-C「自分の予約を確認してキャンセルできる」が
+   * 追加）。undefined/nullはキャンセルされていない予約。キャンセルされた予約はMOCK_RESERVATIONSから
+   * 物理削除しない——getRoomAvailability（RFE-A/availability.ts）が「キャンセルされていない予約」
+   * だけを占有として扱い、この時間帯を空きに戻す（RFE-C-03）。
+   */
+  cancelledAt?: string | null;
 };
 
 export const MOCK_RESERVATIONS: MockReservation[] = [

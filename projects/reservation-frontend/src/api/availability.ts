@@ -35,8 +35,10 @@ function getMockAvailability(
     };
   }
 
+  // キャンセルされた予約（cancelledAtが立っているもの、RFE-C）は占有として扱わない——
+  // キャンセルされた時間帯は空きに戻る（RFE-C-03の3つ目のThen、reservation-system側RSV-K-03と同型）。
   const busyRanges = MOCK_RESERVATIONS.filter(
-    (r) => r.roomId === roomId && r.date === date,
+    (r) => r.roomId === roomId && r.date === date && !r.cancelledAt,
   );
   const availableSlots = subtractRanges(
     room.businessHoursStart,
