@@ -29,7 +29,7 @@ AI駆動開発のメタテンプレート。正しさを機械検証（L0〜L5�
 | reservation-system（会議室予約バックエンド） | Claude | 垂直スライス5本（RSV-C/K/A/R/L）完了・API一通り緑・main。現在の新規作業なし | `projects/reservation-system/activeContext.md` |
 | reservation-frontend（会議室予約フロント） | Claude | availability実接続完了（PR #35、`project/reservation-frontend`）。rooms＋availability両方が実API opt-in。設計フェーズの宿題（design-preview隔離・骨格記録等）は残る | `projects/reservation-frontend/activeContext.md` |
 | toyama-weekend-radar | Codex | 休止。foundationは`project/toyama-weekend-radar`に保持し、Dining Radarへ注力する | 同ブランチ上のactiveContext |
-| toyama-dining-radar | Codex | プロジェクト開始準備。富山県庁周辺の月例ランチ会向け店舗提案を対象とする | `project/toyama-dining-radar`作成後にactiveContextを配置 |
+| toyama-dining-radar | Codex | 統合ブランチと保護ruleset作成済み。富山県庁周辺の月例ランチ会向け店舗提案のfoundation開始待ち | foundationスライスで`projects/toyama-dining-radar/activeContext.md`を配置 |
 
 ## クロスプロジェクトの協調状態
 
