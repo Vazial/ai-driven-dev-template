@@ -407,6 +407,36 @@ principles: [P-03, P-04, P-10]
   自体は変更していない
 
 ---
+
+## FR-017: サンドボックス内のCLI探索失敗をホスト環境での不存在と誤認し、利用可能な`gh`を使えないと報告した
+
+```yaml
+id: FR-017
+date: 2026-07-30
+found_at: 人間
+slice: codex-gh-host-discovery
+agents: [orchestrator]
+cause_category: 実行環境の可視範囲をホスト全体と同一視
+cause_key: sandbox-visibility-mistaken-for-host-absence
+pushed_to: [meta/adr/0037-require-codex-host-cli-discovery-before-unavailability-report.md, AGENTS.md]
+status: 対応済み
+principles: [P-05, P-08, P-10]
+```
+
+- 事象: Codexが通常サンドボックス内のPowerShellで`Get-Command gh`と`where gh`に失敗した結果だけを根拠に、
+  GitHub CLIが環境に無いと報告した。人間から「コマンドプロンプトでは使える」と指摘され、必要な権限昇格を
+  伴うホスト側確認を行うと、WinGet管理の`gh`実体・バージョン・認証済み状態を確認できた。ブランチとruleset
+  の結果自体は正しかったが、利用可能な標準手段を確認せずブラウザやREST直接呼び出しへ迂回した
+- 原因の仮説: Codexの通常シェルに見えるPATHと、権限昇格後のホスト側から参照できるPATHを区別せず、1つの
+  探索面の失敗をホスト全体の事実へ一般化した。CLI実体、認証状態、対象操作の権限・network到達性も分離して
+  診断していなかった
+- 押し込み先: ADR-0037で、利用不能報告の前にホスト側標準探索または既知の絶対パスを読み取り専用で確認し、
+  実体・認証・権限・networkを別々に報告することを決定した。`AGENTS.md`へCodex固有手順を反映し、token、
+  credential store、秘密を含み得る環境変数を出力しない境界も明記した
+- 補足: ホスト全体の再帰探索や、CLI発見を外部操作の承認とみなすことは採用していない。今回確認した実体の
+  絶対パスや認証情報はpublicリポジトリへ記録しない
+
+---
 <!--
 記入のコツ:
 - 「その場で」書く。棚卸しでまとめて書かない（記憶で精度が落ちる）
