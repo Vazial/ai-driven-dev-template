@@ -41,6 +41,15 @@ new decision, a conflict, or a materially broader scope, stop and return to chat
 changing or creating the PR. Mechanical follow-up that does not change the agreed scope
 (for example, reporting CI completion) does not need a new checkpoint.
 
+## Codex host CLI discovery
+
+Before reporting a required CLI as unavailable, Codex must confirm it through a
+host-side standard lookup or a known absolute path when the sandbox lookup failed.
+Use only a location check or a read-only version command; do not recursively search the
+host or expose credentials. Report executable availability, authentication, and required
+operation/network permission separately. Finding a CLI does not authorize login,
+installation, push, PR, or other external changes; apply the normal permission rules.
+
 ## Role-agent dispatch
 
 `.claude/agents/<role>.md` is the executable role contract for `architect`, `designer`,

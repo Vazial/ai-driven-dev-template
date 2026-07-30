@@ -1,15 +1,15 @@
 ---
-id: 0037
+id: 0038
 scope: meta
 status: 承認済み
 date: 2026-07-30
 approved_by: "本PRのマージをもって承認（ADR-0035 方式(i)の適用。人間裁定 2026-07-30: govlintのシナリオID検査の修正と、クロスプロジェクト参照を正当と認める方針を承認）"
 supersedes: []
 superseded_by: null
-relates_to: [P-01, P-04, P-10, FR-017]
+relates_to: [P-01, P-04, P-10, FR-018]
 ---
 
-# ADR-0037: シナリオIDの参照境界をASCIIで定め、定義形式を厳格化し、名前空間をリポジトリ全体にする
+# ADR-0038: シナリオIDの参照境界をASCIIで定め、定義形式を厳格化し、名前空間をリポジトリ全体にする
 
 > **承認者向けサマリ**: `meta/tools/govlint.py` のシナリオID検査（L0）に3つの欠陥が見つかった。
 > **(1)** 参照の単語境界に `\b` を使っているため、Pythonの `\w` がUnicode文字を含む結果、**日本語の
@@ -31,7 +31,7 @@ relates_to: [P-01, P-04, P-10, FR-017]
 
 RFE-C（`projects/reservation-frontend/contracts/my-reservations.feature`）の契約ドラフトを
 orchestratorが govlint にかけたところ ERROR 4件で落ちた（architectは機械検証を通さず「矛盾なし」と
-報告していた。FR-017）。内訳は「`RFE-B-03` の定義が重複」1件と「`RSV-K-02`・`RSV-K-08`・`RSV-K-09`
+報告していた。FR-018）。内訳は「`RFE-B-03` の定義が重複」1件と「`RSV-K-02`・`RSV-K-08`・`RSV-K-09`
 が未定義」3件である。
 
 差し戻して修正する過程で、**同じことをしている既存ファイルが通っている**ことに気づき、
@@ -161,6 +161,6 @@ RFE-C のドラフトで行った「クロスプロジェクトの採番済みID
 - 本ADRはツールとテストのみを変更する。契約ファイル・規程本体（`meta/verification.md` 等）の記述は
   変更しない——本ADRは既存の検査意図（「参照は実在の定義に解決する」「定義は一意」）を**正しく実装し直す**
   ものであり、検査の意図そのものを変えていない。
-- 併せて friction-log に FR-017 を起票する（cause_key: `lint-rule-language-dependent`）。この摩擦は
-  「機械検証を通さずに成果物を提出した」というagent側の見逃し（FR-017の直接の引き金）と、
+- 併せて friction-log に FR-018 を起票する（cause_key: `lint-rule-language-dependent`）。この摩擦は
+  「機械検証を通さずに成果物を提出した」というagent側の見逃し（FR-018の直接の引き金）と、
   「lint規則が言語依存で偶然通っていた」という構造的欠陥の2層からなる。

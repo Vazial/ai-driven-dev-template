@@ -550,7 +550,7 @@ class TestCheckScenarioIds(GovlintTestCase):
         govlint.check_scenario_ids()
         self.assertEqual(govlint.errors, [])
 
-    # ---- 参照の境界はASCII（meta/adr/0037）。日本語の助詞で参照が消えないこと ----
+    # ---- 参照の境界はASCII（meta/adr/0038）。日本語の助詞で参照が消えないこと ----
 
     def test_reference_followed_by_japanese_particle_is_detected(self) -> None:
         r"""旧実装は `\b` を使っており、`RSV-A-77が…` の直後の仮名が `\w` 扱いになるため
@@ -584,7 +584,7 @@ class TestCheckScenarioIds(GovlintTestCase):
         govlint.check_scenario_ids()
         self.assertEqual(govlint.errors, [])
 
-    # ---- 定義はIDが行の主語のときだけ（meta/adr/0037） ----
+    # ---- 定義はIDが行の主語のときだけ（meta/adr/0038） ----
 
     def test_prose_comment_starting_with_id_is_not_a_definition(self) -> None:
         """旧実装は行頭コメントがIDで始まれば「定義」と誤認した。説明のために行頭でIDに触れた
@@ -634,7 +634,7 @@ class TestCheckScenarioIds(GovlintTestCase):
         govlint.check_scenario_ids()
         self.assertEqual(govlint.errors, [])
 
-    # ---- 名前空間はリポジトリ全体（meta/adr/0037） ----
+    # ---- 名前空間はリポジトリ全体（meta/adr/0038） ----
 
     def test_cross_project_reference_resolves(self) -> None:
         """consumer-driven contract（meta/adr/0023）: フロントの契約がバックエンドのシナリオを
