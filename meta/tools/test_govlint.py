@@ -550,6 +550,131 @@ class TestCheckScenarioIds(GovlintTestCase):
         govlint.check_scenario_ids()
         self.assertEqual(govlint.errors, [])
 
+    # ---- 参照の境界はASCII（meta/adr/0038）。日本語の助詞で参照が消えないこと ----
+
+    def test_reference_followed_by_japanese_particle_is_detected(self) -> None:
+        r"""旧実装は `\b` を使っており、`RSV-A-77が…` の直後の仮名が `\w` 扱いになるため
+        参照として検出されず、未定義参照を**見逃していた**（統治文書は日本語で書かれるため常態）。
+        """
+        feature = dedent(
+            """
+            Feature: A
+              # RSV-A-01: 定義済み
+              Given 何か
+
+            注記: RSV-A-77が定員超過を拒否理由として持つため、人数の指定が要る
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature)
+        govlint.check_scenario_ids()
+        self.assertTrue(any("RSV-A-77" in e and "定義されていない" in e for e in govlint.errors))
+
+    def test_reference_embedded_in_longer_id_is_not_matched(self) -> None:
+        """ASCII境界にしても、別IDへの部分一致は拾わない（`RSV-A-011` は `RSV-A-01` ではない）。"""
+        feature = dedent(
+            """
+            Feature: A
+              # RSV-A-01: 定義済み
+              Given 何か
+
+            注記: RSV-A-011 という表記は別物であり RSV-A-01 の参照ではない
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature)
+        govlint.check_scenario_ids()
+        self.assertEqual(govlint.errors, [])
+
+    # ---- 定義はIDが行の主語のときだけ（meta/adr/0038） ----
+
+    def test_prose_comment_starting_with_id_is_not_a_definition(self) -> None:
+        """旧実装は行頭コメントがIDで始まれば「定義」と誤認した。説明のために行頭でIDに触れた
+        散文が実在しない定義を生み、参照検査を骨抜きにしていた。IDに続くのが行末かコロンの
+        ときだけ定義とする。
+        """
+        feature = dedent(
+            """
+            Feature: A
+              # RSV-A-01: 定義済み
+              Given 何か
+              #     RSV-A-77〜A-79が終了時刻の妥当性を拒否理由として持つ
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature)
+        govlint.check_scenario_ids()
+        self.assertTrue(any("RSV-A-77" in e and "定義されていない" in e for e in govlint.errors))
+
+    def test_prose_comment_starting_with_id_does_not_collide_with_real_definition(self) -> None:
+        """散文が本物の定義と重複衝突しないこと（同一ファイルに両方あっても定義は1つ）。"""
+        feature = dedent(
+            """
+            Feature: A
+              #       RSV-A-01で明示的にロックした（説明のための言及）
+              # RSV-A-01: 本物の定義
+              Given 何か
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature)
+        govlint.check_scenario_ids()
+        self.assertEqual(govlint.errors, [])
+
+    def test_bare_and_colon_definition_forms_are_both_accepted(self) -> None:
+        """既存の統治文書が使う2形式（`# <ID>` と `# <ID>: 説明`）はどちらも定義として通る。"""
+        feature = dedent(
+            """
+            Feature: A
+              # RSV-A-01
+              Given 何か
+              # RSV-A-02: 説明つき
+              Given 何か
+            """
+        )
+        spec = "x: RSV-A-01\ny: RSV-A-02\n"
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature)
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.yaml", spec)
+        govlint.check_scenario_ids()
+        self.assertEqual(govlint.errors, [])
+
+    # ---- 名前空間はリポジトリ全体（meta/adr/0038） ----
+
+    def test_cross_project_reference_resolves(self) -> None:
+        """consumer-driven contract（meta/adr/0023）: フロントの契約がバックエンドのシナリオを
+        引いても解決する。旧実装はcontractsディレクトリ単位で閉じており未定義扱いにしていた。
+        """
+        backend = dedent(
+            """
+            Feature: バックエンド
+              # RSV-A-01: 定員超過は拒否される
+              Given 何か
+            """
+        )
+        frontend = dedent(
+            """
+            Feature: フロント
+              # RFE-A-01: 人数を指定できる
+              Given 何か
+
+            操作自由度の導出根拠: RSV-A-01が定員超過を拒否理由として持つため
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "b.feature", backend)
+        write(self.root / "projects" / "reservation-frontend" / "contracts" / "f.feature", frontend)
+        govlint.check_scenario_ids()
+        self.assertEqual(govlint.errors, [])
+
+    def test_duplicate_definition_across_projects_is_error(self) -> None:
+        """名前空間が全体になったので、重複検出もプロジェクトを跨いで効く（検査は強くなる）。"""
+        same = dedent(
+            """
+            Feature: X
+              # RSV-A-01: 定義
+              Given 何か
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "b.feature", same)
+        write(self.root / "projects" / "reservation-frontend" / "contracts" / "f.feature", same)
+        govlint.check_scenario_ids()
+        self.assertTrue(any("RSV-A-01" in e and "重複している" in e for e in govlint.errors))
+
 
 # ---------------------------------------------------------------- main（統合）
 class TestMain(GovlintTestCase):

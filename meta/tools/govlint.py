@@ -286,9 +286,18 @@ def check_friction_logs() -> None:
 
 # ---------------------------------------------------------------- 契約
 SCENARIO_ID = r"[A-Z]{2,}-[A-Z]-\d{2}"
-SCENARIO_ID_RE = re.compile(rf"\b({SCENARIO_ID})\b")
-# 定義: シナリオIDで始まるコメント行（`# RSV-A-01` / `# RSV-A-03: 説明`）か、Examples表の第1セル（`| RSV-C-05 |`）
-DEFINE_COMMENT_RE = re.compile(rf"^\s*#\s*({SCENARIO_ID})\b", re.M)
+# 参照の境界はASCIIで定める（meta/adr/0038）。`\b` を使うと、Pythonの `\w` がUnicode文字を含むため
+# 日本語の助詞が直後に来る `RSV-C-10が…` で単語境界が成立せず、参照が**検出されない**。統治文書は
+# 日本語で書かれるため、これは参照整合の検査に言語依存の穴を開けていた。シナリオIDはASCIIなので、
+# 「IDの構成文字が前後に続いていない」ことだけを境界条件にする（`RFE-B-031` のような別IDへの
+# 部分一致は防ぎつつ、直後が仮名・漢字・記号でも等しく検出する）。
+SCENARIO_ID_RE = re.compile(rf"(?<![A-Za-z0-9-])({SCENARIO_ID})(?![A-Za-z0-9-])")
+# 定義: **IDがその行の主語である**コメント行（`# RSV-A-01` / `# RSV-A-03: 説明`）か、
+# Examples表の第1セル（`| RSV-C-05 |`）。
+# IDに続くのは行末かコロンだけを認める（meta/adr/0038）。`\b` だけだと、説明のために行頭でIDに
+# 触れた散文（`# RSV-C-05〜C-07が終了時刻の妥当性を…`）まで「定義」と誤認し、実在しない定義を
+# 生んで参照検査を骨抜きにしていた（さらに同一ファイル内の本物の定義と重複衝突しうる）。
+DEFINE_COMMENT_RE = re.compile(rf"^\s*#\s*({SCENARIO_ID})\s*(?::|$)", re.M)
 DEFINE_TABLE_RE = re.compile(rf"^\s*\|\s*({SCENARIO_ID})\s*\|", re.M)
 # 欠番: 削除されたが番号を再利用しないID（`RSV-C-11は欠番`）。参照は許すが定義ではない
 RETIRED_RE = re.compile(rf"({SCENARIO_ID})\s*は欠番")
@@ -301,14 +310,21 @@ def _definitions(text: str) -> set[str]:
 def check_scenario_ids() -> None:
     """シナリオIDの定義が一意か、参照（.feature内・API仕様内）が実在の定義に解決するかを検証する。
 
-    定義と参照を区別する: 定義はIDで始まるコメント行かExamples表の第1セル。
+    定義と参照を区別する: 定義はIDがその行の主語であるコメント行かExamples表の第1セル。
     prose中の言及（例:「最小予約時間(30分、RSV-C-05)との相互作用」）は参照であって定義ではない。
-    """
-    for contracts in sorted((ROOT / "projects").glob("*/contracts")):
-        defined: dict[str, str] = {}
-        retired: set[str] = set()
-        texts: dict[str, str] = {}
 
+    **名前空間はリポジトリ全体で1つとする**（meta/adr/0038）。旧実装は `projects/<p>/contracts`
+    ディレクトリ単位で閉じていたため、consumer-driven contract（meta/adr/0023）や契約SSoT
+    （meta/adr/0025）が正当と認めるクロスプロジェクト参照——たとえばフロントの契約が
+    control surfaceの導出根拠としてバックエンドのシナリオを引く——を解決できなかった。
+    採番プレフィックスはスライスごとに固有（RFE-A/B/C・RSV-A/C/K/L/R）なので衝突は起きず、
+    重複検出もリポジトリ全体に効くようになる（検査は緩まず強くなる）。
+    """
+    defined: dict[str, str] = {}
+    retired: set[str] = set()
+    texts: dict[str, str] = {}
+
+    for contracts in sorted((ROOT / "projects").glob("*/contracts")):
         for feature in sorted(contracts.glob("*.feature")):
             rel = feature.relative_to(ROOT).as_posix()
             text = feature.read_text(encoding="utf-8")
@@ -319,19 +335,19 @@ def check_scenario_ids() -> None:
                     errors.append(f"{rel}: シナリオID {sid} の定義が {defined[sid]} と重複している")
                     continue
                 defined[sid] = rel
-        if not defined:
-            continue
-
-        for sid in sorted(retired & defined.keys()):
-            errors.append(f"{defined[sid]}: {sid} は欠番と宣言されているのに定義もされている（番号の再利用は禁止）")
-
         for spec in sorted(contracts.glob("*.yaml")):
             texts[spec.relative_to(ROOT).as_posix()] = spec.read_text(encoding="utf-8")
 
-        for rel, text in texts.items():
-            for sid in sorted(set(SCENARIO_ID_RE.findall(text))):
-                if sid not in defined and sid not in retired:
-                    errors.append(f"{rel}: 参照しているシナリオID {sid} が どの.featureにも定義されていない")
+    if not defined:
+        return
+
+    for sid in sorted(retired & defined.keys()):
+        errors.append(f"{defined[sid]}: {sid} は欠番と宣言されているのに定義もされている（番号の再利用は禁止）")
+
+    for rel, text in sorted(texts.items()):
+        for sid in sorted(set(SCENARIO_ID_RE.findall(text))):
+            if sid not in defined and sid not in retired:
+                errors.append(f"{rel}: 参照しているシナリオID {sid} が どの.featureにも定義されていない")
 
 
 # ---------------------------------------------------------------- main
