@@ -30,6 +30,11 @@ errors: list[str] = []
 reports: list[str] = []
 
 
+# ADR-0036: Role names are structural; model values are owned by the source
+# frontmatter (.claude/agents) and the runtime mapping, never by this checker.
+ROLE_NAMES = {"architect", "designer", "developer", "tester", "reviewer"}
+
+
 # ---------------------------------------------------------------- yaml subset
 def parse_block(text: str) -> dict:
     """key: value / key: [a, b] / key: null の限定サブセットを読む。"""
@@ -60,6 +65,76 @@ def read_frontmatter(path: Path) -> dict | None:
     if end == -1:
         return None
     return parse_block(text[4:end])
+
+
+# ---------------------------------------------------------------- role-agent SSOT (ADR-0036)
+def check_role_agent_ssot() -> None:
+    """Ensure role contracts have one Claude/Codex source and preserved models."""
+    source_dir = ROOT / ".claude" / "agents"
+    legacy_dir = ROOT / "meta" / "agents"
+    mapping_path = ROOT / "meta" / "agent-runtime-mapping.md"
+
+    if legacy_dir.is_dir():
+        for path in sorted(legacy_dir.glob("*.md")):
+            errors.append(
+                f"{path.relative_to(ROOT).as_posix()}: ADR-0036で廃止された個別role定義が残っている"
+            )
+
+    source_roles = {path.stem for path in source_dir.glob("*.md")} if source_dir.is_dir() else set()
+    expected_roles = ROLE_NAMES
+    if source_roles != expected_roles:
+        errors.append(
+            ".claude/agents: role定義一式が不一致 "
+            f"(expected={sorted(expected_roles)}, actual={sorted(source_roles)})"
+        )
+
+    source_frontmatter: dict[str, dict] = {}
+    for role in ROLE_NAMES:
+        path = source_dir / f"{role}.md"
+        if not path.is_file():
+            continue
+        frontmatter = read_frontmatter(path)
+        if frontmatter is None:
+            errors.append(f"{path.relative_to(ROOT).as_posix()}: role定義のfrontmatterが無い")
+            continue
+        source_frontmatter[role] = frontmatter
+        if frontmatter.get("name") != role:
+            errors.append(
+                f"{path.relative_to(ROOT).as_posix()}: name='{frontmatter.get('name')}' がrole '{role}' と一致しない"
+            )
+        if not frontmatter.get("model"):
+            errors.append(f"{path.relative_to(ROOT).as_posix()}: Claude modelが無い")
+        if not frontmatter.get("tools"):
+            errors.append(f"{path.relative_to(ROOT).as_posix()}: tools境界が無い")
+
+    if not mapping_path.is_file():
+        errors.append("meta/agent-runtime-mapping.md: runtime対応表が無い")
+        return
+    mapping_rows: dict[str, tuple[str, str, str, str]] = {}
+    for line in mapping_path.read_text(encoding="utf-8").splitlines():
+        m = re.match(r"^\|\s*([a-z]+)\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)` \(`([^`]+)`\)\s*\|\s*`([^`]+)`\s*\|$", line)
+        if m:
+            role, contract_model, path, runtime_model, codex_model = m.groups()
+            mapping_rows[role] = (contract_model, path, runtime_model, codex_model)
+
+    if set(mapping_rows) != expected_roles:
+        errors.append(
+            "meta/agent-runtime-mapping.md: role対応表一式が不一致 "
+            f"(expected={sorted(expected_roles)}, actual={sorted(mapping_rows)})"
+        )
+    for role in ROLE_NAMES:
+        row = mapping_rows.get(role)
+        expected_path = f".claude/agents/{role}.md"
+        frontmatter = source_frontmatter.get(role)
+        if not row or not frontmatter:
+            continue
+        contract_model, path, runtime_model, codex_model = row
+        if path != expected_path or contract_model != frontmatter.get("model") or runtime_model != frontmatter.get("model"):
+            errors.append(
+                f"meta/agent-runtime-mapping.md: {role} のClaude runtime対応がrole定義と一致しない"
+            )
+        if not codex_model:
+            errors.append(f"meta/agent-runtime-mapping.md: {role} のCodex modelが無い")
 
 
 # ---------------------------------------------------------------- ADR
@@ -261,6 +336,7 @@ def check_scenario_ids() -> None:
 
 # ---------------------------------------------------------------- main
 def main() -> int:
+    check_role_agent_ssot()
     adrs = check_adrs()
     check_adr_links(adrs)
     report_pending_adrs(adrs)

@@ -11,6 +11,7 @@
 | 規程 | verification.md | 多段保証モデル | developer / reviewer、CI設計 |
 | 規程 | architecture-selection.md | 設計パック選定 | architect（プロジェクト開始時） |
 | 規程 | agents.md | agent役割分担と標準フロー | 全agent |
+| 役割定義 | ../.claude/agents/ | Claude Code / Codex共通のsubagent個別定義 | role agent起動時 |
 | 規程 | agent-runtime-mapping.md | Claude Code / Codex間の役割agent起動先・モデル対応表 | orchestrator / role agent起動時 |
 | 規程 | guardrails.md | 運用ルールの索引（実体は設定） | リポジトリ初期設定時 |
 | 決定 | adr/ | A層自身の決定履歴（1決定1枚・編集禁止。meta/adr/0001。メタデータはfrontmatter＝機械検証対象。meta/adr/0012） | 規程変更の提案・監査時 |
@@ -20,7 +21,7 @@
 
 ## agentの起動時コンテキスト
 
-全subagentは「**PRINCIPLES.md（不変の信条）+ 自分の役割定義 + activeContext.md（現在の状態）**」の3点セットで起動する。
+全subagentは「**PRINCIPLES.md（不変の信条）+ `.claude/agents/<role>.md` の自分の役割定義 + activeContext.md（現在の状態）**」の3点セットで起動する。
 規程は役割・場面に応じて参照する。
 
 ## agentの役割
@@ -29,7 +30,7 @@ agents.md を参照（architect / designer / developer / tester / reviewer の�
 
 ## 未整備（今後の作業）
 
-- [x] agents/ — subagent個別定義（architect / designer / developer / tester / reviewer。設計はagents.md）
+- [x] ../.claude/agents/ — Claude Code / Codex共通のsubagent個別定義（architect / designer / developer / tester / reviewer。設計はagents.md）
 - [x] templates/ — adr / pull-request / audit-report / friction-log / active-context / architecture / acceptance-scenario の7雛形
 - [x] guardrails/ — branch protection・deny設定・CI設定の実体ファイル（.claude/settings.json、.github/workflows/ci.yml、guardrails/。CIの実コマンドはスライスRSV-Cで実装済み。step定義lintツールは未確定）
 - [x] 検証: 予約システムプロジェクトへの初適用（スライスRSV-C完了・friction log運用中: FR-001〜005）

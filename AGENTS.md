@@ -43,14 +43,14 @@ changing or creating the PR. Mechanical follow-up that does not change the agree
 
 ## Role-agent dispatch
 
-`meta/agents/<role>.md` is the executable role contract for `architect`, `designer`,
+`.claude/agents/<role>.md` is the executable role contract for `architect`, `designer`,
 `developer`, `tester`, and `reviewer`. A role definition is not discovered or applied
 automatically by the Codex runtime.
 
 When a task is delegated to one of these roles (only with the authorization required by
 `meta/permissions.md`), the orchestrator must, before dispatching it:
 
-1. read the selected `meta/agents/<role>.md` in full;
+1. read the selected `.claude/agents/<role>.md` in full;
 2. include the role name and that file path in the dispatch routing;
 3. read `meta/agent-runtime-mapping.md` and select the Codex runtime model mapped to
    that role; and
@@ -65,9 +65,9 @@ mandatory behavior; do not represent it as sandbox-enforced.
 
 ### Runtime mapping and parallel operation
 
-`meta/agents/*.md` remains the shared role contract. Runtime-specific model selection
-is defined only by `meta/agent-runtime-mapping.md`; do not rewrite role definitions for
-Codex. Read that table before dispatching a role agent. If its Codex model is
+`.claude/agents/*.md` remains the shared role contract for Claude Code and Codex.
+Runtime-specific model selection is defined only by `meta/agent-runtime-mapping.md`;
+do not rewrite role definitions for Codex. Read that table before dispatching a role agent. If its Codex model is
 unavailable, do not silently substitute a different model: report the unavailable
 mapping and request a human decision or a documented mapping update.
 

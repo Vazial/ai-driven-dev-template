@@ -121,6 +121,63 @@ class TestReadFrontmatter(unittest.TestCase):
             self.assertIsNone(govlint.read_frontmatter(p))
 
 
+# ---------------------------------------------------------------- role-agent SSOT (ADR-0036)
+ROLE_MAPPING = """| role | 共通契約のmodel | Claude Codeのruntime定義 | Codexのruntime model |
+|---|---|---|---|
+| architect | `sonnet` | `.claude/agents/architect.md` (`sonnet`) | `gpt-5.6-terra` |
+| designer | `opus` | `.claude/agents/designer.md` (`opus`) | `gpt-5.6-sol` |
+| developer | `sonnet` | `.claude/agents/developer.md` (`sonnet`) | `gpt-5.6-terra` |
+| tester | `sonnet` | `.claude/agents/tester.md` (`sonnet`) | `gpt-5.6-terra` |
+| reviewer | `sonnet` | `.claude/agents/reviewer.md` (`sonnet`) | `gpt-5.6-terra` |
+"""
+
+# Test fixture only. Production model ownership is .claude/agents and
+# meta/agent-runtime-mapping.md (ADR-0036).
+ROLE_MODELS = {
+    "architect": "sonnet",
+    "designer": "opus",
+    "developer": "sonnet",
+    "tester": "sonnet",
+    "reviewer": "sonnet",
+}
+
+
+def role_contract(role: str, model: str) -> str:
+    return f"---\nname: {role}\ntools: Read\nmodel: {model}\n---\n"
+
+
+def write_valid_role_layout(root: Path) -> None:
+    for role, claude_model in ROLE_MODELS.items():
+        write(root / ".claude" / "agents" / f"{role}.md", role_contract(role, claude_model))
+    write(root / "meta" / "agent-runtime-mapping.md", ROLE_MAPPING)
+
+
+class TestCheckRoleAgentSsot(GovlintTestCase):
+    def _write_valid_layout(self) -> None:
+        write_valid_role_layout(self.root)
+
+    def test_valid_single_source_layout_has_no_errors(self) -> None:
+        self._write_valid_layout()
+        govlint.check_role_agent_ssot()
+        self.assertEqual(govlint.errors, [])
+
+    def test_legacy_role_contract_is_error(self) -> None:
+        self._write_valid_layout()
+        write(self.root / "meta" / "agents" / "developer.md", "legacy\n")
+        govlint.check_role_agent_ssot()
+        self.assertTrue(any("廃止された個別role定義" in error for error in govlint.errors))
+
+    def test_model_mapping_drift_is_error(self) -> None:
+        self._write_valid_layout()
+        mapping = ROLE_MAPPING.replace(
+            "| designer | `opus` | `.claude/agents/designer.md` (`opus`) |",
+            "| designer | `sonnet` | `.claude/agents/designer.md` (`sonnet`) |",
+        )
+        write(self.root / "meta" / "agent-runtime-mapping.md", mapping)
+        govlint.check_role_agent_ssot()
+        self.assertTrue(any("designer のClaude runtime対応" in error for error in govlint.errors))
+
+
 # ---------------------------------------------------------------- ADR
 VALID_ADR = dedent(
     """
@@ -497,6 +554,7 @@ class TestCheckScenarioIds(GovlintTestCase):
 # ---------------------------------------------------------------- main（統合）
 class TestMain(GovlintTestCase):
     def test_clean_repo_returns_zero(self) -> None:
+        write_valid_role_layout(self.root)
         write(self.root / "meta" / "adr" / "0001-sample.md", VALID_ADR)
         write(
             self.root / "projects" / "reservation-system" / "friction-log.md",
@@ -515,6 +573,7 @@ class TestMain(GovlintTestCase):
 
     def test_report_only_state_still_returns_zero(self) -> None:
         # cause_keyの2回出現はREPORTのみで、終了コードには影響しない。
+        write_valid_role_layout(self.root)
         content = (
             fr_entry("FR-001", cause_key="shared-cause")
             + "\n---\n\n"
