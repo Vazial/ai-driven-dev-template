@@ -6,10 +6,10 @@ Do not duplicate those rules in this file. Follow the documents named by `HANDOF
 
 ## Role agents and parallel operation
 
-`meta/agents/*.md` is the shared role contract. Claude Code uses the corresponding
-`.claude/agents/<role>.md` runtime definition; read
+`.claude/agents/*.md` is the shared role contract and Claude Code runtime definition
+for both Claude Code and Codex. Read
 `meta/agent-runtime-mapping.md` before dispatching to confirm the role-to-runtime
-mapping. Do not rewrite the shared role contract for one runtime.
+mapping. Do not create a runtime-specific copy of the shared role contract.
 
 Claude and Codex may develop this repository in parallel. Before starting a slice, read
 the active context and inspect relevant open PRs. Do not edit another runtime's

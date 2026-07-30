@@ -1,11 +1,11 @@
 # agent runtime mapping
 
 > 対象: Claude CodeとCodex。役割定義を両runtimeで共有し、runtime固有のモデル選択と起動先だけを
-> この表に分離する。根拠: ADR-0004、ADR-0029。
+> この表に分離する。根拠: ADR-0004、ADR-0036。
 
 ## 役割とモデルの対応
 
-`meta/agents/<role>.md` が役割・責務・禁止事項の共通契約である。そこに書かれたClaude向けの
+`.claude/agents/<role>.md` が役割・責務・禁止事項の共通契約である。そこに書かれたClaude向けの
 `model`値をCodex向けに書き換えてはならない。
 
 | role | 共通契約のmodel | Claude Codeのruntime定義 | Codexのruntime model |
@@ -17,7 +17,7 @@
 | reviewer | `sonnet` | `.claude/agents/reviewer.md` (`sonnet`) | `gpt-5.6-terra` |
 
 Claude Codeは `.claude/agents/<role>.md` をruntime定義として使う。Codexはrole定義を自動発見しないため、
-`AGENTS.md` に従い `meta/agents/<role>.md` とこの表を読んで、表のCodex modelを指定してdispatchする。
+`AGENTS.md` に従い同じ `.claude/agents/<role>.md` とこの表を読んで、表のCodex modelを指定してdispatchする。
 
 指定されたruntime modelが利用できない場合は、別モデルへ黙って代替しない。利用不能を報告し、人間の判断
 またはこの対応表のレビュー済み更新を待つ。

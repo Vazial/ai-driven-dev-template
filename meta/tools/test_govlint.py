@@ -23,6 +23,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 import tempfile
+from datetime import date
 import textwrap
 import unittest
 from pathlib import Path
@@ -118,6 +119,63 @@ class TestReadFrontmatter(unittest.TestCase):
             p = Path(d) / "x.md"
             p.write_text("---\nid: 0001\n\n# no closing fence\n", encoding="utf-8")
             self.assertIsNone(govlint.read_frontmatter(p))
+
+
+# ---------------------------------------------------------------- role-agent SSOT (ADR-0036)
+ROLE_MAPPING = """| role | 共通契約のmodel | Claude Codeのruntime定義 | Codexのruntime model |
+|---|---|---|---|
+| architect | `sonnet` | `.claude/agents/architect.md` (`sonnet`) | `gpt-5.6-terra` |
+| designer | `opus` | `.claude/agents/designer.md` (`opus`) | `gpt-5.6-sol` |
+| developer | `sonnet` | `.claude/agents/developer.md` (`sonnet`) | `gpt-5.6-terra` |
+| tester | `sonnet` | `.claude/agents/tester.md` (`sonnet`) | `gpt-5.6-terra` |
+| reviewer | `sonnet` | `.claude/agents/reviewer.md` (`sonnet`) | `gpt-5.6-terra` |
+"""
+
+# Test fixture only. Production model ownership is .claude/agents and
+# meta/agent-runtime-mapping.md (ADR-0036).
+ROLE_MODELS = {
+    "architect": "sonnet",
+    "designer": "opus",
+    "developer": "sonnet",
+    "tester": "sonnet",
+    "reviewer": "sonnet",
+}
+
+
+def role_contract(role: str, model: str) -> str:
+    return f"---\nname: {role}\ntools: Read\nmodel: {model}\n---\n"
+
+
+def write_valid_role_layout(root: Path) -> None:
+    for role, claude_model in ROLE_MODELS.items():
+        write(root / ".claude" / "agents" / f"{role}.md", role_contract(role, claude_model))
+    write(root / "meta" / "agent-runtime-mapping.md", ROLE_MAPPING)
+
+
+class TestCheckRoleAgentSsot(GovlintTestCase):
+    def _write_valid_layout(self) -> None:
+        write_valid_role_layout(self.root)
+
+    def test_valid_single_source_layout_has_no_errors(self) -> None:
+        self._write_valid_layout()
+        govlint.check_role_agent_ssot()
+        self.assertEqual(govlint.errors, [])
+
+    def test_legacy_role_contract_is_error(self) -> None:
+        self._write_valid_layout()
+        write(self.root / "meta" / "agents" / "developer.md", "legacy\n")
+        govlint.check_role_agent_ssot()
+        self.assertTrue(any("廃止された個別role定義" in error for error in govlint.errors))
+
+    def test_model_mapping_drift_is_error(self) -> None:
+        self._write_valid_layout()
+        mapping = ROLE_MAPPING.replace(
+            "| designer | `opus` | `.claude/agents/designer.md` (`opus`) |",
+            "| designer | `sonnet` | `.claude/agents/designer.md` (`sonnet`) |",
+        )
+        write(self.root / "meta" / "agent-runtime-mapping.md", mapping)
+        govlint.check_role_agent_ssot()
+        self.assertTrue(any("designer のClaude runtime対応" in error for error in govlint.errors))
 
 
 # ---------------------------------------------------------------- ADR
@@ -235,6 +293,64 @@ class TestCheckAdrLinks(GovlintTestCase):
         adrs = govlint.check_adrs()
         govlint.check_adr_links(adrs)
         self.assertTrue(any("superseded_by '9999' が同じscope" in e for e in govlint.errors))
+
+
+class TestReportPendingAdrs(GovlintTestCase):
+    """提案中ADRの棚卸しREPORT（meta/adr/0035）。
+
+    todayを固定して呼ぶ（実日付に結合したアサーションは日が変わるだけで壊れる）。
+    """
+
+    TODAY = date(2026, 7, 29)
+
+    def _pending(self, adr_id: str, drafted: str) -> str:
+        return VALID_ADR.replace("id: 0001", f"id: {adr_id}").replace(
+            "status: 承認済み", "status: 提案中"
+        ).replace('approved_by: "test"', "approved_by: null").replace(
+            "date: 2026-01-01", f"date: {drafted}"
+        )
+
+    def test_approved_adr_is_not_reported(self) -> None:
+        write(self.root / "meta" / "adr" / "0001-sample.md", VALID_ADR)
+        govlint.report_pending_adrs(govlint.check_adrs(), today=self.TODAY)
+        self.assertEqual(govlint.reports, [])
+
+    def test_pending_adr_is_reported_with_age(self) -> None:
+        write(self.root / "meta" / "adr" / "0001-sample.md", self._pending("0001", "2026-07-18"))
+        govlint.report_pending_adrs(govlint.check_adrs(), today=self.TODAY)
+        joined = "\n".join(govlint.reports)
+        self.assertIn("提案中のまま滞留しているADR 1本", joined)
+        self.assertIn("meta/adr/0001-sample.md", joined)
+        self.assertIn("11日経過", joined)
+
+    def test_reported_in_descending_age_order(self) -> None:
+        write(self.root / "meta" / "adr" / "0001-old.md", self._pending("0001", "2026-07-18"))
+        write(self.root / "meta" / "adr" / "0002-new.md", self._pending("0002", "2026-07-28"))
+        govlint.report_pending_adrs(govlint.check_adrs(), today=self.TODAY)
+        lines = [r for r in govlint.reports if r.strip().startswith("提案中:")]
+        self.assertEqual(len(lines), 2)
+        self.assertIn("0001-old.md", lines[0])
+        self.assertIn("0002-new.md", lines[1])
+
+    def test_report_does_not_produce_errors(self) -> None:
+        """REPORTは終了コードを1にしない（P-04: 意味判定をERRORに載せない）。"""
+        write(self.root / "meta" / "adr" / "0001-sample.md", self._pending("0001", "2026-07-18"))
+        govlint.report_pending_adrs(govlint.check_adrs(), today=self.TODAY)
+        self.assertEqual(govlint.errors, [])
+
+    def test_project_scope_pending_adr_is_reported(self) -> None:
+        content = self._pending("0004", "2026-07-18").replace(
+            "scope: meta", "scope: reservation-frontend"
+        )
+        write(self.root / "projects" / "reservation-frontend" / "adr" / "0004-x.md", content)
+        govlint.report_pending_adrs(govlint.check_adrs(), today=self.TODAY)
+        self.assertTrue(any("projects/reservation-frontend/adr/0004-x.md" in r for r in govlint.reports))
+
+    def test_malformed_date_is_reported_without_age(self) -> None:
+        """dateの形式不正は check_adrs がERRORにする。REPORT側は落ちずに日数不明として出す。"""
+        write(self.root / "meta" / "adr" / "0001-sample.md", self._pending("0001", "2026/07/18"))
+        govlint.report_pending_adrs(govlint.check_adrs(), today=self.TODAY)
+        self.assertTrue(any("経過日数不明" in r for r in govlint.reports))
 
 
 # ---------------------------------------------------------------- friction-log
@@ -438,6 +554,7 @@ class TestCheckScenarioIds(GovlintTestCase):
 # ---------------------------------------------------------------- main（統合）
 class TestMain(GovlintTestCase):
     def test_clean_repo_returns_zero(self) -> None:
+        write_valid_role_layout(self.root)
         write(self.root / "meta" / "adr" / "0001-sample.md", VALID_ADR)
         write(
             self.root / "projects" / "reservation-system" / "friction-log.md",
@@ -456,6 +573,7 @@ class TestMain(GovlintTestCase):
 
     def test_report_only_state_still_returns_zero(self) -> None:
         # cause_keyの2回出現はREPORTのみで、終了コードには影響しない。
+        write_valid_role_layout(self.root)
         content = (
             fr_entry("FR-001", cause_key="shared-cause")
             + "\n---\n\n"

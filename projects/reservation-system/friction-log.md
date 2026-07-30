@@ -335,6 +335,78 @@ principles: [P-08, P-10]
   連動が、単一プロジェクト内の反復では見えなかった構造的制約を可視化した点は記録に値する
 
 ---
+
+## FR-015: ADRの承認記録が、承認後にしか書けず単独の価値が見えない2本目のPRを要求するため飛ばされ、承認済みのADR4本が「提案中」のまま残った
+
+```yaml
+id: FR-015
+date: 2026-07-29
+found_at: AI
+slice: ADR-0032の規程本体への織り込み（その前提確認）
+agents: [orchestrator]
+cause_category: 記録の更新が別PRを要求する
+cause_key: record-update-needs-second-pr
+pushed_to: [meta/adr/0035-adr-approval-record-convention.md]
+status: 対応済み
+principles: [P-04, P-11]
+```
+
+- 事象: ADR-0032の帰結（規程本体への織り込み）に着手する前提としてADRの承認状態を確認したところ、ルート
+  `activeContext.md` が「承認済み」と記述しているADR-0031〜0034が、4本とも frontmatter は
+  `status: 提案中` / `approved_by: null` のままだった。人間の裁定は「承認済みが正・記録漏れ」。さらに
+  棚卸しすると**提案中のまま滞留しているADRは10本**（最古11日）あり、そのうち `meta/adr/0026`
+  （ブランチ運用・CI構成）と `meta/adr/0024`（走破）は**`meta/guardrails.md`・`meta/adr/0032` が
+  すでに根拠として依存している**——承認済みの規程が未承認の決定の上に立っていた
+- 原因の仮説: 記録の更新が別PRを要求する — ADRは承認前に起草するので `提案中` で書くしかなく、承認行為の
+  実体は**そのPRのマージ**である。したがって承認の事実をファイルに書くには**マージ後に2本目のPR**が要る。
+  その差分は frontmatter 2行のみでレビュー対象も無く、単独では価値が見えないため飛ばされる。**規律の
+  不足ではなく手順の構造**であり、徹底の呼びかけでは直らない（P-04）。実際、ADR-0028だけは
+  `status: 承認済み` ＋ `approved_by: "本PRのマージをもって承認"` と起草時に書いて**1本のPRで閉じて
+  おり**、正しく記録されていた。意図してそう書いたわけではないが構造として正しいのはこちら
+- 押し込み先: meta/adr/0035 — (1)ADRを含むPRは承認方式を二択で明示する（**(i)マージ＝承認**を既定とし、
+  起草時に `承認済み` ＋ `approved_by` を書く／**(ii)記録のみ・承認は後日**は意図した保留の場合に限る）。
+  PRテンプレのチェック項目にする。(2)govlintに `[REPORT] 提案中のまま滞留しているADRの棚卸し`（経過
+  日数つき）を追加。**ERROR化はしない**——「承認されるべきか」は意味判定で機械が確定できず、日数閾値で
+  CIを赤にすると正当な保留が罰され内容を伴わない承認を誘発する（P-04）。(3)既存の提案中10本は一括承認
+  せず、REPORTで可視化した上で人間が個別に判断する
+- 補足: 最も悪い帰結は本数ではなく、`提案中` が「まだ決めていない」を意味しなくなったことである。
+  意図的な保留（`reservation-frontend/adr/0004`・`0005` は本当に承認待ち）と単なる記録漏れが混ざり、
+  読み手が区別できなくなっていた。なお本FRはテンプレート自身の手順に関する摩擦だが、meta層の
+  friction-logは存在しない（govlintは `projects/*/friction-log.md` しか走査しない）。FR-010・FR-012
+  （HANDOFF.md・ルートREADME/activeContext＝いずれもmeta層の摩擦）の先例に倣い本ファイルに置いた。
+  `meta/friction-log.md` の新設要否はADR-0035の「確認事項」として人間に投げてある
+
+---
+
+## FR-016: role定義をruntime用と共通原本の2か所へ手動複製し、SSOTを宣言した後も実体を一元化しなかったため責務がドリフトした
+
+```yaml
+id: FR-016
+date: 2026-07-30
+found_at: 人間
+slice: agent-role-ssot
+agents: [orchestrator, architect, developer]
+cause_category: 同一契約の手動複製
+cause_key: role-contract-manual-copy-drift
+pushed_to: [meta/adr/0036-make-claude-role-definitions-the-single-source-of-truth.md, meta/tools/govlint.py]
+status: 対応済み
+principles: [P-03, P-04, P-10]
+```
+
+- 事象: `.claude/agents/<role>.md` と `meta/agents/<role>.md` に5役の責務・禁止事項・model・toolsを
+  全文複製していた。ADR-0029とPR #30で`meta/agents`を共通契約と宣言した後も複製構造を残したため、
+  architectの監査申し送り責務がClaude側だけ欠落し、designerでは参照パスが分岐した。人間からのSSOT
+  違反報告で発覚した。Codex対応時にruntime mappingだけを追加し、既存コピーを整理しなかった見逃しを含む
+- 原因の仮説: Claude Codeが自動発見する配置とruntime間で共有する契約の所有場所を分けようとして、
+  一方を機械生成・参照adapterにせず双方へ同じ本文を書いた。同期を人間とAIの注意に依存させたため、
+  「共通契約」という文言と実際にClaudeが読むファイルが分離し、更新ごとにドリフト可能な構造になった
+- 押し込み先: ADR-0036で`.claude/agents/<role>.md`をClaude/Codex共通の唯一の原本と裁定し、重複する
+  `meta/agents/<role>.md`を削除する。Codexは原本とruntime対応表を読む。govlintは旧roleファイルの再作成、
+  role集合、Claude frontmatterとruntime対応表の投影不一致をL0エラーとして検出する
+- 補足: 移行時に既存2系統を照合し、欠落していたarchitectの責務を原本へ回収した。役割責務とモデル対応
+  自体は変更していない
+
+---
 <!--
 記入のコツ:
 - 「その場で」書く。棚卸しでまとめて書かない（記憶で精度が落ちる）
