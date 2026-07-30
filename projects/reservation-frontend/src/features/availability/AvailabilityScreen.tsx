@@ -9,7 +9,11 @@
 // booking-design-reconciliation.md 9節）:
 //   - 予約者名は表示しない。予約バーは「空き」「予約済み（不可）」の二値状態表示にとどめる
 //   - 会議室ごとの営業時間をタイムライン描画に反映する（reconciliation項目7）
-//   - 自分の予約・キャンセルはこのスライスのスコープ外（別スライス）
+//
+// RFE-C「自分の予約を確認してキャンセルできる」スライスで「自分の予約」Sheet
+// （src/features/my-reservations/MyReservationsSheet.tsx）をヘッダーに配線した。BookingDesign.tsx
+// 骨格のヘッダー右側にあった予約者ID/表示名の入力欄は持たない（案Bの調整により、自分の予約は
+// reserverIdによる絞り込みではなくこの端末の記録から組み立てるため。契約解釈ポイント(1)）。
 import { useEffect, useMemo, useState } from "react";
 import { addDays, format, subDays } from "date-fns";
 import { ja } from "date-fns/locale";
@@ -27,6 +31,7 @@ import { getRoomAvailability } from "@/api/availability";
 import type { ApiResult, AvailabilityResponse, AvailableTimeSlot, RoomSummary } from "@/api/types";
 import { deriveUnavailableRanges, rangeToPercent, timeToMinutes } from "./timeGrid";
 import BookingDialog, { type BookingSlot } from "@/features/booking/BookingDialog";
+import MyReservationsSheet from "@/features/my-reservations/MyReservationsSheet";
 
 const DEFAULT_AXIS_START = "09:00";
 const DEFAULT_AXIS_END = "18:00";
@@ -179,6 +184,14 @@ export default function AvailabilityScreen({ initialDate }: AvailabilityScreenPr
             </Button>
           </div>
         </div>
+
+        {/* RFE-C: 「自分の予約」Sheet。空き状況への反映(RFE-C-03の3つ目のThen)は、予約確定と同じ
+            handleBookingSettled(refreshTickの増分)を再利用する */}
+        <MyReservationsSheet
+          rooms={rooms}
+          refreshSignal={refreshTick}
+          onReservationCancelled={handleBookingSettled}
+        />
       </header>
 
       <main className="flex-1 overflow-auto p-6">

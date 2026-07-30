@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/select";
 
 import { createReservation } from "@/api/reservations";
+import { recordMyReservation } from "@/api/myReservationsStore";
 import type { RoomSummary } from "@/api/types";
 import {
   computeDefaultTimeRange,
@@ -147,6 +148,17 @@ export default function BookingDialog({
     if (result.ok) {
       // RFE-B-02: 予約が完了したことが画面で分かる
       toast.success("予約が完了しました");
+      // RFE-C-01（contracts/my-reservations.feature）が成立するための接続点: 予約が成立した時点で
+      // この端末の記録に追加する（案B、reservation-frontend/adr/0006）。実APIモード
+      // （VITE_USE_REAL_RESERVATIONS_API=true）でもこの記録自体はモード非依存のクライアント側の
+      // 概念であり、同様に追加する。
+      recordMyReservation({
+        reservationId: result.data.reservationId,
+        roomId: result.data.roomId,
+        date: result.data.date,
+        startTime: result.data.startTime,
+        endTime: result.data.endTime,
+      });
       onOpenChange(false);
       return;
     }

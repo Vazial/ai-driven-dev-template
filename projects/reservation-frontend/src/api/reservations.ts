@@ -26,12 +26,14 @@
 // 実APIモードでは判定そのものが実バックエンドに移り、reservationLogic.ts はモック専用になる。
 import type {
   ApiResult,
+  CancelledReservationResponse,
   CreateReservationInput,
   ProblemResponse,
   ReservationResponse,
 } from "./types";
 import { MOCK_ROOMS, MOCK_RESERVATIONS } from "./mockData";
 import { findReservationRejection } from "./reservationLogic";
+import { findCancellationRejection } from "./cancellationLogic";
 
 let reservationSequence = 0;
 
@@ -97,6 +99,86 @@ function createMockReservation(
       attendeeCount: input.attendeeCount,
     },
   };
+}
+
+// POST /reservations/{reservationId}/cancel 相当（reservation-api.yaml、RSV-K「予約をキャンセルできる」、
+// 承認済み 2026-07-15）。RFE-Cスライス「自分の予約を確認してキャンセルできる」
+// （contracts/my-reservations.feature、承認済み 2026-07-30）の対象。
+//
+// **このスライスの範囲はモック実装まで**。実バックエンド接続（4本目のopt-in）は別スライスであり、
+// createReservation・getRoomAvailability のような `VITE_USE_REAL_*` 分岐は持たない
+// （常にモックのcancelMockReservationを使う）。
+//
+// モックが「サーバ役」として判定するのは422 CANCEL_DEADLINE_PASSEDと409 ALREADY_CANCELLEDの2つ
+// （契約解釈ポイント(2)(3)。本人以外403・存在しない予約404はこの画面に到達経路が無いため対象外）。
+// 判定ロジック自体は cancellationLogic.ts に分離する（reservationLogic.ts と同じ位置づけ）。
+//
+// 現在時刻の扱い: `new Date()` は呼び出しの都度(cancelMockReservation の呼び出し時)評価する。
+// モジュール読み込み時に一度だけ評価して固定しない——単体テストは `vi.setSystemTime`、E2Eは
+// Playwright の `page.clock` でブラウザ時計を差し替えて検証するため、呼び出し時評価でないと
+// どちらの経路からも時刻を制御できない。
+/**
+ * モックのバックエンドとして予約をキャンセルする（アダプタの内側）。
+ *
+ * 成功(200相当): 予約がキャンセルされ、CancelledReservationResponse を返す。MOCK_RESERVATIONS上の
+ * 該当エントリに `cancelledAt` を立てる（論理削除。物理削除しない）。これにより以後の
+ * getRoomAvailability（RFE-A/availability.ts）の計算からこの予約が外れ、時間帯が空きに戻る
+ * （RFE-C-03の3つ目のThen）。
+ *
+ * 拒否(422/409相当、ProblemResponse): 開始15分前を過ぎている場合(CANCEL_DEADLINE_PASSED)、
+ * または既にキャンセル済みの場合(ALREADY_CANCELLED)。
+ *
+ * 予約が見つからない場合はRESERVATION_NOT_FOUNDで拒否する。この経路は契約上定義されているが
+ * （reservation-api.yaml 404）、このスライスのシナリオの対象外である（契約解釈ポイント(3)。
+ * 一覧に現れる予約は必ずこの端末が成立させたものであり、通常の利用では到達しない）。
+ */
+function cancelMockReservation(
+  reservationId: string,
+): ApiResult<CancelledReservationResponse> {
+  const reservation = MOCK_RESERVATIONS.find(
+    (r) => r.reservationId === reservationId,
+  );
+  if (!reservation) {
+    return {
+      ok: false,
+      error: { code: "RESERVATION_NOT_FOUND", message: "予約が存在しません" },
+    };
+  }
+
+  const rejection = findCancellationRejection(reservation, new Date());
+  if (rejection) {
+    return { ok: false, error: rejection };
+  }
+
+  const cancelledAt = new Date().toISOString();
+  reservation.cancelledAt = cancelledAt;
+
+  return {
+    ok: true,
+    data: {
+      reservationId: reservation.reservationId,
+      roomId: reservation.roomId,
+      reserverId: reservation.reserverId,
+      date: reservation.date,
+      startTime: reservation.startTime,
+      endTime: reservation.endTime,
+      attendeeCount: reservation.attendeeCount,
+      cancelledAt,
+    },
+  };
+}
+
+/**
+ * 予約をキャンセルする。
+ *
+ * このスライスはモック実装のみ（実バックエンド接続は別スライス）。呼び出し側（自分の予約一覧画面）
+ * から見たシグネチャは、createReservation・getRoomAvailability と同様 Promise を返す非同期関数とし、
+ * 将来実接続を追加する際に呼び出し側を変更せずに済むようにしておく。
+ */
+export async function cancelReservation(
+  reservationId: string,
+): Promise<ApiResult<CancelledReservationResponse>> {
+  return cancelMockReservation(reservationId);
 }
 
 /**

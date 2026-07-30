@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { createReservation } from "./reservations";
+import { createReservation, cancelReservation } from "./reservations";
+import { getRoomAvailability } from "./availability";
 
 // モックAPI（createReservation）に対する単体テスト。
 // contracts/reservation-booking.feature のRFE-B-02/03が要求するAPIレベルの応答形状を検証する
@@ -92,6 +93,161 @@ describe("createReservation", () => {
     if (!result.ok) {
       expect(result.error.code).toBe("TOO_SHORT");
     }
+  });
+});
+
+// POST /reservations/{reservationId}/cancel 相当（モックAPI cancelReservation）に対する単体テスト。
+// contracts/my-reservations.feature（RFE-C）のRFE-C-03/04/05が要求するAPIレベルの応答形状を検証する
+// （画面の振る舞いは src/features/my-reservations の behavior テストで行う）。
+// ドメインルール判定自体の網羅は src/api/cancellationLogic.test.ts を参照（ここでは cancelReservation が
+// 判定結果を正しく反映し、成功時にMOCK_RESERVATIONSへ論理削除として反映するかを確認する）。
+// このスライスはモック実装のみのため実APIモードの分岐は無い（reservations.tsの注記参照）。
+describe("cancelReservation", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // RFE-C-03: 自分の予約をキャンセルする
+  it("期限内のキャンセルは成功し、CancelledReservationResponseを返す", async () => {
+    const created = await createReservation({
+      roomId: "room-a",
+      reserverId: "sato",
+      date: "2026-09-10",
+      startTime: "14:00",
+      endTime: "15:00",
+      attendeeCount: 2,
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    vi.setSystemTime(new Date("2026-09-10T10:00:00")); // 開始15分前より十分前
+    const result = await cancelReservation(created.data.reservationId);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toMatchObject({
+        reservationId: created.data.reservationId,
+        roomId: "room-a",
+        date: "2026-09-10",
+        startTime: "14:00",
+        endTime: "15:00",
+      });
+      expect(result.data.cancelledAt).toBeTruthy();
+    }
+  });
+
+  // RFE-C-03の3つ目のThen: キャンセルすると空き状況画面で再び空きになる
+  it("キャンセルが成功すると、空き状況(getRoomAvailability)にその時間帯が空きとして反映される", async () => {
+    const date = "2026-09-11";
+    const created = await createReservation({
+      roomId: "room-a",
+      reserverId: "sato",
+      date,
+      startTime: "14:00",
+      endTime: "15:00",
+      attendeeCount: 2,
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    const before = await getRoomAvailability("room-a", date);
+    expect(before.ok).toBe(true);
+    if (before.ok) {
+      // 14:00〜15:00が占有されているため、営業時間まるごと一つの空き区間にはならない
+      expect(before.data.availableSlots).not.toEqual([
+        { startTime: "09:00", endTime: "18:00" },
+      ]);
+    }
+
+    vi.setSystemTime(new Date(`${date}T10:00:00`));
+    const cancelled = await cancelReservation(created.data.reservationId);
+    expect(cancelled.ok).toBe(true);
+
+    const after = await getRoomAvailability("room-a", date);
+    expect(after.ok).toBe(true);
+    if (after.ok) {
+      expect(after.data.availableSlots).toEqual([
+        { startTime: "09:00", endTime: "18:00" },
+      ]);
+    }
+  });
+
+  // RFE-C-04: 開始直前になった予約をキャンセルしようとして拒否される
+  // (Given「現在時刻は"10:15"である」と同一時刻をそのまま使う)
+  it("開始15分前を過ぎた予約はCANCEL_DEADLINE_PASSEDで拒否される", async () => {
+    const date = "2026-09-12";
+    const created = await createReservation({
+      roomId: "room-a",
+      reserverId: "sato",
+      date,
+      startTime: "10:00",
+      endTime: "11:00",
+      attendeeCount: 2,
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    vi.setSystemTime(new Date(`${date}T10:15:00`));
+    const result = await cancelReservation(created.data.reservationId);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("CANCEL_DEADLINE_PASSED");
+  });
+
+  // RFE-C-05: 別の画面で既にキャンセル済みの予約を、もう一度キャンセルしようとして拒否される
+  it("既にキャンセル済みの予約は再びキャンセルできない(ALREADY_CANCELLED)", async () => {
+    const date = "2026-09-13";
+    const created = await createReservation({
+      roomId: "room-a",
+      reserverId: "sato",
+      date,
+      startTime: "14:00",
+      endTime: "15:00",
+      attendeeCount: 2,
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    vi.setSystemTime(new Date(`${date}T10:00:00`));
+    const first = await cancelReservation(created.data.reservationId);
+    expect(first.ok).toBe(true);
+
+    const second = await cancelReservation(created.data.reservationId);
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.error.code).toBe("ALREADY_CANCELLED");
+  });
+
+  it("存在しない予約IDはRESERVATION_NOT_FOUNDで拒否される(契約解釈ポイント(3)。通常到達しない経路)", async () => {
+    const result = await cancelReservation("rsv-does-not-exist");
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("RESERVATION_NOT_FOUND");
+  });
+
+  // 時刻の扱い（スライス指示）: 判定に使う現在時刻はモジュール読み込み時ではなく、cancelReservationの
+  // 呼び出し時点で評価されなければならない（vi.setSystemTimeでもPlaywrightのpage.clockでも制御可能で
+  // あるため）。モジュール読み込み時に一度だけ評価して固定していないことを、同一プロセス内で時刻を
+  // 進めてから呼び出すことで確認する。
+  it("現在時刻はモジュール読み込み時ではなく呼び出し時点で評価される", async () => {
+    const date = "2026-09-14";
+    const created = await createReservation({
+      roomId: "room-a",
+      reserverId: "sato",
+      date,
+      startTime: "10:00",
+      endTime: "11:00",
+      attendeeCount: 2,
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    // モジュールは既に読み込み済み。ここで初めて時刻を「開始後」に進めてから呼び出す。
+    // 呼び出し時点評価でなければ(モジュール読み込み時に固定されていれば)この変更は反映されないはず
+    vi.setSystemTime(new Date(`${date}T10:15:00`));
+    const result = await cancelReservation(created.data.reservationId);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("CANCEL_DEADLINE_PASSED");
   });
 });
 
