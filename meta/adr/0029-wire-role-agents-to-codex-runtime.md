@@ -1,11 +1,11 @@
 ---
 id: 0029
 scope: meta
-status: 提案中
+status: superseded
 date: 2026-07-28
 approved_by: null
 supersedes: []
-superseded_by: null
+superseded_by: 0036
 relates_to: [P-01, P-04, P-07, P-08]
 ---
 
