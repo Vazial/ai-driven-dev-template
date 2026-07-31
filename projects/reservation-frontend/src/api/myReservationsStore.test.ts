@@ -20,6 +20,7 @@ describe("myReservationsStore", () => {
     recordMyReservation({
       reservationId: "rsv-1",
       roomId: "room-a",
+      reserverId: "sato",
       date: "2026-07-14",
       startTime: "14:00",
       endTime: "15:00",
@@ -30,6 +31,7 @@ describe("myReservationsStore", () => {
     expect(list[0]).toMatchObject({
       reservationId: "rsv-1",
       roomId: "room-a",
+      reserverId: "sato",
       date: "2026-07-14",
       startTime: "14:00",
       endTime: "15:00",
@@ -37,11 +39,28 @@ describe("myReservationsStore", () => {
     });
   });
 
+  // 4本目の実接続（キャンセルの実バックエンド接続）: cancelReservation の実モードは reserverId を
+  // リクエストボディの必須項目として要求するため、端末の記録から取り出せなければならない
+  // （src/api/myReservationsStore.ts の注記・src/api/reservations.ts postRealCancelReservation）
+  it("記録された reserverId は listMyReservations が返す一覧からそのまま取り出せる(キャンセル要求に使う)", () => {
+    recordMyReservation({
+      reservationId: "rsv-1",
+      roomId: "room-a",
+      reserverId: "user-sato",
+      date: "2026-07-14",
+      startTime: "14:00",
+      endTime: "15:00",
+    });
+
+    expect(listMyReservations()[0].reserverId).toBe("user-sato");
+  });
+
   // 解釈ポイント(3-2): キャンセル成功後も端末の記録は削除しない(論理削除)。ただし一覧には表示しない
   it("markMyReservationCancelledした予約は一覧から消えるが、記録自体は物理削除されない(論理削除)", () => {
     recordMyReservation({
       reservationId: "rsv-1",
       roomId: "room-a",
+      reserverId: "sato",
       date: "2026-07-14",
       startTime: "14:00",
       endTime: "15:00",
@@ -64,6 +83,7 @@ describe("myReservationsStore", () => {
     recordMyReservation({
       reservationId: "rsv-1",
       roomId: "room-a",
+      reserverId: "sato",
       date: "2026-07-14",
       startTime: "14:00",
       endTime: "15:00",
@@ -71,6 +91,7 @@ describe("myReservationsStore", () => {
     recordMyReservation({
       reservationId: "rsv-2",
       roomId: "room-a",
+      reserverId: "sato",
       date: "2026-07-15",
       startTime: "10:00",
       endTime: "11:00",
@@ -87,6 +108,7 @@ describe("myReservationsStore", () => {
     recordMyReservation({
       reservationId: "rsv-1",
       roomId: "room-a",
+      reserverId: "sato",
       date: "2026-07-14",
       startTime: "14:00",
       endTime: "15:00",

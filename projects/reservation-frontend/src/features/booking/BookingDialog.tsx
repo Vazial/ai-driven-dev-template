@@ -155,6 +155,9 @@ export default function BookingDialog({
       recordMyReservation({
         reservationId: result.data.reservationId,
         roomId: result.data.roomId,
+        // キャンセル要求（4本目の実接続）が reserverId を必須で送るため、ここで端末の記録に
+        // 結び付けておく（src/api/myReservationsStore.ts の注記を参照）。
+        reserverId: result.data.reserverId,
         date: result.data.date,
         startTime: result.data.startTime,
         endTime: result.data.endTime,

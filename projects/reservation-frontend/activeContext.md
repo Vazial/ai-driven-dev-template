@@ -4,11 +4,13 @@
 > 役割（meta/adr/0033）: このファイルは **reservation-frontend 内部**の状態のみを持つ。テンプレ管理・全プロジェクト・**クロスプロジェクトの状態はリポジトリ直下の `activeContext.md`（ルート）が唯一の所有者**。跨り事実はここに複製せず、ルートを参照する。
 ## 今どこにいるか
 
-**RFE-C「自分の予約を確認してキャンセルできる」のモック実装が完了した**（契約は人間承認済み＝PR #49、2026-07-30）。標準フロー（meta/agents.md §4）を全段踏んだ初のスライス——architect（契約）→ 人間承認 → developer と tester を**互いのcontextを共有せず並行** → reviewer の独立監査 → 人間承認。
+**キャンセルの実バックエンド接続（4本目のopt-in）が完了した**（`VITE_USE_REAL_RESERVATIONS_CANCEL_API`）。これで rooms・availability・予約作成・キャンセルの4本すべてがopt-inの実API接続を持ち、「空き確認→予約→キャンセル」のループが実物で閉じる構成になった。
 
-検証: L1 Vitest 79件緑・ESLint緑・`tsc -b && vite build` 緑・L4 Playwright 9件緑。
+検証: L1 Vitest 88件緑（既存79件＋今回9件）・ESLint緑・`tsc -b && vite build` 緑・L4 Playwright 9件緑（変更なし・モック構成のまま）。
 
-**このスライスで reviewer の独立監査が機能した**: RFE-C-05 の e2e が落ちた際、orchestrator は「モックの状態スコープの分断で L4 では実現不能」と診断し先送りを提案したが、**reviewer が独立に「tester側の構成の問題であり実現可能」と反証し、そちらが正しかった**。原因は orchestrator が tester に与えた指示（「2ページ構成で作れ・既存 seam は使うな」）で、2ページでは端末記録（localStorage、ページ間共有）と予約台帳（`MOCK_RESERVATIONS`、モジュール変数＝ページごと）のスコープ差により `RESERVATION_NOT_FOUND` に落ちる。正しい作り方は**同一ページで既存の seam パターンを使い、台帳だけを先にキャンセルして一覧を更新させない**こと——モックAPIの `cancelReservation` は台帳のみ更新し端末記録に触らないため、「別の画面で既にキャンセルされたが、この一覧はまだ知らない」状態が忠実に再現できる。RFE-B-03（別の予約者が先に予約した）が同じ seam を使っているのと同型だった。
+**設計判断（キャンセルの実バックエンド接続）**: 契約の `POST /reservations/{reservationId}/cancel` はリクエストボディに `reserverId`（必須）を要求するが、端末記録（`MyReservationRecord`）は元々これを保持していなかった（表示しないための省略と、保持しないことの混同があった）。今回 `reserverId` を記録に追加し（`recordMyReservation`／`BookingDialog.tsx` が予約成立時に渡す。ADR-0006決定1「表示しない」と「保持しない」は別の話と整理した）、キャンセル画面（`MyReservationsSheet.tsx`）がそこから読み出して `cancelReservation(reservationId, reserverId)` に渡す形にした。環境変数はcreateReservationとは独立の `VITE_USE_REAL_RESERVATIONS_CANCEL_API`（ADR-0009決定1「API単位でスコープ」を operationId 単位で踏襲）。契約とモックの拒否理由対応は、作成時（404未定義→モードで振る舞いが割れる）とは逆に、キャンセルは契約が403/404を含む5種全てを定義しているのに対しモックは403(NOT_RESERVER)を実装しない（契約解釈ポイント(2)、この画面が本人以外の操作を再現できないため）——実モードはこれも契約通り`ok:false`に変換するだけで新たなモード差は生まない。
+
+**このスライスで reviewer の独立監査が機能した**（前スライス、RFE-C-05 e2e）: orchestrator は「モックの状態スコープの分断で L4 では実現不能」と診断し先送りを提案したが、**reviewer が独立に「tester側の構成の問題であり実現可能」と反証し、そちらが正しかった**。原因は orchestrator が tester に与えた指示（「2ページ構成で作れ・既存 seam は使うな」）で、2ページでは端末記録（localStorage、ページ間共有）と予約台帳（`MOCK_RESERVATIONS`、モジュール変数＝ページごと）のスコープ差により `RESERVATION_NOT_FOUND` に落ちる。正しい作り方は**同一ページで既存の seam パターンを使い、台帳だけを先にキャンセルして一覧を更新させない**こと——モックAPIの `cancelReservation` は台帳のみ更新し端末記録に触らないため、「別の画面で既にキャンセルされたが、この一覧はまだ知らない」状態が忠実に再現できる。RFE-B-03（別の予約者が先に予約した）が同じ seam を使っているのと同型だった。
 
 > 前スライス（予約作成の実接続）の経緯・proxy新設・例外の受け・契約とモックの404差は git と PR が持つ。ここでは繰り返さない（P-11・ADR-0034）。
 
@@ -17,9 +19,9 @@
 実装の現状:
 - 画面: RFE-A（空き状況タイムライン、`src/features/availability/`）・RFE-B（予約ダイアログ、`src/features/booking/`）・RFE-C（自分の予約Sheet、`src/features/my-reservations/`）実装済み。案B（adr/0006）の設計調整（予約者名非表示・空き/予約済みの二値表示）反映済み。
 - 型: SSoT yaml から生成（adr/0008、`npm run gen:api` → `src/api/schema.d.ts`）。
-- 実接続の範囲: **rooms・availability・予約作成の3本**が実API opt-in（`VITE_USE_REAL_ROOMS_API`・`VITE_USE_REAL_AVAILABILITY_API`・`VITE_USE_REAL_RESERVATIONS_API`、いずれも既定モック）。
-- **キャンセル（RFE-C）はモック実装まで完了**（`src/api/reservations.ts` の `cancelReservation`、判定ロジックは `src/api/cancellationLogic.ts` に分離。RSV-Kの422 CANCEL_DEADLINE_PASSED・409 ALREADY_CANCELLEDのみ対象、契約解釈ポイント(2)(3)）。実バックエンド接続（4本目のopt-in）は別スライスで未着手。
-- 「自分の予約」は端末ローカル記録（`src/api/myReservationsStore.ts`、`localStorage`、案B adr/0006）で管理する。キャンセル成功後も記録は論理削除にとどめ物理削除しない（解釈ポイント(3-2)、人間裁定2026-07-30）。RFE-B（`BookingDialog.tsx`）が予約成立時にこの記録へ追加する接続を持つ。
+- 実接続の範囲: **rooms・availability・予約作成・キャンセルの4本**が実API opt-in（`VITE_USE_REAL_ROOMS_API`・`VITE_USE_REAL_AVAILABILITY_API`・`VITE_USE_REAL_RESERVATIONS_API`・`VITE_USE_REAL_RESERVATIONS_CANCEL_API`、いずれも既定モック）。`liveWiring.test.ts` が4本すべての配線（proxyプレフィックス配下）を機械ゲートする。
+- **キャンセル（RFE-C）**: `src/api/reservations.ts` の `cancelReservation(reservationId, reserverId)`。モック判定ロジックは `src/api/cancellationLogic.ts`（RSV-Kの422 CANCEL_DEADLINE_PASSED・409 ALREADY_CANCELLEDのみ対象、契約解釈ポイント(2)(3)）。実モードは契約が定義する200/403/409/422/404を`ApiResult`に写し、それ以外・fetch失敗は例外伝播（ADR-0009決定4）。
+- 「自分の予約」は端末ローカル記録（`src/api/myReservationsStore.ts`、`localStorage`、案B adr/0006）で管理する。記録は`reserverId`を保持する（キャンセル要求に使う。表示はしない）。キャンセル成功後も記録は論理削除にとどめ物理削除しない（解釈ポイント(3-2)、人間裁定2026-07-30）。RFE-B（`BookingDialog.tsx`）が予約成立時にこの記録へ追加する接続を持つ。
 - 現在時刻の判定は呼び出し時点で `new Date()` を評価する（モジュール読み込み時に固定しない）。単体テストは `vi.setSystemTime` で制御する。
 - design-preview 隔離: 本番ビルドの entry を `index.html` に固定済み（adr/0022 §2、`design-preview.html` は dev 限定）。
 
@@ -39,13 +41,12 @@
 
 ## 次にやること（プロジェクト内部）
 
-1. **キャンセルの実バックエンド接続（4本目のopt-in）**。`POST /reservations/{reservationId}/cancel` を rooms・availability・予約作成と同じパターンで実接続する。proxy は `/reservations` ルールが既にあるので新設不要。
-2. **`.env.example` に `VITE_USE_REAL_RESERVATIONS_API` を追記する** — 未実施。Claude Code の権限設定が `.env*` の読み取りを拒否するため（guardrails §3、意図されたガード）、このファイルだけAIが触れなかった。人間または別ランタイムが追記する。
-3. **骨格（おおまかなコンポーネント構成）の記述・保存・比較の実現**（改修ガバナンスの判定機構、meta/adr/0021）— 未着手・優先度高。レンダリング画像の記録は非ブロッキング宿題。
-4. **ADR-0004・0005 の人間承認**、および ADR-0004 §1§2 の条文改訂（静的HTML/CSS → TSX＋受け皿方式）。
-5. **`PATCH /reservations/{id}`（予約時間変更）の要否** — 未決（案内文を実態に合わせるか、機能追加するか）。
-6. **design.md・ARCHITECTURE.md の新規作成**（architect、上記が揃い次第）。
-7. refinement ループの反復回数N・escape hatch の優先順位（ADR-0004 §6）— 未定。
+1. **`.env.example` に `VITE_USE_REAL_RESERVATIONS_API`・`VITE_USE_REAL_RESERVATIONS_CANCEL_API` を追記する** — 未実施。Claude Code の権限設定が `.env*` の読み取り・書き込みを拒否するため（guardrails §3、意図されたガード）、このファイルだけAIが触れない。人間または別ランタイムが追記する。
+2. **骨格（おおまかなコンポーネント構成）の記述・保存・比較の実現**（改修ガバナンスの判定機構、meta/adr/0021）— 未着手・優先度高。レンダリング画像の記録は非ブロッキング宿題。
+3. **ADR-0004・0005 の人間承認**、および ADR-0004 §1§2 の条文改訂（静的HTML/CSS → TSX＋受け皿方式）。
+4. **`PATCH /reservations/{id}`（予約時間変更）の要否** — 未決（案内文を実態に合わせるか、機能追加するか）。
+5. **design.md・ARCHITECTURE.md の新規作成**（architect、上記が揃い次第）。
+6. refinement ループの反復回数N・escape hatch の優先順位（ADR-0004 §6）— 未定。
 
 ## 未解決の論点（プロジェクト内部）
 

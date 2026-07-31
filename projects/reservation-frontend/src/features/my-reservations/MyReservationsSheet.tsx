@@ -89,7 +89,7 @@ export default function MyReservationsSheet({
     return rooms.find((r) => r.roomId === roomId)?.name ?? roomId;
   }
 
-  async function handleCancel(reservationId: string) {
+  async function handleCancel(reservationId: string, reserverId: string) {
     if (pendingId) return;
     setPendingId(reservationId);
     setErrorByReservationId((prev) => {
@@ -99,7 +99,7 @@ export default function MyReservationsSheet({
       return next;
     });
 
-    const result = await cancelReservation(reservationId);
+    const result = await cancelReservation(reservationId, reserverId);
     setPendingId(null);
 
     if (result.ok) {
@@ -147,7 +147,9 @@ export default function MyReservationsSheet({
                     className="h-8 w-8 text-red-500"
                     aria-label="キャンセル"
                     disabled={pendingId === reservation.reservationId}
-                    onClick={() => handleCancel(reservation.reservationId)}
+                    onClick={() =>
+                      handleCancel(reservation.reservationId, reservation.reserverId)
+                    }
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
