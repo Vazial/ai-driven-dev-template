@@ -10,6 +10,13 @@
 // 削除しない（論理削除。「キャンセル済み」という状態を保持したまま残す）。ただし自分の予約の一覧には
 // キャンセル済みの記録を表示しない。listMyReservations() がこの可視性のフィルタリングを担い、
 // 呼び出し側（画面）に「キャンセル済みを除く」判断を再実装させない。
+// キャンセルの実バックエンド接続（4本目のopt-in、reservation-frontend/adr/0009 決定1を踏襲）:
+// 契約（reservation-api.yaml）の `POST /reservations/{reservationId}/cancel` はリクエストボディに
+// `reserverId`（必須）を要求する。この画面はRFE-Bの解釈ポイント(2)により予約者IDを再入力させない
+// ため、キャンセル要求に必要なreserverIdは、この記録（予約が成立した時点でBookingDialogが渡す値）
+// から取り出すほかない。したがって `reserverId` を記録の一部として保持する（表示はしない。
+// ADR-0006決定1「予約者名を表示しない」は画面表示の話であり、キャンセル要求に必要な値の保持を
+// 妨げない）。
 const STORAGE_KEY = "reservation-frontend:my-reservations";
 
 /**
@@ -18,10 +25,17 @@ const STORAGE_KEY = "reservation-frontend:my-reservations";
  */
 export type MyReservationStatus = "active" | "cancelled";
 
-/** 端末ローカルに保持する予約1件分の記録。予約者ID等の識別情報は持たない(ADR-0006、画面に表示しない) */
+/**
+ * 端末ローカルに保持する予約1件分の記録。
+ *
+ * `reserverId` はキャンセル要求（`POST /reservations/{reservationId}/cancel` のリクエストボディ、
+ * 必須項目）に必要なため保持する。画面には表示しない(ADR-0006決定1「予約者名を表示しない」は
+ * 表示の話であり、値の保持自体を妨げない)。
+ */
 export type MyReservationRecord = {
   reservationId: string;
   roomId: string;
+  reserverId: string;
   /** YYYY-MM-DD */
   date: string;
   /** HH:mm */
@@ -61,6 +75,7 @@ function writeAll(records: MyReservationRecord[]): void {
 export function recordMyReservation(reservation: {
   reservationId: string;
   roomId: string;
+  reserverId: string;
   date: string;
   startTime: string;
   endTime: string;

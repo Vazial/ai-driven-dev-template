@@ -101,7 +101,8 @@ describe("createReservation", () => {
 // （画面の振る舞いは src/features/my-reservations の behavior テストで行う）。
 // ドメインルール判定自体の網羅は src/api/cancellationLogic.test.ts を参照（ここでは cancelReservation が
 // 判定結果を正しく反映し、成功時にMOCK_RESERVATIONSへ論理削除として反映するかを確認する）。
-// このスライスはモック実装のみのため実APIモードの分岐は無い（reservations.tsの注記参照）。
+// モック（cancelMockReservation）はNOT_RESERVER判定を実装しないため、reserverId引数の値は
+// モックモードの判定結果には影響しない（契約解釈ポイント(2)、reservations.tsの注記参照）。
 describe("cancelReservation", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -121,7 +122,7 @@ describe("cancelReservation", () => {
     if (!created.ok) return;
 
     vi.setSystemTime(new Date("2026-09-10T10:00:00")); // 開始15分前より十分前
-    const result = await cancelReservation(created.data.reservationId);
+    const result = await cancelReservation(created.data.reservationId, "sato");
 
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -160,7 +161,7 @@ describe("cancelReservation", () => {
     }
 
     vi.setSystemTime(new Date(`${date}T10:00:00`));
-    const cancelled = await cancelReservation(created.data.reservationId);
+    const cancelled = await cancelReservation(created.data.reservationId, "sato");
     expect(cancelled.ok).toBe(true);
 
     const after = await getRoomAvailability("room-a", date);
@@ -188,7 +189,7 @@ describe("cancelReservation", () => {
     if (!created.ok) return;
 
     vi.setSystemTime(new Date(`${date}T10:15:00`));
-    const result = await cancelReservation(created.data.reservationId);
+    const result = await cancelReservation(created.data.reservationId, "sato");
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("CANCEL_DEADLINE_PASSED");
@@ -209,16 +210,16 @@ describe("cancelReservation", () => {
     if (!created.ok) return;
 
     vi.setSystemTime(new Date(`${date}T10:00:00`));
-    const first = await cancelReservation(created.data.reservationId);
+    const first = await cancelReservation(created.data.reservationId, "sato");
     expect(first.ok).toBe(true);
 
-    const second = await cancelReservation(created.data.reservationId);
+    const second = await cancelReservation(created.data.reservationId, "sato");
     expect(second.ok).toBe(false);
     if (!second.ok) expect(second.error.code).toBe("ALREADY_CANCELLED");
   });
 
   it("存在しない予約IDはRESERVATION_NOT_FOUNDで拒否される(契約解釈ポイント(3)。通常到達しない経路)", async () => {
-    const result = await cancelReservation("rsv-does-not-exist");
+    const result = await cancelReservation("rsv-does-not-exist", "sato");
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("RESERVATION_NOT_FOUND");
@@ -244,7 +245,7 @@ describe("cancelReservation", () => {
     // モジュールは既に読み込み済み。ここで初めて時刻を「開始後」に進めてから呼び出す。
     // 呼び出し時点評価でなければ(モジュール読み込み時に固定されていれば)この変更は反映されないはず
     vi.setSystemTime(new Date(`${date}T10:15:00`));
-    const result = await cancelReservation(created.data.reservationId);
+    const result = await cancelReservation(created.data.reservationId, "sato");
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("CANCEL_DEADLINE_PASSED");
@@ -391,5 +392,165 @@ describe("createReservation (実APIモード)", () => {
     await real(input);
 
     expect(MOCK_RESERVATIONS).toHaveLength(before);
+  });
+});
+
+// 実APIモード（VITE_USE_REAL_RESERVATIONS_CANCEL_API=true）の分岐に対する単体テスト（4本目の実接続。
+// rooms＝adr/0009、availability＝adr/0009 決定6(b)、reservations作成 に続く）。
+// 契約（reservation-api.yaml）が `POST /reservations/{reservationId}/cancel` に定義する応答は
+// 200・403・409・422・404 の5つであり、それ以外・fetch例外はネットワーク層の失敗として例外伝播させる
+// （ADR-0009 決定4）。global.fetch をモックして検証し、実バックエンドは起動しない（meta/adr/0032）。
+describe("cancelReservation (実APIモード)", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  async function loadReal() {
+    vi.stubEnv("VITE_USE_REAL_RESERVATIONS_CANCEL_API", "true");
+    vi.resetModules();
+    return import("./reservations");
+  }
+
+  function fetchResponse(status: number, body: unknown) {
+    return { ok: status >= 200 && status < 300, status, json: async () => body };
+  }
+
+  const cancelledResponse = {
+    reservationId: "rsv-123",
+    roomId: "room-a",
+    reserverId: "user-sato",
+    date: "2026-07-14",
+    startTime: "10:00",
+    endTime: "11:00",
+    attendeeCount: 4,
+    cancelledAt: "2026-07-14T09:30:00+09:00",
+  };
+
+  it("200応答は ok:true で CancelledReservationResponse を返し、reserverIdを含むJSONを送る", async () => {
+    const calls: Array<[string, RequestInit | undefined]> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        calls.push([url, init]);
+        return fetchResponse(200, cancelledResponse);
+      }),
+    );
+    const { cancelReservation: real } = await loadReal();
+
+    const result = await real("rsv-123", "user-sato");
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.cancelledAt).toBe(cancelledResponse.cancelledAt);
+
+    expect(calls).toHaveLength(1);
+    const [url, init] = calls[0];
+    expect(url).toBe("/reservations/rsv-123/cancel");
+    expect(init?.method).toBe("POST");
+    // 契約はJSONボディに reserverId（必須）を要求する（CancelReservationRequest）
+    expect(JSON.parse(String(init?.body))).toEqual({ reserverId: "user-sato" });
+  });
+
+  it("403応答（NOT_RESERVER）は ProblemResponse を剥離して ok:false で返す", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        fetchResponse(403, { code: "NOT_RESERVER", message: "予約した本人ではありません" }),
+      ),
+    );
+    const { cancelReservation: real } = await loadReal();
+
+    const result = await real("rsv-123", "user-suzuki");
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("NOT_RESERVER");
+  });
+
+  it("409応答（ALREADY_CANCELLED）は ProblemResponse を剥離して ok:false で返す", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        fetchResponse(409, {
+          code: "ALREADY_CANCELLED",
+          message: "この予約は既にキャンセルされています",
+        }),
+      ),
+    );
+    const { cancelReservation: real } = await loadReal();
+
+    const result = await real("rsv-123", "user-sato");
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("ALREADY_CANCELLED");
+  });
+
+  it("422応答（CANCEL_DEADLINE_PASSED）は ProblemResponse を剥離して ok:false で返す", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        fetchResponse(422, {
+          code: "CANCEL_DEADLINE_PASSED",
+          message: "開始15分前を過ぎているためキャンセルできません",
+        }),
+      ),
+    );
+    const { cancelReservation: real } = await loadReal();
+
+    const result = await real("rsv-123", "user-sato");
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("CANCEL_DEADLINE_PASSED");
+  });
+
+  // 契約は POST /reservations/{reservationId}/cancel に404(RESERVATION_NOT_FOUND)を定義している
+  // （POST /reservationsの404差＝ROOM_NOT_FOUNDとは異なり、こちらは契約・モックとも定義済みで
+  // 差が無い。reservations.tsの注記参照）。
+  it("404応答（RESERVATION_NOT_FOUND）は ProblemResponse を剥離して ok:false で返す", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        fetchResponse(404, { code: "RESERVATION_NOT_FOUND", message: "予約が存在しません" }),
+      ),
+    );
+    const { cancelReservation: real } = await loadReal();
+
+    const result = await real("rsv-does-not-exist", "user-sato");
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("RESERVATION_NOT_FOUND");
+  });
+
+  it("契約が定義しない応答（例: 500）は例外として伝播する（決定4）", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => fetchResponse(500, {})));
+    const { cancelReservation: real } = await loadReal();
+
+    await expect(real("rsv-123", "user-sato")).rejects.toThrow();
+  });
+
+  it("fetch自体の失敗（未起動・接続不可）は例外として伝播する（決定4）", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+    );
+    const { cancelReservation: real } = await loadReal();
+
+    await expect(real("rsv-123", "user-sato")).rejects.toThrow();
+  });
+
+  it("実APIモードでは MOCK_RESERVATIONS を書き換えない（モックの共有状態に触れない）", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => fetchResponse(200, cancelledResponse)),
+    );
+    const { cancelReservation: real } = await loadReal();
+    const { MOCK_RESERVATIONS } = await import("./mockData");
+    const before = MOCK_RESERVATIONS.map((r) => ({ ...r }));
+
+    await real("rsv-123", "user-sato");
+
+    expect(MOCK_RESERVATIONS).toEqual(before);
   });
 });

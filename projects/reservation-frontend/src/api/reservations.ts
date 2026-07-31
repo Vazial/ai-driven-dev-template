@@ -27,6 +27,7 @@
 import type {
   ApiResult,
   CancelledReservationResponse,
+  CancelReservationRequest,
   CreateReservationInput,
   ProblemResponse,
   ReservationResponse,
@@ -41,6 +42,14 @@ let reservationSequence = 0;
 // 独立に保つ（上記「書き込み結果の可視性」の注記を参照）。
 const USE_REAL_RESERVATIONS_API =
   import.meta.env.VITE_USE_REAL_RESERVATIONS_API === "true";
+
+// キャンセル（`POST /reservations/{reservationId}/cancel`）は `POST /reservations`（作成）とは別の
+// operationId（schema.d.ts の `cancelReservation`）であり、rooms・availability・reservations(作成)
+// までの3本と同じ「1本ずつ独立にopt-inする」粒度（ADR-0009 決定1）を踏襲し、専用のフラグにする。
+// createReservation 用のフラグと合わせて true にしないと、実用上は画面が通しで機能しない
+// （FR-007・reservations.ts冒頭の注記と同型の組み合わせ制約）。
+const USE_REAL_RESERVATIONS_CANCEL_API =
+  import.meta.env.VITE_USE_REAL_RESERVATIONS_CANCEL_API === "true";
 
 /**
  * モックのバックエンドとして予約を作成する（アダプタの内側）。
@@ -105,9 +114,10 @@ function createMockReservation(
 // 承認済み 2026-07-15）。RFE-Cスライス「自分の予約を確認してキャンセルできる」
 // （contracts/my-reservations.feature、承認済み 2026-07-30）の対象。
 //
-// **このスライスの範囲はモック実装まで**。実バックエンド接続（4本目のopt-in）は別スライスであり、
-// createReservation・getRoomAvailability のような `VITE_USE_REAL_*` 分岐は持たない
-// （常にモックのcancelMockReservationを使う）。
+// 実バックエンド接続の4本目（`GET /rooms`＝adr/0009、`GET /rooms/{roomId}/availability`＝adr/0009
+// 決定6(b)、`POST /reservations`＝上記createReservationに続く）。既定はモック
+// （`cancelMockReservation`）のまま、環境変数（`VITE_USE_REAL_RESERVATIONS_CANCEL_API`）が実APIを
+// 指す場合だけ実fetch（`postRealCancelReservation`）に分岐する（ADR-0009 決定1のパターンを踏襲）。
 //
 // モックが「サーバ役」として判定するのは422 CANCEL_DEADLINE_PASSEDと409 ALREADY_CANCELLEDの2つ
 // （契約解釈ポイント(2)(3)。本人以外403・存在しない予約404はこの画面に到達経路が無いため対象外）。
@@ -169,19 +179,6 @@ function cancelMockReservation(
 }
 
 /**
- * 予約をキャンセルする。
- *
- * このスライスはモック実装のみ（実バックエンド接続は別スライス）。呼び出し側（自分の予約一覧画面）
- * から見たシグネチャは、createReservation・getRoomAvailability と同様 Promise を返す非同期関数とし、
- * 将来実接続を追加する際に呼び出し側を変更せずに済むようにしておく。
- */
-export async function cancelReservation(
-  reservationId: string,
-): Promise<ApiResult<CancelledReservationResponse>> {
-  return cancelMockReservation(reservationId);
-}
-
-/**
  * 実バックエンドの `POST /reservations` を叩く（アダプタの内側）。
  *
  * 契約（reservation-api.yaml）が `POST /reservations` に定義する応答は3つだけ:
@@ -230,4 +227,75 @@ export async function createReservation(
   return USE_REAL_RESERVATIONS_API
     ? postRealReservation(input)
     : createMockReservation(input);
+}
+
+/**
+ * 実バックエンドの `POST /reservations/{reservationId}/cancel` を叩く（アダプタの内側）。
+ *
+ * 契約（reservation-api.yaml）が `POST /reservations/{reservationId}/cancel` に定義する応答は5つ:
+ *   - 200: CancelledReservationResponse → `{ ok: true }`
+ *   - 403: ProblemResponse（NOT_RESERVER）→ `{ ok: false }`
+ *   - 409: ProblemResponse（ALREADY_CANCELLED）→ `{ ok: false }`
+ *   - 422: ProblemResponse（CANCEL_DEADLINE_PASSED）→ `{ ok: false }`
+ *   - 404: ProblemResponse（RESERVATION_NOT_FOUND）→ `{ ok: false }`
+ *
+ * それ以外（契約が定義しない5xx等）・fetch自体の失敗（未起動・接続不可）は、ネットワーク層の失敗と
+ * して扱い、`ProblemResponse` に押し込めず例外として呼び出し元へ伝播させる（ADR-0009 決定4）。
+ *
+ * **契約とモックの差（createReservationの404差と対になる関係。埋めない）**: `POST /reservations`
+ * （作成）では契約が404を定義しないため実モードで例外化する差があったが、キャンセルは逆——契約は
+ * 403(NOT_RESERVER)・404(RESERVATION_NOT_FOUND)を含む5つ全てを定義しているのに対し、モック
+ * （`cancelMockReservation`）はこのうち422・409・404の3つしか判定しない。403(NOT_RESERVER)は
+ * モックに実装が無い（契約解釈ポイント(2)。この画面は予約者IDを再入力させないため到達経路が無い）。
+ * 実モードでは、この画面が送るreserverIdは常に端末の記録（その予約を成立させた本人、
+ * src/api/myReservationsStore.ts）から取るため、通常403に到達することは想定されないが、万一
+ * サーバがこれを返した場合は契約が定義する応答としてそのまま `ok:false` に変換する（決定4を
+ * 実装側の解釈を挟まず素直に適用するだけであり、モックとの振る舞い差を新たに生むものではない）。
+ */
+async function postRealCancelReservation(
+  reservationId: string,
+  reserverId: string,
+): Promise<ApiResult<CancelledReservationResponse>> {
+  const body: CancelReservationRequest = { reserverId };
+  const response = await fetch(
+    `/reservations/${encodeURIComponent(reservationId)}/cancel`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+  if (response.ok) {
+    return { ok: true, data: (await response.json()) as CancelledReservationResponse };
+  }
+  if (
+    response.status === 403 ||
+    response.status === 409 ||
+    response.status === 422 ||
+    response.status === 404
+  ) {
+    return { ok: false, error: (await response.json()) as ProblemResponse };
+  }
+  throw new Error(
+    `POST /reservations/${reservationId}/cancel failed with status ${response.status}`,
+  );
+}
+
+/**
+ * 予約をキャンセルする。
+ *
+ * 既定はモック。`VITE_USE_REAL_RESERVATIONS_CANCEL_API=true` のときだけ実バックエンドを叩く
+ * （ADR-0009 決定1のパターン）。呼び出し側から見た公開シグネチャはモード間で同一である。
+ *
+ * `reserverId` は契約が要求するリクエストボディの必須項目（実モードで使用）。モック
+ * （`cancelMockReservation`）はNOT_RESERVER判定を実装しないため参照しないが、呼び出し側
+ * （自分の予約一覧画面）は常に端末の記録からこの値を渡す。
+ */
+export async function cancelReservation(
+  reservationId: string,
+  reserverId: string,
+): Promise<ApiResult<CancelledReservationResponse>> {
+  return USE_REAL_RESERVATIONS_CANCEL_API
+    ? postRealCancelReservation(reservationId, reserverId)
+    : cancelMockReservation(reservationId);
 }

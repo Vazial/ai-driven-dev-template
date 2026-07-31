@@ -61,6 +61,7 @@ describe("自分の予約(RFE-C)", () => {
     recordMyReservation({
       reservationId: "rsv-1",
       roomId: "room-a",
+      reserverId: "sato",
       date: "2026-07-14",
       startTime: "14:00",
       endTime: "15:00",
@@ -100,6 +101,7 @@ describe("自分の予約(RFE-C)", () => {
     recordMyReservation({
       reservationId: "rsv-1",
       roomId: "room-a",
+      reserverId: "sato",
       date: "2026-07-14",
       startTime: "14:00",
       endTime: "15:00",
@@ -148,7 +150,8 @@ describe("自分の予約(RFE-C)", () => {
     await user.click(within(sheet).getByRole("button", { name: "キャンセル" }));
 
     await waitFor(() => {
-      expect(mockedCancelReservation).toHaveBeenCalledWith("rsv-1");
+      // 4本目の実接続: cancelReservation は端末の記録から取り出した reserverId も渡す
+      expect(mockedCancelReservation).toHaveBeenCalledWith("rsv-1", "sato");
     });
 
     // 予約がキャンセルされたことが画面で分かる/一覧からその予約が消える
@@ -169,6 +172,7 @@ describe("自分の予約(RFE-C)", () => {
     recordMyReservation({
       reservationId: "rsv-1",
       roomId: "room-a",
+      reserverId: "sato",
       date: "2026-07-14",
       startTime: "10:00",
       endTime: "11:00",
@@ -205,6 +209,7 @@ describe("自分の予約(RFE-C)", () => {
     recordMyReservation({
       reservationId: "rsv-1",
       roomId: "room-a",
+      reserverId: "sato",
       date: "2026-07-14",
       startTime: "14:00",
       endTime: "15:00",
