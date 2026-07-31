@@ -19,7 +19,8 @@
 実装の現状:
 - 画面: RFE-A（空き状況タイムライン、`src/features/availability/`）・RFE-B（予約ダイアログ、`src/features/booking/`）・RFE-C（自分の予約Sheet、`src/features/my-reservations/`）実装済み。案B（adr/0006）の設計調整（予約者名非表示・空き/予約済みの二値表示）反映済み。
 - 型: SSoT yaml から生成（adr/0008、`npm run gen:api` → `src/api/schema.d.ts`）。
-- 実接続の範囲: **rooms・availability・予約作成・キャンセルの4本**が実API opt-in（`VITE_USE_REAL_ROOMS_API`・`VITE_USE_REAL_AVAILABILITY_API`・`VITE_USE_REAL_RESERVATIONS_API`・`VITE_USE_REAL_RESERVATIONS_CANCEL_API`、いずれも既定モック）。`liveWiring.test.ts` が4本すべての配線（proxyプレフィックス配下）を機械ゲートする。
+- 実接続の範囲: **rooms・availability・予約作成・キャンセルの4本**が実API opt-in（`VITE_USE_REAL_ROOMS_API`・`VITE_USE_REAL_AVAILABILITY_API`・`VITE_USE_REAL_RESERVATIONS_API`・`VITE_USE_REAL_RESERVATIONS_CANCEL_API`、いずれも既定モック）。`liveWiring.test.ts` が4本すべての配線（proxyプレフィックス配下）を機械ゲートする。**4本すべてを `true` にして初めてループが実物で通る**（1本だけだと識別子空間または書き込み結果の可視性が分断される）。
+- 環境変数のテンプレートは **`env.example`**（`.env.example` ではない。meta/adr/0040 — 権限設定が `.env*` を deny しており、default-denyを緩めずAIが保守できるようにするため名前空間の外に出した）。実接続時は `.env.local`（gitignore対象）にコピーして値を `true` にする。
 - **キャンセル（RFE-C）**: `src/api/reservations.ts` の `cancelReservation(reservationId, reserverId)`。モック判定ロジックは `src/api/cancellationLogic.ts`（RSV-Kの422 CANCEL_DEADLINE_PASSED・409 ALREADY_CANCELLEDのみ対象、契約解釈ポイント(2)(3)）。実モードは契約が定義する200/403/409/422/404を`ApiResult`に写し、それ以外・fetch失敗は例外伝播（ADR-0009決定4）。
 - 「自分の予約」は端末ローカル記録（`src/api/myReservationsStore.ts`、`localStorage`、案B adr/0006）で管理する。記録は`reserverId`を保持する（キャンセル要求に使う。表示はしない）。キャンセル成功後も記録は論理削除にとどめ物理削除しない（解釈ポイント(3-2)、人間裁定2026-07-30）。RFE-B（`BookingDialog.tsx`）が予約成立時にこの記録へ追加する接続を持つ。
 - 現在時刻の判定は呼び出し時点で `new Date()` を評価する（モジュール読み込み時に固定しない）。単体テストは `vi.setSystemTime` で制御する。
@@ -41,12 +42,11 @@
 
 ## 次にやること（プロジェクト内部）
 
-1. **`.env.example` に `VITE_USE_REAL_RESERVATIONS_API`・`VITE_USE_REAL_RESERVATIONS_CANCEL_API` を追記する** — 未実施。Claude Code の権限設定が `.env*` の読み取り・書き込みを拒否するため（guardrails §3、意図されたガード）、このファイルだけAIが触れない。人間または別ランタイムが追記する。
-2. **骨格（おおまかなコンポーネント構成）の記述・保存・比較の実現**（改修ガバナンスの判定機構、meta/adr/0021）— 未着手・優先度高。レンダリング画像の記録は非ブロッキング宿題。
-3. **ADR-0004・0005 の人間承認**、および ADR-0004 §1§2 の条文改訂（静的HTML/CSS → TSX＋受け皿方式）。
-4. **`PATCH /reservations/{id}`（予約時間変更）の要否** — 未決（案内文を実態に合わせるか、機能追加するか）。
-5. **design.md・ARCHITECTURE.md の新規作成**（architect、上記が揃い次第）。
-6. refinement ループの反復回数N・escape hatch の優先順位（ADR-0004 §6）— 未定。
+1. **骨格（おおまかなコンポーネント構成）の記述・保存・比較の実現**（改修ガバナンスの判定機構、meta/adr/0021）— 未着手・優先度高。レンダリング画像の記録は非ブロッキング宿題。
+2. **ADR-0004・0005 の人間承認**、および ADR-0004 §1§2 の条文改訂（静的HTML/CSS → TSX＋受け皿方式）。
+3. **`PATCH /reservations/{id}`（予約時間変更）の要否** — 未決（案内文を実態に合わせるか、機能追加するか）。
+4. **design.md・ARCHITECTURE.md の新規作成**（architect、上記が揃い次第）。
+5. refinement ループの反復回数N・escape hatch の優先順位（ADR-0004 §6）— 未定。
 
 ## 未解決の論点（プロジェクト内部）
 
