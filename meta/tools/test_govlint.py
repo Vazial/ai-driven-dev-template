@@ -121,6 +121,63 @@ class TestReadFrontmatter(unittest.TestCase):
             self.assertIsNone(govlint.read_frontmatter(p))
 
 
+# ---------------------------------------------------------------- role-agent SSOT (ADR-0036)
+ROLE_MAPPING = """| role | 共通契約のmodel | Claude Codeのruntime定義 | Codexのruntime model |
+|---|---|---|---|
+| architect | `sonnet` | `.claude/agents/architect.md` (`sonnet`) | `gpt-5.6-terra` |
+| designer | `opus` | `.claude/agents/designer.md` (`opus`) | `gpt-5.6-sol` |
+| developer | `sonnet` | `.claude/agents/developer.md` (`sonnet`) | `gpt-5.6-terra` |
+| tester | `sonnet` | `.claude/agents/tester.md` (`sonnet`) | `gpt-5.6-terra` |
+| reviewer | `sonnet` | `.claude/agents/reviewer.md` (`sonnet`) | `gpt-5.6-terra` |
+"""
+
+# Test fixture only. Production model ownership is .claude/agents and
+# meta/agent-runtime-mapping.md (ADR-0036).
+ROLE_MODELS = {
+    "architect": "sonnet",
+    "designer": "opus",
+    "developer": "sonnet",
+    "tester": "sonnet",
+    "reviewer": "sonnet",
+}
+
+
+def role_contract(role: str, model: str) -> str:
+    return f"---\nname: {role}\ntools: Read\nmodel: {model}\n---\n"
+
+
+def write_valid_role_layout(root: Path) -> None:
+    for role, claude_model in ROLE_MODELS.items():
+        write(root / ".claude" / "agents" / f"{role}.md", role_contract(role, claude_model))
+    write(root / "meta" / "agent-runtime-mapping.md", ROLE_MAPPING)
+
+
+class TestCheckRoleAgentSsot(GovlintTestCase):
+    def _write_valid_layout(self) -> None:
+        write_valid_role_layout(self.root)
+
+    def test_valid_single_source_layout_has_no_errors(self) -> None:
+        self._write_valid_layout()
+        govlint.check_role_agent_ssot()
+        self.assertEqual(govlint.errors, [])
+
+    def test_legacy_role_contract_is_error(self) -> None:
+        self._write_valid_layout()
+        write(self.root / "meta" / "agents" / "developer.md", "legacy\n")
+        govlint.check_role_agent_ssot()
+        self.assertTrue(any("廃止された個別role定義" in error for error in govlint.errors))
+
+    def test_model_mapping_drift_is_error(self) -> None:
+        self._write_valid_layout()
+        mapping = ROLE_MAPPING.replace(
+            "| designer | `opus` | `.claude/agents/designer.md` (`opus`) |",
+            "| designer | `sonnet` | `.claude/agents/designer.md` (`sonnet`) |",
+        )
+        write(self.root / "meta" / "agent-runtime-mapping.md", mapping)
+        govlint.check_role_agent_ssot()
+        self.assertTrue(any("designer のClaude runtime対応" in error for error in govlint.errors))
+
+
 # ---------------------------------------------------------------- ADR
 VALID_ADR = dedent(
     """
@@ -493,10 +550,136 @@ class TestCheckScenarioIds(GovlintTestCase):
         govlint.check_scenario_ids()
         self.assertEqual(govlint.errors, [])
 
+    # ---- 参照の境界はASCII（meta/adr/0038）。日本語の助詞で参照が消えないこと ----
+
+    def test_reference_followed_by_japanese_particle_is_detected(self) -> None:
+        r"""旧実装は `\b` を使っており、`RSV-A-77が…` の直後の仮名が `\w` 扱いになるため
+        参照として検出されず、未定義参照を**見逃していた**（統治文書は日本語で書かれるため常態）。
+        """
+        feature = dedent(
+            """
+            Feature: A
+              # RSV-A-01: 定義済み
+              Given 何か
+
+            注記: RSV-A-77が定員超過を拒否理由として持つため、人数の指定が要る
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature)
+        govlint.check_scenario_ids()
+        self.assertTrue(any("RSV-A-77" in e and "定義されていない" in e for e in govlint.errors))
+
+    def test_reference_embedded_in_longer_id_is_not_matched(self) -> None:
+        """ASCII境界にしても、別IDへの部分一致は拾わない（`RSV-A-011` は `RSV-A-01` ではない）。"""
+        feature = dedent(
+            """
+            Feature: A
+              # RSV-A-01: 定義済み
+              Given 何か
+
+            注記: RSV-A-011 という表記は別物であり RSV-A-01 の参照ではない
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature)
+        govlint.check_scenario_ids()
+        self.assertEqual(govlint.errors, [])
+
+    # ---- 定義はIDが行の主語のときだけ（meta/adr/0038） ----
+
+    def test_prose_comment_starting_with_id_is_not_a_definition(self) -> None:
+        """旧実装は行頭コメントがIDで始まれば「定義」と誤認した。説明のために行頭でIDに触れた
+        散文が実在しない定義を生み、参照検査を骨抜きにしていた。IDに続くのが行末かコロンの
+        ときだけ定義とする。
+        """
+        feature = dedent(
+            """
+            Feature: A
+              # RSV-A-01: 定義済み
+              Given 何か
+              #     RSV-A-77〜A-79が終了時刻の妥当性を拒否理由として持つ
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature)
+        govlint.check_scenario_ids()
+        self.assertTrue(any("RSV-A-77" in e and "定義されていない" in e for e in govlint.errors))
+
+    def test_prose_comment_starting_with_id_does_not_collide_with_real_definition(self) -> None:
+        """散文が本物の定義と重複衝突しないこと（同一ファイルに両方あっても定義は1つ）。"""
+        feature = dedent(
+            """
+            Feature: A
+              #       RSV-A-01で明示的にロックした（説明のための言及）
+              # RSV-A-01: 本物の定義
+              Given 何か
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature)
+        govlint.check_scenario_ids()
+        self.assertEqual(govlint.errors, [])
+
+    def test_bare_and_colon_definition_forms_are_both_accepted(self) -> None:
+        """既存の統治文書が使う2形式（`# <ID>` と `# <ID>: 説明`）はどちらも定義として通る。"""
+        feature = dedent(
+            """
+            Feature: A
+              # RSV-A-01
+              Given 何か
+              # RSV-A-02: 説明つき
+              Given 何か
+            """
+        )
+        spec = "x: RSV-A-01\ny: RSV-A-02\n"
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature)
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.yaml", spec)
+        govlint.check_scenario_ids()
+        self.assertEqual(govlint.errors, [])
+
+    # ---- 名前空間はリポジトリ全体（meta/adr/0038） ----
+
+    def test_cross_project_reference_resolves(self) -> None:
+        """consumer-driven contract（meta/adr/0023）: フロントの契約がバックエンドのシナリオを
+        引いても解決する。旧実装はcontractsディレクトリ単位で閉じており未定義扱いにしていた。
+        """
+        backend = dedent(
+            """
+            Feature: バックエンド
+              # RSV-A-01: 定員超過は拒否される
+              Given 何か
+            """
+        )
+        frontend = dedent(
+            """
+            Feature: フロント
+              # RFE-A-01: 人数を指定できる
+              Given 何か
+
+            操作自由度の導出根拠: RSV-A-01が定員超過を拒否理由として持つため
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "b.feature", backend)
+        write(self.root / "projects" / "reservation-frontend" / "contracts" / "f.feature", frontend)
+        govlint.check_scenario_ids()
+        self.assertEqual(govlint.errors, [])
+
+    def test_duplicate_definition_across_projects_is_error(self) -> None:
+        """名前空間が全体になったので、重複検出もプロジェクトを跨いで効く（検査は強くなる）。"""
+        same = dedent(
+            """
+            Feature: X
+              # RSV-A-01: 定義
+              Given 何か
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "b.feature", same)
+        write(self.root / "projects" / "reservation-frontend" / "contracts" / "f.feature", same)
+        govlint.check_scenario_ids()
+        self.assertTrue(any("RSV-A-01" in e and "重複している" in e for e in govlint.errors))
+
 
 # ---------------------------------------------------------------- main（統合）
 class TestMain(GovlintTestCase):
     def test_clean_repo_returns_zero(self) -> None:
+        write_valid_role_layout(self.root)
         write(self.root / "meta" / "adr" / "0001-sample.md", VALID_ADR)
         write(
             self.root / "projects" / "reservation-system" / "friction-log.md",
@@ -515,6 +698,7 @@ class TestMain(GovlintTestCase):
 
     def test_report_only_state_still_returns_zero(self) -> None:
         # cause_keyの2回出現はREPORTのみで、終了コードには影響しない。
+        write_valid_role_layout(self.root)
         content = (
             fr_entry("FR-001", cause_key="shared-cause")
             + "\n---\n\n"

@@ -377,6 +377,108 @@ principles: [P-04, P-11]
   `meta/friction-log.md` の新設要否はADR-0035の「確認事項」として人間に投げてある
 
 ---
+
+## FR-016: role定義をruntime用と共通原本の2か所へ手動複製し、SSOTを宣言した後も実体を一元化しなかったため責務がドリフトした
+
+```yaml
+id: FR-016
+date: 2026-07-30
+found_at: 人間
+slice: agent-role-ssot
+agents: [orchestrator, architect, developer]
+cause_category: 同一契約の手動複製
+cause_key: role-contract-manual-copy-drift
+pushed_to: [meta/adr/0036-make-claude-role-definitions-the-single-source-of-truth.md, meta/tools/govlint.py]
+status: 対応済み
+principles: [P-03, P-04, P-10]
+```
+
+- 事象: `.claude/agents/<role>.md` と `meta/agents/<role>.md` に5役の責務・禁止事項・model・toolsを
+  全文複製していた。ADR-0029とPR #30で`meta/agents`を共通契約と宣言した後も複製構造を残したため、
+  architectの監査申し送り責務がClaude側だけ欠落し、designerでは参照パスが分岐した。人間からのSSOT
+  違反報告で発覚した。Codex対応時にruntime mappingだけを追加し、既存コピーを整理しなかった見逃しを含む
+- 原因の仮説: Claude Codeが自動発見する配置とruntime間で共有する契約の所有場所を分けようとして、
+  一方を機械生成・参照adapterにせず双方へ同じ本文を書いた。同期を人間とAIの注意に依存させたため、
+  「共通契約」という文言と実際にClaudeが読むファイルが分離し、更新ごとにドリフト可能な構造になった
+- 押し込み先: ADR-0036で`.claude/agents/<role>.md`をClaude/Codex共通の唯一の原本と裁定し、重複する
+  `meta/agents/<role>.md`を削除する。Codexは原本とruntime対応表を読む。govlintは旧roleファイルの再作成、
+  role集合、Claude frontmatterとruntime対応表の投影不一致をL0エラーとして検出する
+- 補足: 移行時に既存2系統を照合し、欠落していたarchitectの責務を原本へ回収した。役割責務とモデル対応
+  自体は変更していない
+
+---
+
+## FR-017: サンドボックス内のCLI探索失敗をホスト環境での不存在と誤認し、利用可能な`gh`を使えないと報告した
+
+```yaml
+id: FR-017
+date: 2026-07-30
+found_at: 人間
+slice: codex-gh-host-discovery
+agents: [orchestrator]
+cause_category: 実行環境の可視範囲をホスト全体と同一視
+cause_key: sandbox-visibility-mistaken-for-host-absence
+pushed_to: [meta/adr/0037-require-codex-host-cli-discovery-before-unavailability-report.md, AGENTS.md]
+status: 対応済み
+principles: [P-05, P-08, P-10]
+```
+
+- 事象: Codexが通常サンドボックス内のPowerShellで`Get-Command gh`と`where gh`に失敗した結果だけを根拠に、
+  GitHub CLIが環境に無いと報告した。人間から「コマンドプロンプトでは使える」と指摘され、必要な権限昇格を
+  伴うホスト側確認を行うと、WinGet管理の`gh`実体・バージョン・認証済み状態を確認できた。ブランチとruleset
+  の結果自体は正しかったが、利用可能な標準手段を確認せずブラウザやREST直接呼び出しへ迂回した
+- 原因の仮説: Codexの通常シェルに見えるPATHと、権限昇格後のホスト側から参照できるPATHを区別せず、1つの
+  探索面の失敗をホスト全体の事実へ一般化した。CLI実体、認証状態、対象操作の権限・network到達性も分離して
+  診断していなかった
+- 押し込み先: ADR-0037で、利用不能報告の前にホスト側標準探索または既知の絶対パスを読み取り専用で確認し、
+  実体・認証・権限・networkを別々に報告することを決定した。`AGENTS.md`へCodex固有手順を反映し、token、
+  credential store、秘密を含み得る環境変数を出力しない境界も明記した
+- 補足: ホスト全体の再帰探索や、CLI発見を外部操作の承認とみなすことは採用していない。今回確認した実体の
+  絶対パスや認証情報はpublicリポジトリへ記録しない
+
+---
+
+## FR-018: シナリオIDのlint規則が言語依存で、日本語の助詞が続く参照を検出せず、行頭の散文を「定義」と誤認していた（既存契約が緑なのは偶然だった）
+
+```yaml
+id: FR-018
+date: 2026-07-30
+found_at: AI
+slice: RFE-C（自分の予約・キャンセル）の契約起草
+agents: [architect, orchestrator]
+cause_category: lint規則が言語依存で偶然通っていた
+cause_key: lint-rule-language-dependent
+pushed_to: [meta/adr/0038-scenario-id-resolution-and-namespace.md]
+status: 対応済み
+principles: [P-01, P-04, P-10]
+```
+
+- 事象: architectがRFE-Cの受け入れシナリオを起草し「既存契約との矛盾は見つからなかった」と報告したが、
+  orchestratorがgovlintにかけると**ERROR 4件で落ちた**（`RFE-B-03` の定義重複1件、`RSV-K-02`・`RSV-K-08`・
+  `RSV-K-09` の未定義参照3件）。差し戻して修正する過程で、**同じことをしている既存ファイルが通っている**
+  ことに気づき実装を測定したところ、`check_scenario_ids` に3つの欠陥が見つかった: (1)参照の単語境界に
+  `\b` を使っており、Pythonの `\w` がUnicodeを含むため**日本語の助詞が直後に来る参照（`RSV-C-10が…`）を
+  検出しない**、(2)行頭コメントがIDで始まれば「定義」と誤認するため**説明のための散文が実在しない定義を
+  生む**（`reservation-booking.feature:55` が実際に `RSV-C-05` を偽定義していた）、(3)検査が
+  `projects/<p>/contracts` 単位で閉じており**ADR-0023/0025が認めるクロスプロジェクト参照を原理的に
+  解決できない**
+- 原因の仮説: lint規則が言語依存で偶然通っていた — 「同じ内容を書いても**書いた位置と直後の1文字**で
+  通るか落ちるかが変わる」状態だった。`reservation-rules.feature:22` の `# RSV-R-02で明示的に…` は
+  直後が `で` のため偶然セーフだが、(1)だけを直すと重複エラーになる。3つの欠陥が互いに打ち消し合って
+  いたため、**検査が空振りしていることに誰も気づけなかった**。P-01（正しさを機械検証に置く）を掲げて
+  いても、その機械検証自体が言語依存の穴を持てば保証は成立しない
+- 押し込み先: meta/adr/0037 — 参照の境界をASCIIで定める／定義はIDが行の主語（続くのが行末かコロン）の
+  ときだけとする／名前空間をリポジトリ全体で1つにする、の3点を**同時に**入れる。既存の定義36行は
+  1件も壊れず（実測）、重複検出が全体に効くため検査は緩まず強くなる。新テスト7件を追加し、うち3件が
+  **旧実装に対して実際に落ちることを確認した**（テストが欠陥を捕まえていることの検証）
+- 補足: agent側の見逃し（機械検証を通さず「矛盾なし」と報告した）が直接の引き金だが、**それは発見の
+  契機にすぎない**。architectはBashを持たない役割定義であり自分でgovlintを実行できないため、「agentが
+  検証を怠った」で終わらせるとorchestratorが毎回代行する運用依存が残る。役割が実行手段を持たない場合の
+  検証責任の所在（誰がどの段で機械検証を通すか）は本FRでは解決していない——同じ形の摩擦が再発したら
+  そこを構造で直す判断に進む
+
+
+---
 <!--
 記入のコツ:
 - 「その場で」書く。棚卸しでまとめて書かない（記憶で精度が落ちる）

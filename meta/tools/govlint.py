@@ -30,6 +30,11 @@ errors: list[str] = []
 reports: list[str] = []
 
 
+# ADR-0036: Role names are structural; model values are owned by the source
+# frontmatter (.claude/agents) and the runtime mapping, never by this checker.
+ROLE_NAMES = {"architect", "designer", "developer", "tester", "reviewer"}
+
+
 # ---------------------------------------------------------------- yaml subset
 def parse_block(text: str) -> dict:
     """key: value / key: [a, b] / key: null の限定サブセットを読む。"""
@@ -60,6 +65,76 @@ def read_frontmatter(path: Path) -> dict | None:
     if end == -1:
         return None
     return parse_block(text[4:end])
+
+
+# ---------------------------------------------------------------- role-agent SSOT (ADR-0036)
+def check_role_agent_ssot() -> None:
+    """Ensure role contracts have one Claude/Codex source and preserved models."""
+    source_dir = ROOT / ".claude" / "agents"
+    legacy_dir = ROOT / "meta" / "agents"
+    mapping_path = ROOT / "meta" / "agent-runtime-mapping.md"
+
+    if legacy_dir.is_dir():
+        for path in sorted(legacy_dir.glob("*.md")):
+            errors.append(
+                f"{path.relative_to(ROOT).as_posix()}: ADR-0036で廃止された個別role定義が残っている"
+            )
+
+    source_roles = {path.stem for path in source_dir.glob("*.md")} if source_dir.is_dir() else set()
+    expected_roles = ROLE_NAMES
+    if source_roles != expected_roles:
+        errors.append(
+            ".claude/agents: role定義一式が不一致 "
+            f"(expected={sorted(expected_roles)}, actual={sorted(source_roles)})"
+        )
+
+    source_frontmatter: dict[str, dict] = {}
+    for role in ROLE_NAMES:
+        path = source_dir / f"{role}.md"
+        if not path.is_file():
+            continue
+        frontmatter = read_frontmatter(path)
+        if frontmatter is None:
+            errors.append(f"{path.relative_to(ROOT).as_posix()}: role定義のfrontmatterが無い")
+            continue
+        source_frontmatter[role] = frontmatter
+        if frontmatter.get("name") != role:
+            errors.append(
+                f"{path.relative_to(ROOT).as_posix()}: name='{frontmatter.get('name')}' がrole '{role}' と一致しない"
+            )
+        if not frontmatter.get("model"):
+            errors.append(f"{path.relative_to(ROOT).as_posix()}: Claude modelが無い")
+        if not frontmatter.get("tools"):
+            errors.append(f"{path.relative_to(ROOT).as_posix()}: tools境界が無い")
+
+    if not mapping_path.is_file():
+        errors.append("meta/agent-runtime-mapping.md: runtime対応表が無い")
+        return
+    mapping_rows: dict[str, tuple[str, str, str, str]] = {}
+    for line in mapping_path.read_text(encoding="utf-8").splitlines():
+        m = re.match(r"^\|\s*([a-z]+)\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)` \(`([^`]+)`\)\s*\|\s*`([^`]+)`\s*\|$", line)
+        if m:
+            role, contract_model, path, runtime_model, codex_model = m.groups()
+            mapping_rows[role] = (contract_model, path, runtime_model, codex_model)
+
+    if set(mapping_rows) != expected_roles:
+        errors.append(
+            "meta/agent-runtime-mapping.md: role対応表一式が不一致 "
+            f"(expected={sorted(expected_roles)}, actual={sorted(mapping_rows)})"
+        )
+    for role in ROLE_NAMES:
+        row = mapping_rows.get(role)
+        expected_path = f".claude/agents/{role}.md"
+        frontmatter = source_frontmatter.get(role)
+        if not row or not frontmatter:
+            continue
+        contract_model, path, runtime_model, codex_model = row
+        if path != expected_path or contract_model != frontmatter.get("model") or runtime_model != frontmatter.get("model"):
+            errors.append(
+                f"meta/agent-runtime-mapping.md: {role} のClaude runtime対応がrole定義と一致しない"
+            )
+        if not codex_model:
+            errors.append(f"meta/agent-runtime-mapping.md: {role} のCodex modelが無い")
 
 
 # ---------------------------------------------------------------- ADR
@@ -211,9 +286,18 @@ def check_friction_logs() -> None:
 
 # ---------------------------------------------------------------- 契約
 SCENARIO_ID = r"[A-Z]{2,}-[A-Z]-\d{2}"
-SCENARIO_ID_RE = re.compile(rf"\b({SCENARIO_ID})\b")
-# 定義: シナリオIDで始まるコメント行（`# RSV-A-01` / `# RSV-A-03: 説明`）か、Examples表の第1セル（`| RSV-C-05 |`）
-DEFINE_COMMENT_RE = re.compile(rf"^\s*#\s*({SCENARIO_ID})\b", re.M)
+# 参照の境界はASCIIで定める（meta/adr/0038）。`\b` を使うと、Pythonの `\w` がUnicode文字を含むため
+# 日本語の助詞が直後に来る `RSV-C-10が…` で単語境界が成立せず、参照が**検出されない**。統治文書は
+# 日本語で書かれるため、これは参照整合の検査に言語依存の穴を開けていた。シナリオIDはASCIIなので、
+# 「IDの構成文字が前後に続いていない」ことだけを境界条件にする（`RFE-B-031` のような別IDへの
+# 部分一致は防ぎつつ、直後が仮名・漢字・記号でも等しく検出する）。
+SCENARIO_ID_RE = re.compile(rf"(?<![A-Za-z0-9-])({SCENARIO_ID})(?![A-Za-z0-9-])")
+# 定義: **IDがその行の主語である**コメント行（`# RSV-A-01` / `# RSV-A-03: 説明`）か、
+# Examples表の第1セル（`| RSV-C-05 |`）。
+# IDに続くのは行末かコロンだけを認める（meta/adr/0038）。`\b` だけだと、説明のために行頭でIDに
+# 触れた散文（`# RSV-C-05〜C-07が終了時刻の妥当性を…`）まで「定義」と誤認し、実在しない定義を
+# 生んで参照検査を骨抜きにしていた（さらに同一ファイル内の本物の定義と重複衝突しうる）。
+DEFINE_COMMENT_RE = re.compile(rf"^\s*#\s*({SCENARIO_ID})\s*(?::|$)", re.M)
 DEFINE_TABLE_RE = re.compile(rf"^\s*\|\s*({SCENARIO_ID})\s*\|", re.M)
 # 欠番: 削除されたが番号を再利用しないID（`RSV-C-11は欠番`）。参照は許すが定義ではない
 RETIRED_RE = re.compile(rf"({SCENARIO_ID})\s*は欠番")
@@ -226,14 +310,21 @@ def _definitions(text: str) -> set[str]:
 def check_scenario_ids() -> None:
     """シナリオIDの定義が一意か、参照（.feature内・API仕様内）が実在の定義に解決するかを検証する。
 
-    定義と参照を区別する: 定義はIDで始まるコメント行かExamples表の第1セル。
+    定義と参照を区別する: 定義はIDがその行の主語であるコメント行かExamples表の第1セル。
     prose中の言及（例:「最小予約時間(30分、RSV-C-05)との相互作用」）は参照であって定義ではない。
-    """
-    for contracts in sorted((ROOT / "projects").glob("*/contracts")):
-        defined: dict[str, str] = {}
-        retired: set[str] = set()
-        texts: dict[str, str] = {}
 
+    **名前空間はリポジトリ全体で1つとする**（meta/adr/0038）。旧実装は `projects/<p>/contracts`
+    ディレクトリ単位で閉じていたため、consumer-driven contract（meta/adr/0023）や契約SSoT
+    （meta/adr/0025）が正当と認めるクロスプロジェクト参照——たとえばフロントの契約が
+    control surfaceの導出根拠としてバックエンドのシナリオを引く——を解決できなかった。
+    採番プレフィックスはスライスごとに固有（RFE-A/B/C・RSV-A/C/K/L/R）なので衝突は起きず、
+    重複検出もリポジトリ全体に効くようになる（検査は緩まず強くなる）。
+    """
+    defined: dict[str, str] = {}
+    retired: set[str] = set()
+    texts: dict[str, str] = {}
+
+    for contracts in sorted((ROOT / "projects").glob("*/contracts")):
         for feature in sorted(contracts.glob("*.feature")):
             rel = feature.relative_to(ROOT).as_posix()
             text = feature.read_text(encoding="utf-8")
@@ -244,23 +335,24 @@ def check_scenario_ids() -> None:
                     errors.append(f"{rel}: シナリオID {sid} の定義が {defined[sid]} と重複している")
                     continue
                 defined[sid] = rel
-        if not defined:
-            continue
-
-        for sid in sorted(retired & defined.keys()):
-            errors.append(f"{defined[sid]}: {sid} は欠番と宣言されているのに定義もされている（番号の再利用は禁止）")
-
         for spec in sorted(contracts.glob("*.yaml")):
             texts[spec.relative_to(ROOT).as_posix()] = spec.read_text(encoding="utf-8")
 
-        for rel, text in texts.items():
-            for sid in sorted(set(SCENARIO_ID_RE.findall(text))):
-                if sid not in defined and sid not in retired:
-                    errors.append(f"{rel}: 参照しているシナリオID {sid} が どの.featureにも定義されていない")
+    if not defined:
+        return
+
+    for sid in sorted(retired & defined.keys()):
+        errors.append(f"{defined[sid]}: {sid} は欠番と宣言されているのに定義もされている（番号の再利用は禁止）")
+
+    for rel, text in sorted(texts.items()):
+        for sid in sorted(set(SCENARIO_ID_RE.findall(text))):
+            if sid not in defined and sid not in retired:
+                errors.append(f"{rel}: 参照しているシナリオID {sid} が どの.featureにも定義されていない")
 
 
 # ---------------------------------------------------------------- main
 def main() -> int:
+    check_role_agent_ssot()
     adrs = check_adrs()
     check_adr_links(adrs)
     report_pending_adrs(adrs)
