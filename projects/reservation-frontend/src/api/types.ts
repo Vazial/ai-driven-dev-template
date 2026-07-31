@@ -53,3 +53,10 @@ export type ReservationResponse = components["schemas"]["ReservationResponse"];
  */
 export type CancelledReservationResponse =
   components["schemas"]["CancelledReservationResponse"];
+
+/**
+ * POST /reservations/{reservationId}/cancel のリクエストボディ相当（CancelReservationRequest、
+ * reservation-api.yaml、RSV-K）。実バックエンド接続（4本目のopt-in）で使う。
+ */
+export type CancelReservationRequest =
+  components["schemas"]["CancelReservationRequest"];
