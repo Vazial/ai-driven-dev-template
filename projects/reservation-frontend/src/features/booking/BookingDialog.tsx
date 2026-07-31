@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/select";
 
 import { createReservation } from "@/api/reservations";
+import { recordMyReservation } from "@/api/myReservationsStore";
 import type { RoomSummary } from "@/api/types";
 import {
   computeDefaultTimeRange,
@@ -115,14 +116,30 @@ export default function BookingDialog({
     setSubmitting(true);
     setErrorMessage(null);
 
-    const result = await createReservation({
-      roomId: room.roomId,
-      reserverId,
-      date,
-      startTime,
-      endTime,
-      attendeeCount,
-    });
+    // 実APIモード（VITE_USE_REAL_RESERVATIONS_API=true、3本目の実接続）では、契約が定義しない応答・
+    // fetch自体の失敗（バック未起動・接続不可）が例外として伝播する（ADR-0009 決定4）。読み取り側
+    // （AvailabilityScreen）が既にそうしているのと同様、ここで受けて最小限の汎用失敗表示に落とす
+    // （文言はP-05に沿って最小限に留める）。モックモードでは createReservation は例外を投げないため、
+    // この経路には入らない。
+    let result: Awaited<ReturnType<typeof createReservation>>;
+    try {
+      result = await createReservation({
+        roomId: room.roomId,
+        reserverId,
+        date,
+        startTime,
+        endTime,
+        attendeeCount,
+      });
+    } catch {
+      setSubmitting(false);
+      // 予約が作成されたか分からない状態なので、空き状況を再取得して実際の状態を映す
+      onSettled();
+      const message = "予約できませんでした。通信に失敗した可能性があります";
+      setErrorMessage(message);
+      toast.error(message);
+      return;
+    }
 
     setSubmitting(false);
     // 成功・拒否のいずれでも空き状況を再取得し、画面をサーバの実際の状態と同期する
@@ -131,6 +148,17 @@ export default function BookingDialog({
     if (result.ok) {
       // RFE-B-02: 予約が完了したことが画面で分かる
       toast.success("予約が完了しました");
+      // RFE-C-01（contracts/my-reservations.feature）が成立するための接続点: 予約が成立した時点で
+      // この端末の記録に追加する（案B、reservation-frontend/adr/0006）。実APIモード
+      // （VITE_USE_REAL_RESERVATIONS_API=true）でもこの記録自体はモード非依存のクライアント側の
+      // 概念であり、同様に追加する。
+      recordMyReservation({
+        reservationId: result.data.reservationId,
+        roomId: result.data.roomId,
+        date: result.data.date,
+        startTime: result.data.startTime,
+        endTime: result.data.endTime,
+      });
       onOpenChange(false);
       return;
     }

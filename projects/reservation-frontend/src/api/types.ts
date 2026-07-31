@@ -45,3 +45,11 @@ export type CreateReservationInput = components["schemas"]["CreateReservationReq
 
 /** POST /reservations の成功レスポンス相当（ReservationResponse、reservation-api.yaml） */
 export type ReservationResponse = components["schemas"]["ReservationResponse"];
+
+/**
+ * POST /reservations/{reservationId}/cancel の成功レスポンス相当（CancelledReservationResponse、
+ * reservation-api.yaml、RSV-K「予約をキャンセルできる」）。RFE-C（contracts/my-reservations.feature）
+ * が使う。
+ */
+export type CancelledReservationResponse =
+  components["schemas"]["CancelledReservationResponse"];

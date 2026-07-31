@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { createReservation } from "./reservations";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { createReservation, cancelReservation } from "./reservations";
+import { getRoomAvailability } from "./availability";
 
 // モックAPI（createReservation）に対する単体テスト。
 // contracts/reservation-booking.feature のRFE-B-02/03が要求するAPIレベルの応答形状を検証する
@@ -92,5 +93,303 @@ describe("createReservation", () => {
     if (!result.ok) {
       expect(result.error.code).toBe("TOO_SHORT");
     }
+  });
+});
+
+// POST /reservations/{reservationId}/cancel 相当（モックAPI cancelReservation）に対する単体テスト。
+// contracts/my-reservations.feature（RFE-C）のRFE-C-03/04/05が要求するAPIレベルの応答形状を検証する
+// （画面の振る舞いは src/features/my-reservations の behavior テストで行う）。
+// ドメインルール判定自体の網羅は src/api/cancellationLogic.test.ts を参照（ここでは cancelReservation が
+// 判定結果を正しく反映し、成功時にMOCK_RESERVATIONSへ論理削除として反映するかを確認する）。
+// このスライスはモック実装のみのため実APIモードの分岐は無い（reservations.tsの注記参照）。
+describe("cancelReservation", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // RFE-C-03: 自分の予約をキャンセルする
+  it("期限内のキャンセルは成功し、CancelledReservationResponseを返す", async () => {
+    const created = await createReservation({
+      roomId: "room-a",
+      reserverId: "sato",
+      date: "2026-09-10",
+      startTime: "14:00",
+      endTime: "15:00",
+      attendeeCount: 2,
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    vi.setSystemTime(new Date("2026-09-10T10:00:00")); // 開始15分前より十分前
+    const result = await cancelReservation(created.data.reservationId);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toMatchObject({
+        reservationId: created.data.reservationId,
+        roomId: "room-a",
+        date: "2026-09-10",
+        startTime: "14:00",
+        endTime: "15:00",
+      });
+      expect(result.data.cancelledAt).toBeTruthy();
+    }
+  });
+
+  // RFE-C-03の3つ目のThen: キャンセルすると空き状況画面で再び空きになる
+  it("キャンセルが成功すると、空き状況(getRoomAvailability)にその時間帯が空きとして反映される", async () => {
+    const date = "2026-09-11";
+    const created = await createReservation({
+      roomId: "room-a",
+      reserverId: "sato",
+      date,
+      startTime: "14:00",
+      endTime: "15:00",
+      attendeeCount: 2,
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    const before = await getRoomAvailability("room-a", date);
+    expect(before.ok).toBe(true);
+    if (before.ok) {
+      // 14:00〜15:00が占有されているため、営業時間まるごと一つの空き区間にはならない
+      expect(before.data.availableSlots).not.toEqual([
+        { startTime: "09:00", endTime: "18:00" },
+      ]);
+    }
+
+    vi.setSystemTime(new Date(`${date}T10:00:00`));
+    const cancelled = await cancelReservation(created.data.reservationId);
+    expect(cancelled.ok).toBe(true);
+
+    const after = await getRoomAvailability("room-a", date);
+    expect(after.ok).toBe(true);
+    if (after.ok) {
+      expect(after.data.availableSlots).toEqual([
+        { startTime: "09:00", endTime: "18:00" },
+      ]);
+    }
+  });
+
+  // RFE-C-04: 開始直前になった予約をキャンセルしようとして拒否される
+  // (Given「現在時刻は"10:15"である」と同一時刻をそのまま使う)
+  it("開始15分前を過ぎた予約はCANCEL_DEADLINE_PASSEDで拒否される", async () => {
+    const date = "2026-09-12";
+    const created = await createReservation({
+      roomId: "room-a",
+      reserverId: "sato",
+      date,
+      startTime: "10:00",
+      endTime: "11:00",
+      attendeeCount: 2,
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    vi.setSystemTime(new Date(`${date}T10:15:00`));
+    const result = await cancelReservation(created.data.reservationId);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("CANCEL_DEADLINE_PASSED");
+  });
+
+  // RFE-C-05: 別の画面で既にキャンセル済みの予約を、もう一度キャンセルしようとして拒否される
+  it("既にキャンセル済みの予約は再びキャンセルできない(ALREADY_CANCELLED)", async () => {
+    const date = "2026-09-13";
+    const created = await createReservation({
+      roomId: "room-a",
+      reserverId: "sato",
+      date,
+      startTime: "14:00",
+      endTime: "15:00",
+      attendeeCount: 2,
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    vi.setSystemTime(new Date(`${date}T10:00:00`));
+    const first = await cancelReservation(created.data.reservationId);
+    expect(first.ok).toBe(true);
+
+    const second = await cancelReservation(created.data.reservationId);
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.error.code).toBe("ALREADY_CANCELLED");
+  });
+
+  it("存在しない予約IDはRESERVATION_NOT_FOUNDで拒否される(契約解釈ポイント(3)。通常到達しない経路)", async () => {
+    const result = await cancelReservation("rsv-does-not-exist");
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("RESERVATION_NOT_FOUND");
+  });
+
+  // 時刻の扱い（スライス指示）: 判定に使う現在時刻はモジュール読み込み時ではなく、cancelReservationの
+  // 呼び出し時点で評価されなければならない（vi.setSystemTimeでもPlaywrightのpage.clockでも制御可能で
+  // あるため）。モジュール読み込み時に一度だけ評価して固定していないことを、同一プロセス内で時刻を
+  // 進めてから呼び出すことで確認する。
+  it("現在時刻はモジュール読み込み時ではなく呼び出し時点で評価される", async () => {
+    const date = "2026-09-14";
+    const created = await createReservation({
+      roomId: "room-a",
+      reserverId: "sato",
+      date,
+      startTime: "10:00",
+      endTime: "11:00",
+      attendeeCount: 2,
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    // モジュールは既に読み込み済み。ここで初めて時刻を「開始後」に進めてから呼び出す。
+    // 呼び出し時点評価でなければ(モジュール読み込み時に固定されていれば)この変更は反映されないはず
+    vi.setSystemTime(new Date(`${date}T10:15:00`));
+    const result = await cancelReservation(created.data.reservationId);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("CANCEL_DEADLINE_PASSED");
+  });
+});
+
+// 実APIモード（VITE_USE_REAL_RESERVATIONS_API=true）の分岐に対する単体テスト（3本目の実接続。
+// rooms＝adr/0009、availability＝adr/0009 決定6(b) に続く初の「書き込み」の実接続）。
+// 契約（reservation-api.yaml）が `POST /reservations` に定義する応答は 201・409・422 の3つだけであり、
+// それ以外・fetch例外はネットワーク層の失敗として例外伝播させる（ADR-0009 決定4）。global.fetch を
+// モックして検証し、実バックエンドは起動しない（meta/adr/0032: 配線・結合は機械検証する／走破は
+// 回帰ゲートにしない）。USE_REAL_RESERVATIONS_API はモジュールロード時に評価されるため、env を
+// 差し替えてから resetModules + 動的importで実モードのモジュールを取り直す。
+describe("createReservation (実APIモード)", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  async function loadReal() {
+    vi.stubEnv("VITE_USE_REAL_RESERVATIONS_API", "true");
+    vi.resetModules();
+    return import("./reservations");
+  }
+
+  // response.ok / status / json() だけを使う実装に合わせた最小のモック応答
+  function fetchResponse(status: number, body: unknown) {
+    return { ok: status >= 200 && status < 300, status, json: async () => body };
+  }
+
+  const input = {
+    roomId: "660a5b6d",
+    reserverId: "user-001",
+    date: "2026-07-14",
+    startTime: "10:00",
+    endTime: "11:00",
+    attendeeCount: 4,
+  };
+
+  it("201応答は ok:true で ReservationResponse を返し、POST /reservations にJSONを送る", async () => {
+    const calls: Array<[string, RequestInit | undefined]> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        calls.push([url, init]);
+        return fetchResponse(201, { reservationId: "rsv-123", ...input });
+      }),
+    );
+    const { createReservation: real } = await loadReal();
+
+    const result = await real(input);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.reservationId).toBe("rsv-123");
+
+    expect(calls).toHaveLength(1);
+    const [url, init] = calls[0];
+    expect(url).toBe("/reservations");
+    expect(init?.method).toBe("POST");
+    // 契約はJSONボディを要求する（requestBody: application/json）
+    expect(JSON.parse(String(init?.body))).toEqual(input);
+  });
+
+  it("409応答（TIME_SLOT_CONFLICT）は ProblemResponse を剥離して ok:false で返す", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        fetchResponse(409, {
+          code: "TIME_SLOT_CONFLICT",
+          message: "時間帯が既存の予約と重なっています",
+        }),
+      ),
+    );
+    const { createReservation: real } = await loadReal();
+
+    const result = await real(input);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("TIME_SLOT_CONFLICT");
+  });
+
+  it("422応答（ドメインルール違反）は ProblemResponse を剥離して ok:false で返す", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        fetchResponse(422, {
+          code: "TOO_SHORT",
+          message: "予約は30分以上でなければなりません",
+        }),
+      ),
+    );
+    const { createReservation: real } = await loadReal();
+
+    const result = await real(input);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("TOO_SHORT");
+  });
+
+  it("契約が定義しない応答（例: 500）は例外として伝播する（決定4）", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => fetchResponse(500, {})));
+    const { createReservation: real } = await loadReal();
+
+    await expect(real(input)).rejects.toThrow();
+  });
+
+  // 契約は POST /reservations に404を定義していない（reservation-api.yaml）。モックは存在しない
+  // 会議室を ROOM_NOT_FOUND で拒否するが、実モードでは「契約が定義しない応答」＝例外になる。
+  // このモード差は意図的（契約に404を足すのは人間承認の要る契約変更。reservations.ts の注記参照）。
+  it("契約が定義しない404は ROOM_NOT_FOUND に解釈せず例外として伝播する（モード差は意図的）", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        fetchResponse(404, { code: "ROOM_NOT_FOUND", message: "会議室が存在しません" }),
+      ),
+    );
+    const { createReservation: real } = await loadReal();
+
+    await expect(real(input)).rejects.toThrow();
+  });
+
+  it("fetch自体の失敗（未起動・接続不可）は例外として伝播する（決定4）", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+    );
+    const { createReservation: real } = await loadReal();
+
+    await expect(real(input)).rejects.toThrow();
+  });
+
+  it("実APIモードでは MOCK_RESERVATIONS を書き換えない（モックの共有状態に触れない）", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => fetchResponse(201, { reservationId: "rsv-999", ...input })),
+    );
+    const { createReservation: real } = await loadReal();
+    const { MOCK_RESERVATIONS } = await import("./mockData");
+    const before = MOCK_RESERVATIONS.length;
+
+    await real(input);
+
+    expect(MOCK_RESERVATIONS).toHaveLength(before);
   });
 });
