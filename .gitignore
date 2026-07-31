@@ -13,3 +13,14 @@ NUL
 # settings.json のみ）
 .claude/settings.local.json
 __pycache__/
+
+# 機密の実ファイル（meta/adr/0040）。`.claude/settings.json` の deny は「AIが読む」ことを
+# 止めるだけで、「gitに入る」ことは何も止めない——機密保護としてはこちらが本命である。
+# 共有するテンプレートは `.env*` の名前空間の外（`env.example`）に置くため、除外は要らない。
+.env
+.env.*
+*.pem
+*.key
+secrets/
+credentials.json
+*credentials*.json

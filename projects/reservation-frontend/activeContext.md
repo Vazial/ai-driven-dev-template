@@ -40,7 +40,7 @@
 ## 次にやること（プロジェクト内部）
 
 1. **キャンセルの実バックエンド接続（4本目のopt-in）**。`POST /reservations/{reservationId}/cancel` を rooms・availability・予約作成と同じパターンで実接続する。proxy は `/reservations` ルールが既にあるので新設不要。
-2. **`.env.example` に `VITE_USE_REAL_RESERVATIONS_API` を追記する** — 未実施。Claude Code の権限設定が `.env*` の読み取りを拒否するため（guardrails §3、意図されたガード）、このファイルだけAIが触れなかった。人間または別ランタイムが追記する。
+2. **（解決済み・2026-07-30）環境変数テンプレートの保守** — `.env.example` は **`env.example` にリネーム**され（meta/adr/0040）、AIが保守できるようになった。3本目・4本目で漏れていた `VITE_USE_REAL_RESERVATIONS_API`・`VITE_USE_REAL_RESERVATIONS_CANCEL_API` は追記済み。4本すべてを `true` にして初めてループが実物で通る、という組み合わせ制約も明記した。
 3. **骨格（おおまかなコンポーネント構成）の記述・保存・比較の実現**（改修ガバナンスの判定機構、meta/adr/0021）— 未着手・優先度高。レンダリング画像の記録は非ブロッキング宿題。
 4. **ADR-0004・0005 の人間承認**、および ADR-0004 §1§2 の条文改訂（静的HTML/CSS → TSX＋受け皿方式）。
 5. **`PATCH /reservations/{id}`（予約時間変更）の要否** — 未決（案内文を実態に合わせるか、機能追加するか）。
