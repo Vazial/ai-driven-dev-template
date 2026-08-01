@@ -8,6 +8,7 @@
   [REPORT] cause_keyの再出現   … 同一原因の2回目以降＝構造的欠陥のシグナル（人間が判断する。失敗させない）
   [REPORT] 未対応FRの棚卸し
   [REPORT] 提案中ADRの棚卸し   … status: 提案中 のまま滞留しているADR（meta/adr/0035）
+  [REPORT] 承認待ち契約の棚卸し … ステータス: 承認待ち のまま残っている契約（meta/adr/0043）
 
 終了コード: ERRORが1件でもあれば1、なければ0（REPORTは0のまま）。
 
@@ -307,6 +308,49 @@ def _definitions(text: str) -> set[str]:
     return set(DEFINE_COMMENT_RE.findall(text)) | set(DEFINE_TABLE_RE.findall(text))
 
 
+# 契約(.feature)の承認ステータス（meta/adr/0043）。ADRのfrontmatterと違い、契約は行コメントで
+# ステータスを持つため機械検証されていなかった。結果、承認済みの契約が「承認待ち」のまま残る
+# ドリフトが起きた（FR-015と同じ機構——起草時は「承認待ち」と書くしかなく、承認行為はPRのマージで、
+# 記録には2本目のPRが要るため飛ばされる）。
+CONTRACT_STATUS_RE = re.compile(
+    r"^#\s*ステータス:\s*(承認済み\((\d{4}-\d{2}-\d{2})\)|承認待ち)", re.M
+)
+
+
+def check_contract_status() -> None:
+    """契約(.feature)のステータス行を検証し、承認待ちの滞留を棚卸しする（meta/adr/0043）。
+
+    ERROR: ステータス行が無い／形式が不正。どちらも「この契約が拘束力を持つのか」を読み手が
+    判別できない状態であり、機械が確定できるためERRORが正しい強制レベル（P-04）。
+
+    REPORT: 承認待ちの契約の一覧。「承認すべきか」は意味判定なのでERROR化しない——ADR-0035が
+    提案中ADRの棚卸しをREPORTに留めたのと同じ設計判断である。ただし**承認待ちの契約の上に実装が
+    載っていないか**は人間が見るべき点であり、可視化しないと気づけない（実際にRFE-A/RFE-Bで起きた）。
+    """
+    pending: list[str] = []
+    for contracts in sorted((ROOT / "projects").glob("*/contracts")):
+        for feature in sorted(contracts.glob("*.feature")):
+            rel = feature.relative_to(ROOT).as_posix()
+            m = CONTRACT_STATUS_RE.search(feature.read_text(encoding="utf-8"))
+            if not m:
+                errors.append(
+                    f"{rel}: ステータス行が無いか形式が不正（meta/adr/0043。"
+                    f"`# ステータス: 承認済み(YYYY-MM-DD)` か `# ステータス: 承認待ち`）"
+                )
+                continue
+            if m.group(2) is None:
+                pending.append(rel)
+
+    if not pending:
+        return
+    reports.append(
+        f"承認待ちのまま残っている契約 {len(pending)}本（承認するか、意図した保留かを判断すること。"
+        f"**この契約の上に実装が載っていないかも確認すること**。meta/adr/0043）"
+    )
+    for rel in pending:
+        reports.append(f"  承認待ち: {rel}")
+
+
 def check_scenario_ids() -> None:
     """シナリオIDの定義が一意か、参照（.feature内・API仕様内）が実在の定義に解決するかを検証する。
 
@@ -358,6 +402,7 @@ def main() -> int:
     report_pending_adrs(adrs)
     check_friction_logs()
     check_scenario_ids()
+    check_contract_status()
 
     print(f"govlint: ADR {len(adrs)}本を検証")
     if reports:
