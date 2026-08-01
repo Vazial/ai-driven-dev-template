@@ -676,6 +676,159 @@ class TestCheckScenarioIds(GovlintTestCase):
         self.assertTrue(any("RSV-A-01" in e and "重複している" in e for e in govlint.errors))
 
 
+# ---------------------------------------------------------------- 実装待ちシナリオ（friction-log FR-014）
+class TestPendingScenarios(GovlintTestCase):
+    """@pending-implementation の棚卸しREPORT。
+
+    契約(.feature)だけを実装より先にmainへ置けるようにする仕組み。govlint(L0)の参照整合は
+    緩めない――タグが付いたシナリオも「定義済み」として扱われ続けることを確認する。
+    """
+
+    def test_tagged_scenario_is_reported_as_pending(self) -> None:
+        feature = dedent(
+            """
+            Feature: サンプル
+
+              Rule: ルール
+
+                # RSV-T-01
+                @pending-implementation
+                Scenario: 未実装のシナリオ
+                  Given 何か
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature)
+        govlint.check_scenario_ids()
+        self.assertEqual(govlint.errors, [])
+        joined = "\n".join(govlint.reports)
+        self.assertIn("実装待ち（@pending-implementation）のまま残っているシナリオ 1件", joined)
+        self.assertIn("RSV-T-01", joined)
+        self.assertIn("a.feature", joined)
+
+    def test_tag_order_before_id_comment_is_also_detected(self) -> None:
+        """タグとID定義コメントの順序はどちらでもよい（`@tag`→`# ID` の順）。"""
+        feature = dedent(
+            """
+            Feature: サンプル
+
+              Rule: ルール
+
+                @pending-implementation
+                # RSV-T-01
+                Scenario: 未実装のシナリオ
+                  Given 何か
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature)
+        govlint.check_scenario_ids()
+        self.assertEqual(govlint.errors, [])
+        self.assertTrue(any("RSV-T-01" in r for r in govlint.reports))
+
+    def test_scenario_outline_tag_covers_all_examples(self) -> None:
+        """Scenario Outlineの直前に付けたタグは、Examples表の全行に及ぶ。"""
+        feature = dedent(
+            """
+            Feature: サンプル
+
+              Rule: ルール
+
+                @pending-implementation
+                Scenario Outline: <ケース>は登録できない
+                  When 何か"<x>"をする
+                  Then 拒否される
+
+                  Examples:
+                    | ID       | x  |
+                    | RSV-T-03 | a  |
+                    | RSV-T-04 | b  |
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature)
+        govlint.check_scenario_ids()
+        self.assertEqual(govlint.errors, [])
+        joined = "\n".join(govlint.reports)
+        self.assertIn("実装待ち（@pending-implementation）のまま残っているシナリオ 2件", joined)
+        self.assertIn("RSV-T-03", joined)
+        self.assertIn("RSV-T-04", joined)
+
+    def test_untagged_scenario_is_not_reported_as_pending(self) -> None:
+        feature = dedent(
+            """
+            Feature: サンプル
+              # RSV-A-01
+              Scenario: 実装済みのシナリオ
+                Given 何か
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature)
+        govlint.check_scenario_ids()
+        self.assertEqual(govlint.errors, [])
+        self.assertFalse(any("実装待ち" in r for r in govlint.reports))
+
+    def test_tag_separated_by_blank_line_does_not_apply(self) -> None:
+        """タグとキーワード行の間に空行を挟むと、タグはそのシナリオを指さない（誤検出防止）。"""
+        feature = dedent(
+            """
+            Feature: サンプル
+
+              @pending-implementation
+
+              # RSV-A-01
+              Scenario: 実は実装済みのシナリオ
+                Given 何か
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature)
+        govlint.check_scenario_ids()
+        self.assertEqual(govlint.errors, [])
+        self.assertFalse(any("実装待ち" in r for r in govlint.reports))
+
+    def test_pending_scenario_id_still_resolves_as_defined_reference(self) -> None:
+        """L0の参照整合は緩めない: 実装待ちのIDもAPI仕様からの参照が解決できること。"""
+        feature = dedent(
+            """
+            Feature: サンプル
+
+              Rule: ルール
+
+                # RSV-T-01
+                @pending-implementation
+                Scenario: 未実装のシナリオ
+                  Given 何か
+            """
+        )
+        spec = "operationId: RSV-T-01\n"
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature)
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.yaml", spec)
+        govlint.check_scenario_ids()
+        self.assertEqual(govlint.errors, [])
+
+    def test_pending_scenario_id_duplicate_definition_still_errors(self) -> None:
+        """実装待ちであることは、重複定義エラーを免除しない。"""
+        feature_a = dedent(
+            """
+            Feature: A
+
+              # RSV-T-01
+              @pending-implementation
+              Scenario: 未実装
+                Given 何か
+            """
+        )
+        feature_b = dedent(
+            """
+            Feature: B
+              # RSV-T-01
+              Scenario: 重複
+                Given 何か
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature_a)
+        write(self.root / "projects" / "reservation-system" / "contracts" / "b.feature", feature_b)
+        govlint.check_scenario_ids()
+        self.assertTrue(any("定義が" in e and "重複している" in e for e in govlint.errors))
+
+
 # ---------------------------------------------------------------- 契約のステータス（meta/adr/0043）
 class TestCheckContractStatus(GovlintTestCase):
     def _feature(self, status_line: str) -> str:

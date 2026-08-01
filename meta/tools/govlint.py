@@ -9,6 +9,7 @@
   [REPORT] 未対応FRの棚卸し
   [REPORT] 提案中ADRの棚卸し   … status: 提案中 のまま滞留しているADR（meta/adr/0035）
   [REPORT] 承認待ち契約の棚卸し … ステータス: 承認待ち のまま残っている契約（meta/adr/0043）
+  [REPORT] 実装待ちシナリオの棚卸し … @pending-implementation が付いたままのシナリオ（FR-014）
 
 終了コード: ERRORが1件でもあれば1、なければ0（REPORTは0のまま）。
 
@@ -308,6 +309,77 @@ def _definitions(text: str) -> set[str]:
     return set(DEFINE_COMMENT_RE.findall(text)) | set(DEFINE_TABLE_RE.findall(text))
 
 
+# 実装待ちの印（friction-log FR-014）。契約(.feature)だけを実装より先にmainへ置けるようにする。
+# govlint(L0)のシナリオID参照整合は緩めない——このタグが付いたシナリオも「定義済み」のまま扱う
+# （API仕様からの参照は今まで通り解決できる）。タグが担うのはCucumber(L4)側の実行対象からの除外
+# （build.gradleのacceptanceTestタスクが `cucumber.filter.tags` で読む）であり、govlintはそれを
+# 「実装待ちシナリオの棚卸し」としてREPORTするだけでERRORにはしない（実装待ちは正当な状態であり、
+# ERROR化すると回避のために印を外す誘因が生まれる。meta/adr/0035のreport_pending_adrsと同型）。
+PENDING_SCENARIO_TAG = "@pending-implementation"
+# タグ行: 1つ以上の `@xxx` トークンだけからなる行（Gherkinのタグはキーワード行の直前に、空行・
+# コメントを挟んで置ける）。
+TAG_LINE_RE = re.compile(r"^\s*(@[\w-]+(?:\s+@[\w-]+)*)\s*$")
+# シナリオの開始行。Scenario Outlineを先に判定する（"Scenario Outline:"は"Scenario:"にもマッチし
+# うる接頭辞ではないが、意図を明示するため先に書く）。
+SCENARIO_KEYWORD_RE = re.compile(r"^\s*(?:Scenario Outline|Scenario):")
+# ブロック境界: 次のScenario系・Rule・Featureの開始行。Examplesは境界にしない
+# （Scenario OutlineのExamples表はそのシナリオのブロックに含める必要があるため）。
+BLOCK_BOUNDARY_RE = re.compile(r"^\s*(?:Scenario Outline|Scenario|Rule|Feature):")
+
+
+def _pending_scenario_ranges(text: str) -> list[tuple[int, int]]:
+    """PENDING_SCENARIO_TAGが直前に付いているScenario/Scenario Outlineブロックの(開始, 終了)文字位置。
+
+    タグ行からScenario系キーワード行までの間に許すのはコメント行だけ（空行や他の行があれば
+    タグはそのシナリオを指していないと判断し打ち切る）。順序はどちらでもよい——
+    `# RSV-T-01` → `@pending-implementation` → `Scenario:` のように、ID定義コメントの後にタグを
+    置く運用を想定するが、タグを先に置いても検出する。
+    """
+    lines = text.split("\n")
+    offsets: list[int] = []
+    pos = 0
+    for line in lines:
+        offsets.append(pos)
+        pos += len(line) + 1
+
+    ranges: list[tuple[int, int]] = []
+    for i, line in enumerate(lines):
+        if not SCENARIO_KEYWORD_RE.match(line):
+            continue
+        pending = False
+        top = i
+        j = i - 1
+        while j >= 0:
+            if lines[j].strip().startswith("#"):
+                top = j
+                j -= 1
+                continue
+            m = TAG_LINE_RE.match(lines[j])
+            if m:
+                if PENDING_SCENARIO_TAG in m.group(1).split():
+                    pending = True
+                top = j
+                j -= 1
+                continue
+            break
+        if not pending:
+            continue
+        k = i + 1
+        while k < len(lines) and not BLOCK_BOUNDARY_RE.match(lines[k]):
+            k += 1
+        end = offsets[k] if k < len(lines) else len(text)
+        ranges.append((offsets[top], end))
+    return ranges
+
+
+def _pending_definitions(text: str) -> set[str]:
+    """PENDING_SCENARIO_TAGが付いたブロック内で定義されているシナリオIDの集合。"""
+    ids: set[str] = set()
+    for start, end in _pending_scenario_ranges(text):
+        ids |= _definitions(text[start:end])
+    return ids
+
+
 # 契約(.feature)の承認ステータス（meta/adr/0043）。ADRのfrontmatterと違い、契約は行コメントで
 # ステータスを持つため機械検証されていなかった。結果、承認済みの契約が「承認待ち」のまま残る
 # ドリフトが起きた（FR-015と同じ機構——起草時は「承認待ち」と書くしかなく、承認行為はPRのマージで、
@@ -357,6 +429,10 @@ def check_scenario_ids() -> None:
     定義と参照を区別する: 定義はIDがその行の主語であるコメント行かExamples表の第1セル。
     prose中の言及（例:「最小予約時間(30分、RSV-C-05)との相互作用」）は参照であって定義ではない。
 
+    実装待ち（PENDING_SCENARIO_TAG）が付いたシナリオも「定義済み」のまま扱う（参照整合は緩めない。
+    FR-014）。加えて、実装待ちのまま残っているシナリオをREPORTで棚卸しする（ERRORにはしない —
+    実装待ちは正当な状態であり、ERROR化すると印を外す誘因が生まれる）。
+
     **名前空間はリポジトリ全体で1つとする**（meta/adr/0038）。旧実装は `projects/<p>/contracts`
     ディレクトリ単位で閉じていたため、consumer-driven contract（meta/adr/0023）や契約SSoT
     （meta/adr/0025）が正当と認めるクロスプロジェクト参照——たとえばフロントの契約が
@@ -367,6 +443,7 @@ def check_scenario_ids() -> None:
     defined: dict[str, str] = {}
     retired: set[str] = set()
     texts: dict[str, str] = {}
+    pending: dict[str, str] = {}
 
     for contracts in sorted((ROOT / "projects").glob("*/contracts")):
         for feature in sorted(contracts.glob("*.feature")):
@@ -379,6 +456,8 @@ def check_scenario_ids() -> None:
                     errors.append(f"{rel}: シナリオID {sid} の定義が {defined[sid]} と重複している")
                     continue
                 defined[sid] = rel
+            for sid in sorted(_pending_definitions(text)):
+                pending.setdefault(sid, rel)
         for spec in sorted(contracts.glob("*.yaml")):
             texts[spec.relative_to(ROOT).as_posix()] = spec.read_text(encoding="utf-8")
 
@@ -392,6 +471,14 @@ def check_scenario_ids() -> None:
         for sid in sorted(set(SCENARIO_ID_RE.findall(text))):
             if sid not in defined and sid not in retired:
                 errors.append(f"{rel}: 参照しているシナリオID {sid} が どの.featureにも定義されていない")
+
+    if pending:
+        reports.append(
+            f"実装待ち（{PENDING_SCENARIO_TAG}）のまま残っているシナリオ {len(pending)}件"
+            "（実装スライスで消化されているか、契約だけの意図的な先行下書きかを判断すること）"
+        )
+        for sid in sorted(pending):
+            reports.append(f"  実装待ち: {sid}（{pending[sid]}）")
 
 
 # ---------------------------------------------------------------- main
