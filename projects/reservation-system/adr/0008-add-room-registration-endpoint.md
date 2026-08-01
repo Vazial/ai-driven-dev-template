@@ -1,9 +1,9 @@
 ---
 id: 0008
 scope: project/reservation-system
-status: 提案中
+status: 承認済み
 date: 2026-08-01
-approved_by: null
+approved_by: "本PRのマージをもって承認（ADR-0035 方式(i)。契約 reservation-room-registration.feature と同時に承認される＝断面①。承認しない場合はマージしないこと）"
 supersedes: []
 superseded_by: null
 relates_to: []
