@@ -676,6 +676,87 @@ class TestCheckScenarioIds(GovlintTestCase):
         self.assertTrue(any("RSV-A-01" in e and "重複している" in e for e in govlint.errors))
 
 
+# ---------------------------------------------------------------- 契約のステータス（meta/adr/0043）
+class TestCheckContractStatus(GovlintTestCase):
+    def _feature(self, status_line: str) -> str:
+        return dedent(
+            f"""
+            # 会議室予約 受け入れシナリオ — サンプル
+            {status_line}
+
+            Feature: サンプル
+              # RSV-A-01
+              Given 何か
+            """
+        )
+
+    def test_approved_with_date_is_accepted(self) -> None:
+        write(
+            self.root / "projects" / "reservation-system" / "contracts" / "a.feature",
+            self._feature("# ステータス: 承認済み(2026-07-16) — このファイルが正式な仕様"),
+        )
+        govlint.check_contract_status()
+        self.assertEqual(govlint.errors, [])
+        self.assertEqual(govlint.reports, [])
+
+    def test_pending_is_reported_not_error(self) -> None:
+        """承認すべきかは意味判定なのでERROR化しない（ADR-0035が提案中ADRをREPORTに留めたのと同じ）。"""
+        write(
+            self.root / "projects" / "reservation-system" / "contracts" / "a.feature",
+            self._feature("# ステータス: 承認待ち(人間が承認すると正式な仕様になる)"),
+        )
+        govlint.check_contract_status()
+        self.assertEqual(govlint.errors, [])
+        joined = "\n".join(govlint.reports)
+        self.assertIn("承認待ちのまま残っている契約 1本", joined)
+        self.assertIn("a.feature", joined)
+
+    def test_missing_status_line_is_error(self) -> None:
+        """ステータス行が無いと「拘束力を持つのか」を読み手が判別できない。機械が確定できるのでERROR。"""
+        write(
+            self.root / "projects" / "reservation-system" / "contracts" / "a.feature",
+            dedent(
+                """
+                # 会議室予約 受け入れシナリオ — サンプル
+
+                Feature: サンプル
+                  # RSV-A-01
+                  Given 何か
+                """
+            ),
+        )
+        govlint.check_contract_status()
+        self.assertTrue(any("ステータス行が無いか形式が不正" in e for e in govlint.errors))
+
+    def test_approved_without_date_is_error(self) -> None:
+        """「承認済み」だけで日付が無いと、いつの承認かを追えない。"""
+        write(
+            self.root / "projects" / "reservation-system" / "contracts" / "a.feature",
+            self._feature("# ステータス: 承認済み — 日付なし"),
+        )
+        govlint.check_contract_status()
+        self.assertTrue(any("ステータス行が無いか形式が不正" in e for e in govlint.errors))
+
+    def test_multiple_projects_are_scanned(self) -> None:
+        write(
+            self.root / "projects" / "reservation-system" / "contracts" / "a.feature",
+            self._feature("# ステータス: 承認済み(2026-07-16) — 正式な仕様"),
+        )
+        write(
+            self.root / "projects" / "reservation-frontend" / "contracts" / "f.feature",
+            self._feature("# ステータス: 承認待ち — 起草中"),
+        )
+        govlint.check_contract_status()
+        self.assertEqual(govlint.errors, [])
+        self.assertTrue(any("f.feature" in r for r in govlint.reports))
+        self.assertFalse(any("a.feature" in r for r in govlint.reports))
+
+    def test_no_contracts_dir_is_silently_skipped(self) -> None:
+        govlint.check_contract_status()
+        self.assertEqual(govlint.errors, [])
+        self.assertEqual(govlint.reports, [])
+
+
 # ---------------------------------------------------------------- main（統合）
 class TestMain(GovlintTestCase):
     def test_clean_repo_returns_zero(self) -> None:
