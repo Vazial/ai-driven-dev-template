@@ -72,8 +72,14 @@ final class RoomListDsl {
                 .containsExactly(roomIdByName.get(firstName), roomIdByName.get(secondName));
     }
 
-    /** 指定の会議室が、期待する営業時間・定員で一覧に含まれることを検証する。 */
+    /**
+     * 指定の会議室が、期待する営業時間・定員で一覧に含まれることを検証する。
+     * 呼び出し前に一覧を明示的に取得済みとは限らない(RSV-T-01は「一覧を確認する」Whenを持たず、
+     * 登録直後にこのThenだけで一覧への反映を確認する)ため、このメソッド自身が最新の一覧を取得する。
+     * RSV-L-01(事前にWhenで一覧取得済み)から呼ばれる場合も、状態を変えない再取得のため結果は変わらない。
+     */
     void assertRoomIncluded(String roomName, String expectedStart, String expectedEnd, int expectedCapacity) {
+        listRooms();
         assertResponseValid();
         JsonPath body = lastResponse.jsonPath();
         List<String> names = body.getList("rooms.name", String.class);

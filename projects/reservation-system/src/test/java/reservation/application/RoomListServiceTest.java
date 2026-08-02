@@ -74,5 +74,16 @@ class RoomListServiceTest {
         public List<Room> findAll() {
             return List.copyOf(store);
         }
+
+        @Override
+        public Optional<Room> findByName(String name) {
+            return store.stream().filter(room -> room.name().equals(name)).findFirst();
+        }
+
+        @Override
+        public Room save(Room room) {
+            store.add(room);
+            return room;
+        }
     }
 }
