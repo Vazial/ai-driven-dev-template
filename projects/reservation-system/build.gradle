@@ -1,7 +1,7 @@
 // ビルド骨格 — **developerの領分**（meta/agents.md §6・meta/adr/0014: 検証インフラのうちロジックを
 // 持つもの＝build.gradle・govlint等はdeveloperがテスト付きで作る。orchestratorは発見・routingに留め、
 // 検証インフラの問題を自分で直さない）。testerは変更せずエスカレーションする。
-// 注記(meta/adr/0044): 旧ヘッダは「orchestratorが管理する。developer/testerは原則ここを変更しない」と
+// 注記(meta/adr/0045): 旧ヘッダは「orchestratorが管理する。developer/testerは原則ここを変更しない」と
 // していたが、これは meta/agents.md §6 と矛盾していた。§6を正として是正した。
 plugins {
     id 'java'
