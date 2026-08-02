@@ -643,7 +643,7 @@ principles: [P-01, P-04, P-08]
 ```yaml
 id: FR-023
 date: 2026-08-02
-found_at: L0
+found_at: AI
 slice: RSV-T（会議室の登録）の昇格前検証
 agents: [orchestrator]
 cause_category: 既存の規程を確認せず採番した
