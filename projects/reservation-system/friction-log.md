@@ -300,7 +300,7 @@ slice: RSV-L
 agents: [architect, tester]
 cause_category: 検証レイヤーの構造的結合
 cause_key: scenario-id-couples-l0-and-l4
-pushed_to: [meta/adr/0044-contract-first-pending-scenarios.md]
+pushed_to: [meta/adr/0045-contract-first-pending-scenarios.md]
 status: 対応済み
 principles: [P-08, P-10]
 ```
