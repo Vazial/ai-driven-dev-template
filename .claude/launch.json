@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "reservation-frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "projects/reservation-frontend", "run", "dev"],
+      "port": 5173
+    },
+    {
+      "name": "reservation-frontend-real-api",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "projects/reservation-frontend", "run", "dev"],
+      "port": 5173,
+      "env": {
+        "VITE_USE_REAL_ROOMS_API": "true",
+        "VITE_USE_REAL_AVAILABILITY_API": "true",
+        "VITE_USE_REAL_RESERVATIONS_API": "true",
+        "VITE_USE_REAL_RESERVATIONS_CANCEL_API": "true"
+      }
+    }
+  ]
+}

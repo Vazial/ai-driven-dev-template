@@ -9,42 +9,39 @@ AI駆動開発のメタテンプレート。正しさを機械検証（L0〜L5�
 
 **ブランチ運用（meta/adr/0028、承認済み）**: `main`＝リリース可能。`project/<project>`＝各プロジェクトの長期統合ブランチ。スライスは `project/<project>` から `<type>/<project>-<slice>` を切りPRで戻す。`project/<project>` の作成＋保護rulesetは**AIが `gh` の admin権限で自動作成**する（人間はchatでauthorize＋結果確認）。`meta/**` の共有ガバナンス変更は例外的に base=main（ADR-0026直列化）。
 
-**直近で確定したメタ判断**:
-- meta/adr/0031（承認済み）: クロスプロジェクト結合CIの置き場 `ci-integration.yml`（両プロジェクトpaths和集合で起動）を定義。必須方針は緩い運用（案i）から。実ジョブの中身はスライスに委譲。
-- meta/adr/0032（承認済み）: 配線・結合の検証は機械化する。走破（ADR-0024）は「未知探索」と「意味理解の要る検証（control surface・UX・L5）」に限り、**安定した回帰ゲートにはしない**。**規程本体への織り込み完了**（`meta/verification.md` L3詳細＋§3.4＋L5手段＋対応表、`meta/guardrails.md` §2、`meta/agents.md` 断面②検証）。
-- meta/adr/0033（承認済み）: activeContextを2階層に（ルート＝テンプレ管理・全プロジェクト・跨り／プロジェクト内＝そのプロジェクト）。本ファイルがルート。
-- meta/adr/0034（承認済み）: activeContext更新をPRテンプレDoDの必須チェック（関所）に載せ、accretion（追記肥大）を禁じ、手書き「最終更新」日付を廃止（gitが持つ）。
-- meta/adr/0036（承認済み）: `.claude/agents/<role>.md` をClaude/Codex共通の唯一の役割定義原本とし、重複していた `meta/agents/<role>.md` を廃止した。runtime別のモデル選択は `meta/agent-runtime-mapping.md` が持つ。
+**確定したメタ判断（ADR。詳細は各ADR本体。ここでは1行に留める）**:
+- 0031 結合CIの置き場 `ci-integration.yml` ／ 0032 配線・結合は機械検証し走破は探索と意味理解に限る ／ 0033 activeContext 2階層 ／ 0034 activeContext更新をマージゲートに載せaccretionを禁じる
+- 0035 ADRの承認記録をPR1本で閉じる（方式(i)/(ii)＋提案中の棚卸しREPORT） ／ 0036 `.claude/agents` を役割定義のSSoT（Codex） ／ 0037 CodexのホストCLI確認手順（Codex） ／ 0038 シナリオID検査の3欠陥（ASCII境界・定義形式・全体名前空間）
+- 0039 orchestratorと役割の境界（検証の申告／技法を指定しない／reviewerは緑後） ／ 0040 機密ガードレールの守備範囲（Write対称化・gitignore・`env.example`） ／ 0041 PR種別ごとの承認事項 ／ 0042 デプロイは当面着手しない
+- 0043 契約の承認記録もPR1本で閉じる ／ 0044 Codexの検証を弱めず冗長作業を減らす（Codex） ／ 0045 契約だけを先にmainへ載せられるようにする（`@pending-implementation`）
 
-**進行中のメタ論点・宿題**:
-- meta/adr/0039（承認済み）: **orchestratorと役割の境界**。役割は自分の成果物に適用される機械検証を申告する（実行手段が無いなら「無い」と言う。検証していないことを問題なしとして報告しない）／orchestratorは役割の判断領域に属する**技法を指定しない**（事実は供給するが手段は命令しない）／**reviewerは全ゲートが緑になってから起動する**（標準フローの並びを 5→CI緑→reviewer→承認 に改訂済み）。**役割へのBash付与は行わない**（ADR-0021の論拠を維持。摩擦が続いたら限定の実効性を先に検証した上で再検討）。FR-008・FR-018が一次データ。`meta/agents.md` §4・6への反映は同一PRで実施済み。
-- meta/adr/0040（承認済み）: **機密ガードレールの守備範囲を直した**。3つの穴——`Write` が1件も deny されていなかった（読めず編集もできないファイルを丸ごと上書き・新規作成できた）／`.gitignore` に機密の記述が1件も無かった（`.env.example` 自身が「`.env.local` はgitignore対象」と**存在しない保護を案内していた**）／`.env.*` が広すぎて `.env.example` を巻き込み保守が2スライス分止まっていた。決定は、テンプレートを `.env*` の名前空間から出す（`.env.example`→**`env.example`**）／`Read`・`Edit`・`Write` を対称に deny し `./**/.env*` へ拡張／`.gitignore` に機密の実ファイルを追加。**default-deny は緩めていない**。`meta/guardrails.md` §3 も同一PRで改訂。FR-019が一次データ。
-- meta/adr/0041（承認済み）: **PR種別ごとに人間が何を判断するかを明示する**。判定基準は「そのPRに人間がまだしていない決定が含まれるか」＝**PRの形（base/head）ではない**。スライス・metaは承認事項あり、**昇格は承認事項なし**（中身は承認済みコミットのみ）、同期は**衝突解決を含むときのみ**判断が要る。**機械検証はどの種別でも省略しない**。PRテンプレ冒頭に種別選択を追加し `meta/guardrails.md` §2 に条文化（同一PRで実施）。FR-020が一次データ。
-- meta/adr/0043（承認済み）: **契約の承認記録もPR1本で閉じる**。ADR-0035 がADRについて直した機構が契約（`.feature`）では直っておらず、しかも契約のステータスは行コメントで**機械検証の対象外**だった。govlintに検査を追加（形式不正はERROR／承認待ちはREPORTで棚卸し、文面に「この契約の上に実装が載っていないかも確認すること」を含む）。FR-021が一次データ（cause_keyは**FR-015と同じ `record-update-needs-second-pr` を意図的に再利用**＝同一機構の2回目）。
-- meta/adr/0044（本PRのマージで承認）: **Codexの検証は弱めない**。L1〜L3の事前検証、既存のL4フロー、GitHub Actionsの独立証跡を維持したまま、無変更な成功ゲートの再実行・Browserの反復操作・成功時の全量出力を避ける。Browserは画面提示・意味理解を要するUX確認・視覚的不具合調査に限定し、Codex専用の`AGENTS.md`へだけ投影する。共有role定義、runtime mapping、CIは変更しない。
-- **RFE-A・RFE-B は契約が未承認のまま実装が載っている**（**人間の判断待ち**）: RFE-B は契約と実装が同一コミット（`f1dac2a`、ラベルは断面②）で ADR-0022 の断面①→②の順序を通っていない。RFE-A は「設計記録」のdocsコミットで導入。**フロントで契約承認点が機能したのは RFE-C（PR #49）が初めて**。ADR-0043 は遡って承認せず、govlintのREPORTで可視化し続ける方針。**未承認の契約に対する実装を止める機械的な仕組みは無い**（PRテンプレのチェックは自己申告）——再発したら構造で直す。
-- meta/adr/0045（承認済み）: **契約だけを先にmainへ載せられるようにした**。未実装シナリオに `@pending-implementation` タグを付け L4 の実行対象から外す／govlint が印を棚卸しREPORTに出す（ERROR化しない——罰すると印を外す誘因が生まれ元の問題に戻る）／**L0の参照整合は一切緩めない**。これで **ADR-0022 の断面①（作る前に契約を承認）が初めて実際に機能する**。FR-014（10日間「未対応」）を対応済みに更新。あわせて `build.gradle` のヘッダが `meta/agents.md` §6 と矛盾していたのを是正（§6を正＝developerの領分）。**ADR-0043 の「RFE-B が断面①→②を通っていない」という帰責も訂正**——機械的に不可能だったのであり規律違反ではなかった。
-- **FR-022（未対応・人間判断待ち）: orchestratorが検証インフラを自分で直す違反が4回目**。`meta/agents.md` §6 が「検証インフラの問題は発見即修正せず委譲する」と**明文で禁じている**のに、ADR-0038・0043 で govlint を自分で書いた。cause_key `orchestrator-as-substantive-source` は通算4回（FR-006/009/008/022）。**明文の禁止が4回破られた以上、規程への書き足しでは直らない**。構造で止める候補は (a) orchestratorのツール権限から `meta/tools/**`・`build.gradle` の Edit/Write を deny（ADR-0040の権限機構は実効性を実測済み）、(b) PRテンプレの関所に載せる。**設計自体が規程変更なので人間判断が要る**。
-- **権限機構の性質（ADR-0040で実測・確定）**: **deny は allow で上書きできず、除外構文（`!`）も無い**。設定変更はセッション中に反映される（対照実験で確認済み）。したがって「denyに例外を作る」形のホワイトリストは表現できず、**機密でないものを危険地帯の外に置く**しかない。再検証は不要。
-- **`Bash` の deny が prefix 一致で回避できる**（ADR-0039帰結で記録、**未対応**）: `Bash(git reset --hard*)` は `git reset -q --hard` を止められない（実測で通った）。ADR-0040 は `Read`/`Edit`/`Write` のみ扱い、`Bash` 側は引数の組み合わせが爆発するため別途設計が要るとして残した。
-- **govlintのcause_key再出現検出がfriction-logファイル単位**（**未対応**）: プロジェクトを跨いだ再出現を検出できない。`orchestrator-as-substantive-source` はreservation-system側2回・reservation-frontend側1回＝実質3回目だが機械は2回目までしか報告しない。構造的欠陥のシグナルを取り逃す穴。
-- **採番衝突（Codexとの並行開発）が2回起きた**（**未対応**、FR-023）: 1回目（2026-07-30、ADR-0037＋FR-017）は**オープンPRが空の状態からCodexが後発でマージしたもので、ADR-0026を守っても防げない競合**。2回目（2026-08-02、ADR-0044）は**規程を守らなかった**——ADR-0026 が「mainだけでなくオープン中のPRも確認してから採番する」と明記しているのに、スライスブランチ上でその場でADRを書き始めて確認手順を飛ばした（0045へ振り直して解消）。**なおFRの採番にはADR-0026相当の規定がそもそも無い**（これは別論点）。**govlintの採番衝突検出は2回とも昇格前に捕まえており、mainは汚れていない**——検出機構は正しく働いているので、「採番前の確認」を強制する仕組みを足すか現状で回すかは費用対効果の判断。
-- **CodexのホストCLI確認手順（ADR-0037、承認済み・マージ済み）**: 通常サンドボックス内のPowerShellで`gh`を発見できなかっただけでホスト環境にも存在しないと誤判定した。利用不能報告の前にホスト側標準探索または既知の実体パスを読み取り専用で確認し、実体・認証・権限・networkを分離して報告する。`AGENTS.md`へのCodex固有手順とFR-017への記録も反映済み。
-- meta/adr/0035（承認済み）: ADRの承認記録をPR1本で閉じる。ADRを含むPRは承認方式を二択で明示し（**(i)マージ＝承認**＝起草時に `status: 承認済み` ＋ `approved_by` を書く・既定／**(ii)記録のみ・承認は後日**＝意図した保留に限る）、滞留はgovlintの `[REPORT] 提案中ADRの棚卸し`（経過日数つき）で可視化する。ERROR化はしない（意味判定。P-04）。FR-015が一次データ。
-- meta/adr/0042（承認済み）: **デプロイには当面着手しない**（人間裁定 2026-07-31:「デプロイはそもそもやるかから考えたい。今はする気はない。**ローカルで予約システムとして完成形にもっていくまでは考慮しなくてよい**」）。論点5＝ローカルのみ／論点6＝最小の一歩と回答されたが、着手自体を見送るため**論点1〜4は先送り確定**。ADRは破棄せず、再開判断が出た時点の出発点として残す。記録された最大の論点は「**現在の『越境なし』は Vite dev server proxy に依存しており本番では成立しない**」——`vite build` の成果物に proxy は含まれず、フロントの実fetchは `baseURL` を持たない固定相対パス（同一オリジン前提の設計判断）。別オリジン＋CORSを選ぶと `reservation-frontend/adr/0009 決定2` が不採用にした baseURL 設計が要り、バックエンドへのCORS追加＝**越境**（meta/adr/0023）が発生する。
-- **次の方向は「ローカルで予約システムとして完成形にもっていく」**（人間裁定 2026-07-31）。**何が揃えば完成形かは未整理**——これを定めるのが次の作業。デプロイ・案C（軽量認証）はこの完成形の定義次第で範囲に入るか決まる。
-- **提案中のまま滞留しているADRが10本ある**（2026-07-29時点、最古11日。govlintのREPORTに毎回出る）。ADR-0035は一括承認しない方針のため、**人間が個別に判断する必要がある**。優先度が高いのは規程本体がすでに依存している2本——`meta/adr/0026`（ブランチ運用・CI構成を `meta/guardrails.md` が根拠にしている）と `meta/adr/0024`（走破。承認済みの `0032` が前提にしている）。
-- meta/adr/0038（承認済み）: govlintのシナリオID検査の3欠陥を修正。参照の境界を**ASCIIで定める**（`\b` はPythonの `\w` がUnicodeを含むため日本語の助詞が続く参照を検出しなかった）／定義は**IDが行の主語**（続くのが行末かコロン）のときだけ（行頭の散文が実在しない定義を生んでいた）／**名前空間をリポジトリ全体で1つに**（ADR-0023/0025が認めるクロスプロジェクト参照が解決できなかった）。3点は互いに依存し同時に入れる必要があった。既存の定義36行は無変更で通り、重複検出が全体に効くため検査は**強くなる**。FR-018が一次データ。
-- **採番の衝突回避が全体の責任になった**（ADR-0038決定3の帰結）: シナリオIDの名前空間がリポジトリ全体で1つになったため、同じIDを別プロジェクトで定義するとL0エラーになる。現状はプレフィックスがスライス固有（RFE-A/B/C・RSV-A/C/K/L/R）で実害なしだが、**新プロジェクト追加時にプレフィックスの重複を避ける**必要がある。
-- 結合CIカテゴリの記述（ADR-0031帰結）の `meta/guardrails.md` §2「CI構成」への反映は、`ci-integration.yml` の実ファイルを作る実装スライスとセットで行う（ADR-0031が明示的にそう定めている）。
-- per-project activeContextのスリム化（2階層モデルへ・ADR-0033/0034）: reservation-frontendは実施済み（PR #39）。**reservation-systemは未実施**（プロジェクトブランチ未作成のため、次回作業時にブランチ作成と同時）。
+**未対応の宿題（open のものだけ。完了した判断は上に畳んだ）**:
+
+*人間の判断待ち*
+- **FR-022: orchestratorが検証インフラを自分で直す違反が4回目**。`meta/agents.md` §6 が明文で禁じているのに ADR-0038・0043 で govlint を自分で書いた。cause_key `orchestrator-as-substantive-source` は通算4回（FR-006/009/008/022）。**明文の禁止が4回破られた以上、規程への書き足しでは直らない**。構造で止める候補は (a) orchestratorのツール権限から `meta/tools/**`・`build.gradle` の Edit/Write を deny（ADR-0040で権限機構の実効性は実測済み）、(b) PRテンプレの関所に載せる。**設計自体が規程変更なので人間判断が要る**
+- **RFE-A・RFE-B の契約が未承認のまま実装が載っている**。RFE-B は契約と実装が同一コミット（`f1dac2a`）だが、これは規律違反ではなく**当時は機械的に契約先行が不可能だった**（ADR-0045で解消）。ADR-0043 は遡って承認せず govlint のREPORTで可視化し続ける方針。**未承認の契約に対する実装を止める機械的な仕組みは無い**（PRテンプレのチェックは自己申告）
+- **RSV-L の監査が未実施**（`reviews/audit-rsv-l.md` が存在しない）。RSV-Tの監査でreviewerが独立に再発見した。`activeContext` に記録済みの規程違反（4承認点の1つを飛ばした）と一致
+- **提案中のまま滞留しているADRが10本**（govlintのREPORTに毎回出る）。一括承認しない方針（ADR-0035決定3）のため個別判断が要る。規程本体が既に依存している2本が優先——`meta/adr/0026`（`guardrails.md` の根拠）と `meta/adr/0024`（承認済みの `0032` が前提にしている）
+
+*機械で塞げていない穴*
+- **`Bash` の deny が prefix 一致で回避できる**: `Bash(git reset --hard*)` は `git reset -q --hard` を止められない（実測）。ADR-0040 は `Read`/`Edit`/`Write` のみ扱い、`Bash` は引数の組み合わせが爆発するため別途設計が要る
+- **govlint の cause_key 再出現検出が friction-log ファイル単位**: プロジェクトを跨いだ再出現を検出できない。`orchestrator-as-substantive-source` は実質4回だが機械はファイルごとにしか数えない
+- **採番衝突が2回**（FR-023）: 1回目（ADR-0037）は規程を守っても防げない競合、2回目（ADR-0044）は**ADR-0026を守らなかった**（0045へ振り直して解消）。FRの採番にはADR-0026相当の規定がそもそも無い。**ただしgovlintは2回とも昇格前に捕まえており main は汚れていない**——強制する仕組みを足すか検出で足りると割り切るかは費用対効果の判断
+
+*実装待ち（P-05: 要るようになってから）*
+- **結合CI `ci-integration.yml` は未実装**（ADR-0031が置き場だけ定義）。`meta/guardrails.md` §2「CI構成」への反映は実ファイルを作る実装スライスとセットで行う
+- **reservation-system の activeContext スリム化**（2階層モデルへ・ADR-0033/0034）: `project/reservation-system` は作成済みなので、次に同プロジェクトを触るときに実施できる
+
+*留意事項（宿題ではないが忘れると事故る）*
+- **シナリオIDのプレフィックスはリポジトリ全体で一意**（ADR-0038決定3）。新プロジェクト追加時に重複を避ける。使用中: RFE-A/B/C・RSV-A/C/K/L/R/T・TDR（Codex予約）
+- **権限機構の性質（ADR-0040で実測・確定）**: deny は allow で上書きできず、除外構文（`!`）も無い。設定変更はセッション中に反映される。**再検証は不要**
 
 ## 全プロジェクトの一覧・状態
 
 | プロジェクト | 担当 | 状態 | 詳細 |
 |---|---|---|---|
-| reservation-system（会議室予約バックエンド） | Claude | 垂直スライス5本（RSV-C/K/A/R/L）完了・API一通り緑・main。現在の新規作業なし | `projects/reservation-system/activeContext.md` |
-| reservation-frontend（会議室予約フロント） | Claude | availability実接続完了（PR #35、`project/reservation-frontend`）。rooms＋availability両方が実API opt-in。設計フェーズの宿題（design-preview隔離・骨格記録等）は残る | `projects/reservation-frontend/activeContext.md` |
+| reservation-system（会議室予約バックエンド） | Claude | 垂直スライス**6本**（RSV-C/K/A/R/L/**T**）完了・main。RSV-Tで `POST /rooms`（会議室登録）を追加し、**通常プロファイルでもループが成立**するようになった。`project/reservation-system` 作成済み。**新規作業なし** | `projects/reservation-system/activeContext.md` |
+| reservation-frontend（会議室予約フロント） | Claude | RFE-A/B/C 実装済み。**4本すべて（rooms・availability・予約作成・キャンセル）が実API opt-in**。走破で実バックエンドとの通しの動作を確認済み。**新規作業なし**。宿題: 骨格記録（adr/0021）・ADR-0004/0005承認・**RFE-A/Bの契約が未承認**（下記） | `projects/reservation-frontend/activeContext.md` |
 | toyama-weekend-radar | Codex | 休止。foundationは`project/toyama-weekend-radar`に保持し、Dining Radarへ注力する | 同ブランチ上のactiveContext |
 | toyama-dining-radar | Codex | 統合ブランチと保護ruleset作成済み。富山県庁周辺の月例ランチ会向け店舗提案のfoundation開始待ち | foundationスライスで`projects/toyama-dining-radar/activeContext.md`を配置 |
 
