@@ -300,8 +300,8 @@ slice: RSV-L
 agents: [architect, tester]
 cause_category: 検証レイヤーの構造的結合
 cause_key: scenario-id-couples-l0-and-l4
-pushed_to: []
-status: 未対応
+pushed_to: [meta/adr/0045-contract-first-pending-scenarios.md]
+status: 対応済み
 principles: [P-08, P-10]
 ```
 
@@ -596,6 +596,84 @@ principles: [P-01, P-04, P-08, P-10]
   潜んでいないかを問うきっかけになる）。なお本FRは「承認されたかを可視化する」までしか解決していない。
   **未承認の契約に対する実装を止める機械的な仕組みは無い**（PRテンプレのチェックは自己申告）。
   同じ形が再発したら、そこを構造で直す判断に進む
+
+---
+
+## FR-022: orchestratorが検証インフラ（govlint）を自分で直した。「発見即修正しない」という明文の禁止に違反（同機構4回目）
+
+```yaml
+id: FR-022
+date: 2026-08-01
+found_at: AI
+slice: RSV-T（会議室の登録）の契約先行を可能にする作業
+agents: [orchestrator]
+cause_category: orchestratorが役割の領分に踏み込んだ
+cause_key: orchestrator-as-substantive-source
+pushed_to: []
+status: 未対応
+principles: [P-01, P-04, P-08]
+```
+
+- 事象: `meta/agents.md` §6（meta/adr/0014）は「**検証インフラのうちロジックを持つもの（build.gradle・
+  govlint等）はdeveloperの領分（テスト付き）**」「**検証インフラの問題は発見即修正（自己採点）せず、
+  修正をdeveloper/testerに委譲してフローに載せる**」と明文で定めている。にもかかわらず orchestrator は
+  **ADR-0038（シナリオID検査の3欠陥修正）と ADR-0043（契約ステータスの検査追加）で govlint のコードを
+  自分で書いた**。テストは付けたが、条文が禁じているのは「テスト無しで直すこと」ではなく「自分で直す
+  こと」である
+- 原因の仮説: orchestratorが役割の領分に踏み込んだ — FR-008（技法の指定で役割の判断を奪った）と同じ
+  機構であり、cause_key を再利用した。**これで `orchestrator-as-substantive-source` は4回目**
+  （FR-006・FR-009・FR-008・本FR）。共通するのは「orchestratorは発見の過程で問題の全体像を最もよく
+  把握しているため、そのまま直すのが最短に見える」という誘因である。**発見と修正が地続きであることが
+  構造的な原因**であり、規律の呼びかけでは止まらないことが4回で実証された
+- 押し込み先: **未定（人間判断）**。本FRでは押し込まない。理由: 同じ cause_key が4回出ている以上
+  「規程に書き足す」では直らないことが分かっており（既に明文で禁止されているのに4回起きた）、**構造で
+  止める手段**を設計する必要があるが、その設計自体が meta の規程変更であり人間の判断を要する。候補は
+  (a) orchestratorのツール権限から `meta/tools/**`・`build.gradle` への Edit/Write を deny する
+  （ADR-0040 で使った権限機構は実際に効くことが実測済み）、(b) 発見時に必ず role へ委譲する手順を
+  PRテンプレの関所に載せる、など
+- 補足: 今回 developer に委譲できたのは、**依頼文を書く過程で条文を読み直したから**であり、仕組みが
+  止めたわけではない。**気づいたのは偶然である**——この点が (a) を候補に挙げる根拠になる。なお
+  govlint の cause_key 再出現検出は friction-log ファイル単位のため、本FR（reservation-system側）と
+  FR-008（reservation-frontend側）は跨って集計されない（この検出漏れ自体は別途記録済み）
+
+---
+
+## FR-023: ADR採番の衝突が2回目。1回目は規程を守っても防げない競合だったが、今回は規程を守らなかった
+
+```yaml
+id: FR-023
+date: 2026-08-02
+found_at: AI
+slice: RSV-T（会議室の登録）の昇格前検証
+agents: [orchestrator]
+cause_category: 既存の規程を確認せず採番した
+cause_key: adr-numbering-check-skipped
+pushed_to: []
+status: 未対応
+principles: [P-04, P-08]
+```
+
+- 事象: RSV-T の昇格に向けた試行マージで govlint が
+  `id が scope 内で重複している（meta#0044）` を出した。Codex が main に
+  `meta/adr/0044-codex-efficient-verification-and-browser-use.md` を追加しており、
+  `project/reservation-system` 側の `meta/adr/0044-contract-first-pending-scenarios.md` と
+  衝突していた。Codex 側が既に main に載っているため、こちら（未昇格）を **0045 に振り直した**。
+  ADR本文・ルートactiveContext・ADR-0043の訂正注記・`build.gradle` のヘッダ注記・FR-014 の
+  `pushed_to` の参照をすべて追随させた
+- 原因の仮説: 既存の規程を確認せず採番した — **ADR-0026 は「メタADRの採番は、mainだけでなく
+  オープン中のPRも確認してから番号を取る」と明記している**。ADR-0043 の起草時にはこの確認を実施
+  していた（`gh pr list --state open` を実行）のに、**続く 0044 では飛ばした**。0044 は RSV-T の
+  スライスブランチ上で「その場で」書き始めたため、ADR起草の定型手順（main の最新採番＋オープンPRの
+  確認）を通らなかった。**1回目の衝突（0037、2026-07-30）はオープンPRが空の状態から Codex が後から
+  作成・マージしたもので規程を守っても防げない競合だったが、今回は違う——規程は存在し、守らなかった**
+- 押し込み先: **未定（人間判断）**。候補: (a) ADR起草を「新しいブランチを main から切る」ことと
+  不可分にする（そうすれば採番確認が自然に手順に入る）、(b) govlint の採番衝突検出は既に機能して
+  いるので、**検出は足りている**と割り切り運用で回す。実際、今回も govlint が昇格前に捕まえており
+  **main を汚さずに済んでいる**——検出機構は正しく働いた。「採番前の確認」を強制する仕組みを足すコストと、
+  「衝突しても昇格前に検出できる」現状のコストを比べる判断が要る
+- 補足: ルート activeContext には「**FRの採番にADR-0026相当の規定がない**」が未対応で記録されているが、
+  今回判明したのは逆で、**ADRには規定があるのに守られなかった**という別種の問題である。規定の有無と
+  遵守の有無は別の論点であり、混同しないよう本FRで分けて記録する
 
 ---
 <!--

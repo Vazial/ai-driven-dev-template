@@ -7,11 +7,15 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import reservation.application.RoomNotFoundException;
 import reservation.domain.RejectionReason;
 import reservation.domain.ReservationRejectedException;
+import reservation.domain.RoomRejectedException;
+import reservation.domain.RoomRejectionReason;
 
 /**
  * ドメインの拒否をHTTPへ翻訳する。契約(reservation-api.yaml)の対応:
  * TIME_SLOT_CONFLICT/ALREADY_CANCELLED → 409、NOT_RESERVER → 403、RESERVATION_NOT_FOUND → 404、
  * それ以外の理由コード → 422。どれもProblemResponse形状。
+ * 会議室登録(RSV-T)の拒否(RoomRejectedException)は対象(会議室自身)が異なるため別枠で翻訳する:
+ * ROOM_NAME_DUPLICATE → 409、INVALID_BUSINESS_HOURS → 422(adr/0008決定3/4)。
  */
 @RestControllerAdvice
 public class ApiExceptionHandler {
@@ -41,5 +45,19 @@ public class ApiExceptionHandler {
     public ResponseEntity<ProblemResponse> handleRoomNotFound(RoomNotFoundException e) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(new ProblemResponse("ROOM_NOT_FOUND", e.getMessage()));
+    }
+
+    /** 会議室登録(POST /rooms)の拒否(RSV-T-02/03/04)。 */
+    @ExceptionHandler(RoomRejectedException.class)
+    public ResponseEntity<ProblemResponse> handleRoomRejected(RoomRejectedException e) {
+        return ResponseEntity.status(statusFor(e.reason()))
+                .body(new ProblemResponse(e.reason().name(), e.reason().message()));
+    }
+
+    private static HttpStatus statusFor(RoomRejectionReason reason) {
+        if (reason == RoomRejectionReason.ROOM_NAME_DUPLICATE) {
+            return HttpStatus.CONFLICT;
+        }
+        return HttpStatus.UNPROCESSABLE_ENTITY;
     }
 }

@@ -82,5 +82,16 @@ class RoomRulesServiceTest {
         public List<Room> findAll() {
             return List.copyOf(store.values());
         }
+
+        @Override
+        public Optional<Room> findByName(String name) {
+            return store.values().stream().filter(room -> room.name().equals(name)).findFirst();
+        }
+
+        @Override
+        public Room save(Room room) {
+            store.put(room.id(), room);
+            return room;
+        }
     }
 }
