@@ -609,8 +609,8 @@ slice: RSV-T（会議室の登録）の契約先行を可能にする作業
 agents: [orchestrator]
 cause_category: orchestratorが役割の領分に踏み込んだ
 cause_key: orchestrator-as-substantive-source
-pushed_to: []
-status: 未対応
+pushed_to: [meta/adr/0046-verification-gate-lock.md]
+status: 対応済み
 principles: [P-01, P-04, P-08]
 ```
 
@@ -625,12 +625,20 @@ principles: [P-01, P-04, P-08]
   （FR-006・FR-009・FR-008・本FR）。共通するのは「orchestratorは発見の過程で問題の全体像を最もよく
   把握しているため、そのまま直すのが最短に見える」という誘因である。**発見と修正が地続きであることが
   構造的な原因**であり、規律の呼びかけでは止まらないことが4回で実証された
-- 押し込み先: **未定（人間判断）**。本FRでは押し込まない。理由: 同じ cause_key が4回出ている以上
-  「規程に書き足す」では直らないことが分かっており（既に明文で禁止されているのに4回起きた）、**構造で
-  止める手段**を設計する必要があるが、その設計自体が meta の規程変更であり人間の判断を要する。候補は
-  (a) orchestratorのツール権限から `meta/tools/**`・`build.gradle` への Edit/Write を deny する
-  （ADR-0040 で使った権限機構は実際に効くことが実測済み）、(b) 発見時に必ず role へ委譲する手順を
-  PRテンプレの関所に載せる、など
+- 押し込み先: **`meta/adr/0046`（2026-08-03）**。候補(a)（ツール権限で deny する）を採った。ただし
+  **当初の形のままでは成立しなかった**——設計前の実測で、`.claude/settings.json` の deny は
+  **サブエージェントにも継承される**ことが判明し、orchestrator だけを止めることはパスベースの deny
+  では不可能だと確定した。そこで ADR-0046 は「developer も含めて施錠し、**開錠は人間**、施錠されている
+  ことを **govlint が ERROR で確認**する（開錠したままマージできない）」という形に組み替え、あわせて
+  `meta/permissions.md` の権限表の段差（検証ツール本体をゲートではなく実装として扱っていた行）を正した。
+  候補(b)（PRテンプレの関所）は不採用——自己申告であり、4回破られた明文の禁止をもう1箇所に書き写す
+  だけになるため（ADR-0046 案D）
+- 補足: 今回 developer に委譲できたのは、**依頼文を書く過程で条文を読み直したから**であり、仕組みが
+  止めたわけではない。**気づいたのは偶然である**——この点が (a) を候補に挙げる根拠になった。なお
+  govlint の cause_key 再出現検出は friction-log ファイル単位のため、本FR（reservation-system側）と
+  FR-008（reservation-frontend側）は跨って集計されない（この検出漏れ自体は別途記録済み）
+- **本FRは「対応済み」だが再発可能性は消えていない**（ADR-0046 決定5）。`Bash` 経由の抜け道は残り、
+  deny が効くのは Claude Code だけで Codex には届かない。止められるのは「うっかり」だけである
 - 補足: 今回 developer に委譲できたのは、**依頼文を書く過程で条文を読み直したから**であり、仕組みが
   止めたわけではない。**気づいたのは偶然である**——この点が (a) を候補に挙げる根拠になる。なお
   govlint の cause_key 再出現検出は friction-log ファイル単位のため、本FR（reservation-system側）と

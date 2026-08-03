@@ -155,6 +155,8 @@ agentを起動し成果物を束ねる役（orchestrator）は、4agentのよう
 
 **実質的成果物を自ら作らない（meta/adr/0014）**: orchestratorは発見・routing・機械検証での確認だけを行う。実装コード・steps/dsl・契約はagentが作る。検証インフラのうち、ロジックを持つもの（build.gradle・govlint等）はdeveloperの領分（テスト付き）、薄い宣言的なCIワークフロー（.github/workflows/）のみorchestratorが直接編集してよい（PRのCIで自己検証されるため。ゲート変更は人間承認）。検証インフラの問題は発見即修正（自己採点）せず、修正をdeveloper/testerに委譲してフローに載せる。
 
+**この禁止は明文で4回破られたため、構造で止める側に移した（meta/adr/0046）**: `meta/tools/**` と `build.gradle*` は `.claude/settings.json` の deny で施錠されており、orchestrator も developer も編集できない。変更が要るときは**人間が開錠のコミットを打つ**。施錠されていることは govlint が ERROR で検証するため、**開錠したままではマージできない**。開錠後の実装は従来どおりdeveloperの領分である（本節の帰属は変わらない。変わったのは「書き始める前に人間が一度ゲートを開ける」段が挟まったことだけ）。
+
 **例外（meta/adr/0021）**: designerの(b)外部AI実行は、orchestratorが依頼を受けて代行する。これは
 developerが用意したツール（`meta/tools/commission_design_api.py`）を、designerが指定したパラメータ
 （ブリーフのパス・モデル名・出力先）で機械的に実行し、結果を無改変で返すだけの代行であり、

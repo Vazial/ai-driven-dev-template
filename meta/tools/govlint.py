@@ -5,6 +5,7 @@
   [ERROR] スキーマ妥当性       … 必須フィールドの有無・値の妥当性
   [ERROR] 参照整合             … supersedes/superseded_by/pushed_to の参照先が実在するか、supersede関係が対称か
   [ERROR] シナリオIDの整合     … .feature内でIDが一意か、API仕様が参照するIDが実在するか
+  [ERROR] 検証ゲートの施錠     … .claude/settings.json の permissions.deny に検証ツール保護4項目が揃っているか（ADR-0046）
   [REPORT] cause_keyの再出現   … 同一原因の2回目以降＝構造的欠陥のシグナル（人間が判断する。失敗させない）
   [REPORT] 未対応FRの棚卸し
   [REPORT] 提案中ADRの棚卸し   … status: 提案中 のまま滞留しているADR（meta/adr/0035）
@@ -17,6 +18,7 @@
 """
 from __future__ import annotations
 
+import json
 import re
 import sys
 from datetime import date
@@ -137,6 +139,62 @@ def check_role_agent_ssot() -> None:
             )
         if not codex_model:
             errors.append(f"meta/agent-runtime-mapping.md: {role} のCodex modelが無い")
+
+
+# ---------------------------------------------------------------- verification gate lock (ADR-0046)
+# ADR-0046 決定1が定めるdeny項目。決定3はこの4項目が `.claude/settings.json` の
+# permissions.deny に揃っていることをgovlintがERRORで確認すると定める（開錠は人間、
+# 施錠の確認は機械）。
+REQUIRED_DENY_ENTRIES = [
+    "Edit(./meta/tools/**)",
+    "Write(./meta/tools/**)",
+    "Edit(./**/build.gradle*)",
+    "Write(./**/build.gradle*)",
+]
+
+
+def check_verification_gate_lock() -> None:
+    """`.claude/settings.json` の permissions.deny に、検証ツール保護4項目
+    （ADR-0046決定1）が揃っていることを検証する。
+
+    ERRORにしてよい理由（ADR-0046決定3）: 「開錠すべきか」は人間の判断のまま残るが、
+    「deny項目が文字列として存在するか」は機械が確定できる事実判定であり、
+    意味判定をERROR化しないという原則（ADR-0035）には抵触しない。
+
+    ファイルが無い・JSONとして壊れている・permissions.denyが配列でない場合もERROR:
+    いずれの状態でも「施錠されている」ことを機械が確認できない。ここを黙って通す
+    （REPORTに留める・スキップする）と、施錠の未確認そのものが「気づかないまま
+    抜け穴が開く」というADR-0046が防ごうとしている失敗を、確認ツール自身の側で
+    再生産してしまう。ADR-0046が本ADR自身の実装対象として名指ししているのは
+    「施錠が外れている」状態の検出であり、ここに含めるのが最も筋が通る。
+    """
+    path = ROOT / ".claude" / "settings.json"
+    rel = path.relative_to(ROOT).as_posix()
+
+    if not path.is_file():
+        errors.append(
+            f"{rel}: ファイルが無い（ADR-0046決定1の検証ツール保護denyの施錠状態を確認できない）"
+        )
+        return
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        errors.append(f"{rel}: JSONとして解析できない（{e}）")
+        return
+
+    permissions = data.get("permissions") if isinstance(data, dict) else None
+    deny = permissions.get("deny") if isinstance(permissions, dict) else None
+    if not isinstance(deny, list):
+        errors.append(f"{rel}: permissions.deny が無いか配列でない（ADR-0046決定1）")
+        return
+
+    missing = [entry for entry in REQUIRED_DENY_ENTRIES if entry not in deny]
+    if missing:
+        errors.append(
+            f"{rel}: permissions.deny に ADR-0046決定1 の検証ツール保護項目が欠けている "
+            f"（missing={missing}）。開錠されたまま（施錠忘れの状態で）マージしようとしている"
+        )
 
 
 # ---------------------------------------------------------------- ADR
@@ -484,6 +542,7 @@ def check_scenario_ids() -> None:
 # ---------------------------------------------------------------- main
 def main() -> int:
     check_role_agent_ssot()
+    check_verification_gate_lock()
     adrs = check_adrs()
     check_adr_links(adrs)
     report_pending_adrs(adrs)
