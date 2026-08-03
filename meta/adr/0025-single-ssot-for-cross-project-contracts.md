@@ -1,9 +1,9 @@
 ---
 id: 0025
 scope: meta
-status: 提案中
+status: 承認済み
 date: 2026-07-26
-approved_by: null
+approved_by: "本PRのマージをもって承認（人間裁定 2026-08-03: 起草から6〜12日が経過し、この間の6スライスすべてが本ADRの決定どおりに回りきったことを根拠に承認した。meta/adr/0035 方式(ii) の後日承認を記録するPRである）"
 supersedes: []
 superseded_by: null
 relates_to: [P-01, P-02, P-03, P-04, P-06, P-07, P-08, P-11]
