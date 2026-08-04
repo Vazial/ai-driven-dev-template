@@ -41,6 +41,43 @@ new decision, a conflict, or a materially broader scope, stop and return to chat
 changing or creating the PR. Mechanical follow-up that does not change the agreed scope
 (for example, reporting CI completion) does not need a new checkpoint.
 
+## Codex host CLI discovery
+
+Before reporting a required CLI as unavailable, Codex must confirm it through a
+host-side standard lookup or a known absolute path when the sandbox lookup failed.
+Use only a location check or a read-only version command; do not recursively search the
+host or expose credentials. Report executable availability, authentication, and required
+operation/network permission separately. Finding a CLI does not authorize login,
+installation, push, PR, or other external changes; apply the normal permission rules.
+
+## Codex efficient verification and Browser use
+
+Keep the existing verification flow: run applicable L1--L3 before reporting an
+implementation artifact or PR, and follow the existing tester/reviewer flow for L4.
+Do not bypass the verification execution required when a role artifact is handed to the
+orchestrator. GitHub Actions remains the independent full verification record for the
+PR.
+
+After an applicable gate has passed, do not run it again merely to repeat the same
+success: reuse its concise evidence when the relevant implementation, configuration,
+tests, and dependency definitions have not changed. Re-run when any of those inputs
+change, the prior evidence is insufficient, or a failure needs investigation. Do not
+claim an unrun check is green.
+
+Use Browser interaction only for an agreed screen-presentation checkpoint, a
+meaning-dependent UX/control-surface walkthrough, or investigation of a visual issue
+that automation cannot isolate. State the screen and question first; use the smallest
+interaction necessary. Do not repeat DOM inspection, screenshots, login, or server
+startup for the same unchanged screen. Browser interaction is not a substitute for
+L1--L4 or CI.
+
+Reuse a verified CLI route within the session under the host-CLI discovery rule. Do not
+commit host-specific executable paths, credentials, or environment values. Prefer quiet
+commands and concise success summaries; inspect full logs, full diffs, or long documents
+only when they are necessary to make a decision or when this guidance explicitly
+requires reading them in full. Do not change shared role definitions, runtime mappings,
+or CI merely to optimize Codex execution.
+
 ## Role-agent dispatch
 
 `.claude/agents/<role>.md` is the executable role contract for `architect`, `designer`,

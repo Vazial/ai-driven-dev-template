@@ -45,3 +45,18 @@ export type CreateReservationInput = components["schemas"]["CreateReservationReq
 
 /** POST /reservations の成功レスポンス相当（ReservationResponse、reservation-api.yaml） */
 export type ReservationResponse = components["schemas"]["ReservationResponse"];
+
+/**
+ * POST /reservations/{reservationId}/cancel の成功レスポンス相当（CancelledReservationResponse、
+ * reservation-api.yaml、RSV-K「予約をキャンセルできる」）。RFE-C（contracts/my-reservations.feature）
+ * が使う。
+ */
+export type CancelledReservationResponse =
+  components["schemas"]["CancelledReservationResponse"];
+
+/**
+ * POST /reservations/{reservationId}/cancel のリクエストボディ相当（CancelReservationRequest、
+ * reservation-api.yaml、RSV-K）。実バックエンド接続（4本目のopt-in）で使う。
+ */
+export type CancelReservationRequest =
+  components["schemas"]["CancelReservationRequest"];

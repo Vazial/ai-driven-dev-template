@@ -9,27 +9,43 @@ AI駆動開発のメタテンプレート。正しさを機械検証（L0〜L5�
 
 **ブランチ運用（meta/adr/0028、承認済み）**: `main`＝リリース可能。`project/<project>`＝各プロジェクトの長期統合ブランチ。スライスは `project/<project>` から `<type>/<project>-<slice>` を切りPRで戻す。`project/<project>` の作成＋保護rulesetは**AIが `gh` の admin権限で自動作成**する（人間はchatでauthorize＋結果確認）。`meta/**` の共有ガバナンス変更は例外的に base=main（ADR-0026直列化）。
 
-**直近で確定したメタ判断**:
-- meta/adr/0031（承認済み）: クロスプロジェクト結合CIの置き場 `ci-integration.yml`（両プロジェクトpaths和集合で起動）を定義。必須方針は緩い運用（案i）から。実ジョブの中身はスライスに委譲。
-- meta/adr/0032（承認済み）: 配線・結合の検証は機械化する。走破（ADR-0024）は「未知探索」と「意味理解の要る検証（control surface・UX・L5）」に限り、**安定した回帰ゲートにはしない**。**規程本体への織り込み完了**（`meta/verification.md` L3詳細＋§3.4＋L5手段＋対応表、`meta/guardrails.md` §2、`meta/agents.md` 断面②検証）。
-- meta/adr/0033（承認済み）: activeContextを2階層に（ルート＝テンプレ管理・全プロジェクト・跨り／プロジェクト内＝そのプロジェクト）。本ファイルがルート。
-- meta/adr/0034（承認済み）: activeContext更新をPRテンプレDoDの必須チェック（関所）に載せ、accretion（追記肥大）を禁じ、手書き「最終更新」日付を廃止（gitが持つ）。
-- meta/adr/0036（承認済み）: `.claude/agents/<role>.md` をClaude/Codex共通の唯一の役割定義原本とし、重複していた `meta/agents/<role>.md` を廃止した。runtime別のモデル選択は `meta/agent-runtime-mapping.md` が持つ。
+**確定したメタ判断（ADR。詳細は各ADR本体。ここでは1行に留める）**:
+- 0022 コミット/マージを骨格合意と実装合意の2断面に分ける ／ 0023 クロスプロジェクトはconsumer-driven契約で協調する ／ 0024 control surfaceを契約に明示し断面②に走破を加える ／ 0025 契約のSSoTは提供側の1ファイル ／ 0026 複数プロジェクトの並行開発（CI分割・ブランチ命名・IDプレフィックス台帳・`meta/**`直列化） ／ 0027 緑CI以外の独立した根拠なしにagent成果物を通さない ／ 0030 CodexはPR前にチャットでスコープ合意する（Codex）
+- 0031 結合CIの置き場 `ci-integration.yml` ／ 0032 配線・結合は機械検証し走破は探索と意味理解に限る ／ 0033 activeContext 2階層 ／ 0034 activeContext更新をマージゲートに載せaccretionを禁じる
+- 0035 ADRの承認記録をPR1本で閉じる（方式(i)/(ii)＋提案中の棚卸しREPORT） ／ 0036 `.claude/agents` を役割定義のSSoT（Codex） ／ 0037 CodexのホストCLI確認手順（Codex） ／ 0038 シナリオID検査の3欠陥（ASCII境界・定義形式・全体名前空間）
+- 0039 orchestratorと役割の境界（検証の申告／技法を指定しない／reviewerは緑後） ／ 0040 機密ガードレールの守備範囲（Write対称化・gitignore・`env.example`） ／ 0041 PR種別ごとの承認事項 ／ 0042 デプロイは当面着手しない
+- 0043 契約の承認記録もPR1本で閉じる ／ 0044 Codexの検証を弱めず冗長作業を減らす（Codex） ／ 0045 契約だけを先にmainへ載せられるようにする（`@pending-implementation`） ／ 0046 検証ツール（govlint・build.gradle）をゲートとして施錠し、開錠は人間・施錠の確認は機械 ／ 0047 メタADRの起草はorchestratorの領分（architectはプロジェクトscopeのADR）
 
-**進行中のメタ論点・宿題**:
-- meta/adr/0035（承認済み）: ADRの承認記録をPR1本で閉じる。ADRを含むPRは承認方式を二択で明示し（**(i)マージ＝承認**＝起草時に `status: 承認済み` ＋ `approved_by` を書く・既定／**(ii)記録のみ・承認は後日**＝意図した保留に限る）、滞留はgovlintの `[REPORT] 提案中ADRの棚卸し`（経過日数つき）で可視化する。ERROR化はしない（意味判定。P-04）。FR-015が一次データ。
-- **提案中のまま滞留しているADRが10本ある**（2026-07-29時点、最古11日。govlintのREPORTに毎回出る）。ADR-0035は一括承認しない方針のため、**人間が個別に判断する必要がある**。優先度が高いのは規程本体がすでに依存している2本——`meta/adr/0026`（ブランチ運用・CI構成を `meta/guardrails.md` が根拠にしている）と `meta/adr/0024`（走破。承認済みの `0032` が前提にしている）。
-- 結合CIカテゴリの記述（ADR-0031帰結）の `meta/guardrails.md` §2「CI構成」への反映は、`ci-integration.yml` の実ファイルを作る実装スライスとセットで行う（ADR-0031が明示的にそう定めている）。
-- per-project activeContextのスリム化（2階層モデルへ・ADR-0033/0034）: reservation-frontendは実施済み（PR #39）。**reservation-systemは未実施**（プロジェクトブランチ未作成のため、次回作業時にブランチ作成と同時）。
+**未対応の宿題（open のものだけ。完了した判断は上に畳んだ）**:
+
+*人間の判断待ち*
+- ~~FR-022: orchestratorが検証インフラを自分で直す違反が4回目~~ **対応済み（2026-08-03、ADR-0046）**。`meta/tools/**`・`build.gradle*` を deny で施錠し、開錠は人間のコミット、**施錠されていることを govlint が ERROR で検証**する（開錠したままマージできない）。あわせて `meta/permissions.md` の段差（検証ツール本体をゲートでなく実装として扱っていた行）を正した。**再発可能性は消えていない**——決定5の限界（`Bash` の抜け道／deny は Claude Code のみで Codex には届かない）を承知のうえで「うっかりだけ止まれば足りる」と判断している
+- **RFE-A・RFE-B の契約が未承認のまま実装が載っている**。RFE-B は契約と実装が同一コミット（`f1dac2a`）だが、これは規律違反ではなく**当時は機械的に契約先行が不可能だった**（ADR-0045で解消）。ADR-0043 は遡って承認せず govlint のREPORTで可視化し続ける方針。**未承認の契約に対する実装を止める機械的な仕組みは無い**（PRテンプレのチェックは自己申告）
+- **RSV-L の監査が未実施**（`reviews/audit-rsv-l.md` が存在しない）。RSV-Tの監査でreviewerが独立に再発見した。`activeContext` に記録済みの規程違反（4承認点の1つを飛ばした）と一致
+- ~~提案中ADRの滞留~~ **解消（2026-08-03）**。meta 7本（0022〜0027・0030）を個別判断のうえ承認した。承認の根拠は「読んで納得した」ではなく**6スライスの実運用で決定どおりに回りきったこと**（ADR-0035決定3が禁じる「読まずに一括承認」との違いはここ）。残る提案中は `reservation-frontend/adr/0004`・`0005` の2本のみで、**これは意図した保留**——つまり `提案中` という状態が「まだ決めていない」の意味を取り戻した（ADR-0035が狙った状態）
+
+*機械で塞げていない穴*
+- **`Bash` の deny が prefix 一致で回避できる**: `Bash(git reset --hard*)` は `git reset -q --hard` を止められない（実測）。ADR-0040 は `Read`/`Edit`/`Write` のみ扱い、`Bash` は引数の組み合わせが爆発するため別途設計が要る
+- **govlint の cause_key 再出現検出が friction-log ファイル単位**: プロジェクトを跨いだ再出現を検出できない。`orchestrator-as-substantive-source` は実質4回だが機械はファイルごとにしか数えない
+- **採番衝突が2回**（FR-023）: 1回目（ADR-0037）は規程を守っても防げない競合、2回目（ADR-0044）は**ADR-0026を守らなかった**（0045へ振り直して解消）。FRの採番にはADR-0026相当の規定がそもそも無い。**ただしgovlintは2回とも昇格前に捕まえており main は汚れていない**——強制する仕組みを足すか検出で足りると割り切るかは費用対効果の判断
+
+*実装待ち（P-05: 要るようになってから）*
+- **結合CI `ci-integration.yml` は未実装**（ADR-0031が置き場だけ定義）。`meta/guardrails.md` §2「CI構成」への反映は実ファイルを作る実装スライスとセットで行う
+- **reservation-system の activeContext スリム化**（2階層モデルへ・ADR-0033/0034）: `project/reservation-system` は作成済みなので、次に同プロジェクトを触るときに実施できる
+
+*留意事項（宿題ではないが忘れると事故る）*
+- **シナリオIDのプレフィックスはリポジトリ全体で一意**（ADR-0038決定3）。新プロジェクト追加時に重複を避ける。使用中: RFE-A/B/C・RSV-A/C/K/L/R/T・TDR-AUTH/TDR-CS
+- **権限機構の性質（ADR-0040・0046で実測・確定）**: deny は allow で上書きできず、除外構文（`!`）も無い。設定変更はセッション中に反映される。**deny はサブエージェントにも継承される**——つまりパスベースの deny で orchestrator と役割agentを区別することはできない（ADR-0046の設計はこの実測結果で組み替わった）。`Read` は deny の対象外。**再検証は不要**
+- **`.claude/settings.json` は Claude Code の機構であり、Codex には効かない**。両runtimeに効くのは共有の必須ゲート（L0 govlint）だけである。runtime横断で効かせたい規律は、権限設定ではなく govlint に置くこと
 
 ## 全プロジェクトの一覧・状態
 
 | プロジェクト | 担当 | 状態 | 詳細 |
 |---|---|---|---|
-| reservation-system（会議室予約バックエンド） | Claude | 垂直スライス5本（RSV-C/K/A/R/L）完了・API一通り緑・main。現在の新規作業なし | `projects/reservation-system/activeContext.md` |
-| reservation-frontend（会議室予約フロント） | Claude | availability実接続完了（PR #35、`project/reservation-frontend`）。rooms＋availability両方が実API opt-in。設計フェーズの宿題（design-preview隔離・骨格記録等）は残る | `projects/reservation-frontend/activeContext.md` |
+| reservation-system（会議室予約バックエンド） | Claude | 垂直スライス**6本**（RSV-C/K/A/R/L/**T**）完了・main。RSV-Tで `POST /rooms`（会議室登録）を追加し、**通常プロファイルでもループが成立**するようになった。`project/reservation-system` 作成済み。**新規作業なし** | `projects/reservation-system/activeContext.md` |
+| reservation-frontend（会議室予約フロント） | Claude | RFE-A/B/C 実装済み。**4本すべて（rooms・availability・予約作成・キャンセル）が実API opt-in**。走破で実バックエンドとの通しの動作を確認済み。**新規作業なし**。宿題: 骨格記録（adr/0021）・ADR-0004/0005承認・**RFE-A/Bの契約が未承認**（下記） | `projects/reservation-frontend/activeContext.md` |
 | toyama-weekend-radar | Codex | 休止。foundationは`project/toyama-weekend-radar`に保持し、Dining Radarへ注力する | 同ブランチ上のactiveContext |
-| toyama-dining-radar | Codex | 利用時に非公開設定する検索範囲での月例ランチ会向け店舗提案について、foundation（設計パック・外部データ境界）をレビュー中 | `projects/toyama-dining-radar/activeContext.md` |
+| toyama-dining-radar | **Claude**（2026-08-04にCodexから引き継ぎ） | 断面①完了: foundation・認証（TDR-AUTH実装まで緑）・候補検索の契約（TDR-CS-00〜08、PR #76）。**次は断面②＝TDR-CS実装**。引き継ぎ時点でオープンPRなし・CI緑 | `projects/toyama-dining-radar/activeContext.md` |
 
 ## クロスプロジェクトの協調状態
 

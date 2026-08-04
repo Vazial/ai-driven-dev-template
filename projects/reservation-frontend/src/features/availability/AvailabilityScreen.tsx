@@ -9,7 +9,11 @@
 // booking-design-reconciliation.md 9節）:
 //   - 予約者名は表示しない。予約バーは「空き」「予約済み（不可）」の二値状態表示にとどめる
 //   - 会議室ごとの営業時間をタイムライン描画に反映する（reconciliation項目7）
-//   - 自分の予約・キャンセルはこのスライスのスコープ外（別スライス）
+//
+// RFE-C「自分の予約を確認してキャンセルできる」スライスで「自分の予約」Sheet
+// （src/features/my-reservations/MyReservationsSheet.tsx）をヘッダーに配線した。BookingDesign.tsx
+// 骨格のヘッダー右側にあった予約者ID/表示名の入力欄は持たない（案Bの調整により、自分の予約は
+// reserverIdによる絞り込みではなくこの端末の記録から組み立てるため。契約解釈ポイント(1)）。
 import { useEffect, useMemo, useState } from "react";
 import { addDays, format, subDays } from "date-fns";
 import { ja } from "date-fns/locale";
@@ -27,6 +31,7 @@ import { getRoomAvailability } from "@/api/availability";
 import type { ApiResult, AvailabilityResponse, AvailableTimeSlot, RoomSummary } from "@/api/types";
 import { deriveUnavailableRanges, rangeToPercent, timeToMinutes } from "./timeGrid";
 import BookingDialog, { type BookingSlot } from "@/features/booking/BookingDialog";
+import MyReservationsSheet from "@/features/my-reservations/MyReservationsSheet";
 
 const DEFAULT_AXIS_START = "09:00";
 const DEFAULT_AXIS_END = "18:00";
@@ -65,10 +70,11 @@ export default function AvailabilityScreen({ initialDate }: AvailabilityScreenPr
   const [currentDate, setCurrentDate] = useState<Date>(initialDate ?? new Date());
   const [rooms, setRooms] = useState<RoomSummary[]>([]);
   const [availabilityByRoom, setAvailabilityByRoom] = useState<AvailabilityByRoom>({});
-  // listRooms() が失敗した(実APIモードでのネットワーク層の失敗等)場合の最小限の汎用失敗表示
-  // フラグ(ADR-0009 決定4)。ProblemResponseの型は使わない(契約が定義する構造化エラーではない
-  // ため)。過剰なリトライ・凝ったUIは作らない(P-05)。
-  const [roomsLoadFailed, setRoomsLoadFailed] = useState(false);
+  // listRooms()・getRoomAvailability() が失敗した(実APIモードでのネットワーク層の失敗等)場合の
+  // 最小限の汎用失敗表示フラグ(ADR-0009 決定4)。ProblemResponseの型は使わない(契約が定義する
+  // 構造化エラーではないため)。過剰なリトライ・凝ったUIは作らない(P-05)。roomsとavailabilityの
+  // どちらの実fetchが落ちても同じ汎用表示に落とす(2本目の実接続=adr/0009 決定6(b))。
+  const [loadFailed, setLoadFailed] = useState(false);
 
   // RFE-B: 予約ダイアログの状態。空き枠クリックで開き、会議室・日付・時間帯を引き継ぐ(RFE-B-01)
   const [bookingRoom, setBookingRoom] = useState<RoomSummary | null>(null);
@@ -92,21 +98,28 @@ export default function AvailabilityScreen({ initialDate }: AvailabilityScreenPr
       } catch {
         // ADR-0009 決定4: ネットワーク層の失敗はProblemResponseに押し込めず、ここでは
         // 最小限の汎用失敗表示に落とす(文言はP-05に沿って最小限に留める)。
-        if (!cancelled) setRoomsLoadFailed(true);
+        if (!cancelled) setLoadFailed(true);
         return;
       }
       if (cancelled) return;
-      setRoomsLoadFailed(false);
+      setLoadFailed(false);
       setRooms(roomList);
 
-      const entries = await Promise.all(
-        roomList.map(async (room) => {
-          const result = await getRoomAvailability(room.roomId, formattedDate);
-          return [room.roomId, result] as const;
-        }),
-      );
-      if (cancelled) return;
-      setAvailabilityByRoom(Object.fromEntries(entries));
+      try {
+        const entries = await Promise.all(
+          roomList.map(async (room) => {
+            const result = await getRoomAvailability(room.roomId, formattedDate);
+            return [room.roomId, result] as const;
+          }),
+        );
+        if (cancelled) return;
+        setAvailabilityByRoom(Object.fromEntries(entries));
+      } catch {
+        // ADR-0009 決定4(2本目=決定6(b)): availability実fetchのネットワーク層失敗(実モードで
+        // バック未起動・接続不可等)も、契約のROOM_NOT_FOUND(404=ApiResultのok:false)とは別物と
+        // して扱い、ProblemResponseに押し込めず汎用失敗表示に落とす。
+        if (!cancelled) setLoadFailed(true);
+      }
     }
 
     void load();
@@ -171,6 +184,14 @@ export default function AvailabilityScreen({ initialDate }: AvailabilityScreenPr
             </Button>
           </div>
         </div>
+
+        {/* RFE-C: 「自分の予約」Sheet。空き状況への反映(RFE-C-03の3つ目のThen)は、予約確定と同じ
+            handleBookingSettled(refreshTickの増分)を再利用する */}
+        <MyReservationsSheet
+          rooms={rooms}
+          refreshSignal={refreshTick}
+          onReservationCancelled={handleBookingSettled}
+        />
       </header>
 
       <main className="flex-1 overflow-auto p-6">
@@ -190,17 +211,17 @@ export default function AvailabilityScreen({ initialDate }: AvailabilityScreenPr
           </div>
 
           <ScrollArea className="h-[calc(100vh-200px)]">
-            {roomsLoadFailed && (
-              // ADR-0009 決定4: listRooms()の実fetch失敗時の最小限の汎用失敗表示。
-              // ProblemResponse型は使わない(契約が定義する構造化エラーではないため)。
+            {loadFailed && (
+              // ADR-0009 決定4: 実fetch(rooms/availability)のネットワーク層失敗時の最小限の汎用
+              // 失敗表示。ProblemResponse型は使わない(契約が定義する構造化エラーではないため)。
               <p role="alert" className="p-6 text-sm text-red-600">
                 読み込みに失敗しました
               </p>
             )}
-            {!roomsLoadFailed && rooms.length === 0 && (
+            {!loadFailed && rooms.length === 0 && (
               <p className="p-6 text-sm text-slate-500">会議室を読み込んでいます…</p>
             )}
-            {!roomsLoadFailed && rooms.map((room) => (
+            {!loadFailed && rooms.map((room) => (
               <RoomAvailabilityRow
                 key={room.roomId}
                 room={room}

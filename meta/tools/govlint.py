@@ -5,9 +5,12 @@
   [ERROR] スキーマ妥当性       … 必須フィールドの有無・値の妥当性
   [ERROR] 参照整合             … supersedes/superseded_by/pushed_to の参照先が実在するか、supersede関係が対称か
   [ERROR] シナリオIDの整合     … .feature内でIDが一意か、API仕様が参照するIDが実在するか
+  [ERROR] 検証ゲートの施錠     … .claude/settings.json の permissions.deny に検証ツール保護4項目が揃っているか（ADR-0046）
   [REPORT] cause_keyの再出現   … 同一原因の2回目以降＝構造的欠陥のシグナル（人間が判断する。失敗させない）
   [REPORT] 未対応FRの棚卸し
   [REPORT] 提案中ADRの棚卸し   … status: 提案中 のまま滞留しているADR（meta/adr/0035）
+  [REPORT] 承認待ち契約の棚卸し … ステータス: 承認待ち のまま残っている契約（meta/adr/0043）
+  [REPORT] 実装待ちシナリオの棚卸し … @pending-implementation が付いたままのシナリオ（FR-014）
 
 終了コード: ERRORが1件でもあれば1、なければ0（REPORTは0のまま）。
 
@@ -15,6 +18,7 @@
 """
 from __future__ import annotations
 
+import json
 import re
 import sys
 from datetime import date
@@ -135,6 +139,62 @@ def check_role_agent_ssot() -> None:
             )
         if not codex_model:
             errors.append(f"meta/agent-runtime-mapping.md: {role} のCodex modelが無い")
+
+
+# ---------------------------------------------------------------- verification gate lock (ADR-0046)
+# ADR-0046 決定1が定めるdeny項目。決定3はこの4項目が `.claude/settings.json` の
+# permissions.deny に揃っていることをgovlintがERRORで確認すると定める（開錠は人間、
+# 施錠の確認は機械）。
+REQUIRED_DENY_ENTRIES = [
+    "Edit(./meta/tools/**)",
+    "Write(./meta/tools/**)",
+    "Edit(./**/build.gradle*)",
+    "Write(./**/build.gradle*)",
+]
+
+
+def check_verification_gate_lock() -> None:
+    """`.claude/settings.json` の permissions.deny に、検証ツール保護4項目
+    （ADR-0046決定1）が揃っていることを検証する。
+
+    ERRORにしてよい理由（ADR-0046決定3）: 「開錠すべきか」は人間の判断のまま残るが、
+    「deny項目が文字列として存在するか」は機械が確定できる事実判定であり、
+    意味判定をERROR化しないという原則（ADR-0035）には抵触しない。
+
+    ファイルが無い・JSONとして壊れている・permissions.denyが配列でない場合もERROR:
+    いずれの状態でも「施錠されている」ことを機械が確認できない。ここを黙って通す
+    （REPORTに留める・スキップする）と、施錠の未確認そのものが「気づかないまま
+    抜け穴が開く」というADR-0046が防ごうとしている失敗を、確認ツール自身の側で
+    再生産してしまう。ADR-0046が本ADR自身の実装対象として名指ししているのは
+    「施錠が外れている」状態の検出であり、ここに含めるのが最も筋が通る。
+    """
+    path = ROOT / ".claude" / "settings.json"
+    rel = path.relative_to(ROOT).as_posix()
+
+    if not path.is_file():
+        errors.append(
+            f"{rel}: ファイルが無い（ADR-0046決定1の検証ツール保護denyの施錠状態を確認できない）"
+        )
+        return
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        errors.append(f"{rel}: JSONとして解析できない（{e}）")
+        return
+
+    permissions = data.get("permissions") if isinstance(data, dict) else None
+    deny = permissions.get("deny") if isinstance(permissions, dict) else None
+    if not isinstance(deny, list):
+        errors.append(f"{rel}: permissions.deny が無いか配列でない（ADR-0046決定1）")
+        return
+
+    missing = [entry for entry in REQUIRED_DENY_ENTRIES if entry not in deny]
+    if missing:
+        errors.append(
+            f"{rel}: permissions.deny に ADR-0046決定1 の検証ツール保護項目が欠けている "
+            f"（missing={missing}）。開錠されたまま（施錠忘れの状態で）マージしようとしている"
+        )
 
 
 # ---------------------------------------------------------------- ADR
@@ -286,9 +346,18 @@ def check_friction_logs() -> None:
 
 # ---------------------------------------------------------------- 契約
 SCENARIO_ID = r"[A-Z]{2,}-[A-Z]-\d{2}"
-SCENARIO_ID_RE = re.compile(rf"\b({SCENARIO_ID})\b")
-# 定義: シナリオIDで始まるコメント行（`# RSV-A-01` / `# RSV-A-03: 説明`）か、Examples表の第1セル（`| RSV-C-05 |`）
-DEFINE_COMMENT_RE = re.compile(rf"^\s*#\s*({SCENARIO_ID})\b", re.M)
+# 参照の境界はASCIIで定める（meta/adr/0038）。`\b` を使うと、Pythonの `\w` がUnicode文字を含むため
+# 日本語の助詞が直後に来る `RSV-C-10が…` で単語境界が成立せず、参照が**検出されない**。統治文書は
+# 日本語で書かれるため、これは参照整合の検査に言語依存の穴を開けていた。シナリオIDはASCIIなので、
+# 「IDの構成文字が前後に続いていない」ことだけを境界条件にする（`RFE-B-031` のような別IDへの
+# 部分一致は防ぎつつ、直後が仮名・漢字・記号でも等しく検出する）。
+SCENARIO_ID_RE = re.compile(rf"(?<![A-Za-z0-9-])({SCENARIO_ID})(?![A-Za-z0-9-])")
+# 定義: **IDがその行の主語である**コメント行（`# RSV-A-01` / `# RSV-A-03: 説明`）か、
+# Examples表の第1セル（`| RSV-C-05 |`）。
+# IDに続くのは行末かコロンだけを認める（meta/adr/0038）。`\b` だけだと、説明のために行頭でIDに
+# 触れた散文（`# RSV-C-05〜C-07が終了時刻の妥当性を…`）まで「定義」と誤認し、実在しない定義を
+# 生んで参照検査を骨抜きにしていた（さらに同一ファイル内の本物の定義と重複衝突しうる）。
+DEFINE_COMMENT_RE = re.compile(rf"^\s*#\s*({SCENARIO_ID})\s*(?::|$)", re.M)
 DEFINE_TABLE_RE = re.compile(rf"^\s*\|\s*({SCENARIO_ID})\s*\|", re.M)
 # 欠番: 削除されたが番号を再利用しないID（`RSV-C-11は欠番`）。参照は許すが定義ではない
 RETIRED_RE = re.compile(rf"({SCENARIO_ID})\s*は欠番")
@@ -298,17 +367,143 @@ def _definitions(text: str) -> set[str]:
     return set(DEFINE_COMMENT_RE.findall(text)) | set(DEFINE_TABLE_RE.findall(text))
 
 
+# 実装待ちの印（friction-log FR-014）。契約(.feature)だけを実装より先にmainへ置けるようにする。
+# govlint(L0)のシナリオID参照整合は緩めない——このタグが付いたシナリオも「定義済み」のまま扱う
+# （API仕様からの参照は今まで通り解決できる）。タグが担うのはCucumber(L4)側の実行対象からの除外
+# （build.gradleのacceptanceTestタスクが `cucumber.filter.tags` で読む）であり、govlintはそれを
+# 「実装待ちシナリオの棚卸し」としてREPORTするだけでERRORにはしない（実装待ちは正当な状態であり、
+# ERROR化すると回避のために印を外す誘因が生まれる。meta/adr/0035のreport_pending_adrsと同型）。
+PENDING_SCENARIO_TAG = "@pending-implementation"
+# タグ行: 1つ以上の `@xxx` トークンだけからなる行（Gherkinのタグはキーワード行の直前に、空行・
+# コメントを挟んで置ける）。
+TAG_LINE_RE = re.compile(r"^\s*(@[\w-]+(?:\s+@[\w-]+)*)\s*$")
+# シナリオの開始行。Scenario Outlineを先に判定する（"Scenario Outline:"は"Scenario:"にもマッチし
+# うる接頭辞ではないが、意図を明示するため先に書く）。
+SCENARIO_KEYWORD_RE = re.compile(r"^\s*(?:Scenario Outline|Scenario):")
+# ブロック境界: 次のScenario系・Rule・Featureの開始行。Examplesは境界にしない
+# （Scenario OutlineのExamples表はそのシナリオのブロックに含める必要があるため）。
+BLOCK_BOUNDARY_RE = re.compile(r"^\s*(?:Scenario Outline|Scenario|Rule|Feature):")
+
+
+def _pending_scenario_ranges(text: str) -> list[tuple[int, int]]:
+    """PENDING_SCENARIO_TAGが直前に付いているScenario/Scenario Outlineブロックの(開始, 終了)文字位置。
+
+    タグ行からScenario系キーワード行までの間に許すのはコメント行だけ（空行や他の行があれば
+    タグはそのシナリオを指していないと判断し打ち切る）。順序はどちらでもよい——
+    `# RSV-T-01` → `@pending-implementation` → `Scenario:` のように、ID定義コメントの後にタグを
+    置く運用を想定するが、タグを先に置いても検出する。
+    """
+    lines = text.split("\n")
+    offsets: list[int] = []
+    pos = 0
+    for line in lines:
+        offsets.append(pos)
+        pos += len(line) + 1
+
+    ranges: list[tuple[int, int]] = []
+    for i, line in enumerate(lines):
+        if not SCENARIO_KEYWORD_RE.match(line):
+            continue
+        pending = False
+        top = i
+        j = i - 1
+        while j >= 0:
+            if lines[j].strip().startswith("#"):
+                top = j
+                j -= 1
+                continue
+            m = TAG_LINE_RE.match(lines[j])
+            if m:
+                if PENDING_SCENARIO_TAG in m.group(1).split():
+                    pending = True
+                top = j
+                j -= 1
+                continue
+            break
+        if not pending:
+            continue
+        k = i + 1
+        while k < len(lines) and not BLOCK_BOUNDARY_RE.match(lines[k]):
+            k += 1
+        end = offsets[k] if k < len(lines) else len(text)
+        ranges.append((offsets[top], end))
+    return ranges
+
+
+def _pending_definitions(text: str) -> set[str]:
+    """PENDING_SCENARIO_TAGが付いたブロック内で定義されているシナリオIDの集合。"""
+    ids: set[str] = set()
+    for start, end in _pending_scenario_ranges(text):
+        ids |= _definitions(text[start:end])
+    return ids
+
+
+# 契約(.feature)の承認ステータス（meta/adr/0043）。ADRのfrontmatterと違い、契約は行コメントで
+# ステータスを持つため機械検証されていなかった。結果、承認済みの契約が「承認待ち」のまま残る
+# ドリフトが起きた（FR-015と同じ機構——起草時は「承認待ち」と書くしかなく、承認行為はPRのマージで、
+# 記録には2本目のPRが要るため飛ばされる）。
+CONTRACT_STATUS_RE = re.compile(
+    r"^#\s*ステータス:\s*(承認済み\((\d{4}-\d{2}-\d{2})\)|承認待ち)", re.M
+)
+
+
+def check_contract_status() -> None:
+    """契約(.feature)のステータス行を検証し、承認待ちの滞留を棚卸しする（meta/adr/0043）。
+
+    ERROR: ステータス行が無い／形式が不正。どちらも「この契約が拘束力を持つのか」を読み手が
+    判別できない状態であり、機械が確定できるためERRORが正しい強制レベル（P-04）。
+
+    REPORT: 承認待ちの契約の一覧。「承認すべきか」は意味判定なのでERROR化しない——ADR-0035が
+    提案中ADRの棚卸しをREPORTに留めたのと同じ設計判断である。ただし**承認待ちの契約の上に実装が
+    載っていないか**は人間が見るべき点であり、可視化しないと気づけない（実際にRFE-A/RFE-Bで起きた）。
+    """
+    pending: list[str] = []
+    for contracts in sorted((ROOT / "projects").glob("*/contracts")):
+        for feature in sorted(contracts.glob("*.feature")):
+            rel = feature.relative_to(ROOT).as_posix()
+            m = CONTRACT_STATUS_RE.search(feature.read_text(encoding="utf-8"))
+            if not m:
+                errors.append(
+                    f"{rel}: ステータス行が無いか形式が不正（meta/adr/0043。"
+                    f"`# ステータス: 承認済み(YYYY-MM-DD)` か `# ステータス: 承認待ち`）"
+                )
+                continue
+            if m.group(2) is None:
+                pending.append(rel)
+
+    if not pending:
+        return
+    reports.append(
+        f"承認待ちのまま残っている契約 {len(pending)}本（承認するか、意図した保留かを判断すること。"
+        f"**この契約の上に実装が載っていないかも確認すること**。meta/adr/0043）"
+    )
+    for rel in pending:
+        reports.append(f"  承認待ち: {rel}")
+
+
 def check_scenario_ids() -> None:
     """シナリオIDの定義が一意か、参照（.feature内・API仕様内）が実在の定義に解決するかを検証する。
 
-    定義と参照を区別する: 定義はIDで始まるコメント行かExamples表の第1セル。
+    定義と参照を区別する: 定義はIDがその行の主語であるコメント行かExamples表の第1セル。
     prose中の言及（例:「最小予約時間(30分、RSV-C-05)との相互作用」）は参照であって定義ではない。
-    """
-    for contracts in sorted((ROOT / "projects").glob("*/contracts")):
-        defined: dict[str, str] = {}
-        retired: set[str] = set()
-        texts: dict[str, str] = {}
 
+    実装待ち（PENDING_SCENARIO_TAG）が付いたシナリオも「定義済み」のまま扱う（参照整合は緩めない。
+    FR-014）。加えて、実装待ちのまま残っているシナリオをREPORTで棚卸しする（ERRORにはしない —
+    実装待ちは正当な状態であり、ERROR化すると印を外す誘因が生まれる）。
+
+    **名前空間はリポジトリ全体で1つとする**（meta/adr/0038）。旧実装は `projects/<p>/contracts`
+    ディレクトリ単位で閉じていたため、consumer-driven contract（meta/adr/0023）や契約SSoT
+    （meta/adr/0025）が正当と認めるクロスプロジェクト参照——たとえばフロントの契約が
+    control surfaceの導出根拠としてバックエンドのシナリオを引く——を解決できなかった。
+    採番プレフィックスはスライスごとに固有（RFE-A/B/C・RSV-A/C/K/L/R）なので衝突は起きず、
+    重複検出もリポジトリ全体に効くようになる（検査は緩まず強くなる）。
+    """
+    defined: dict[str, str] = {}
+    retired: set[str] = set()
+    texts: dict[str, str] = {}
+    pending: dict[str, str] = {}
+
+    for contracts in sorted((ROOT / "projects").glob("*/contracts")):
         for feature in sorted(contracts.glob("*.feature")):
             rel = feature.relative_to(ROOT).as_posix()
             text = feature.read_text(encoding="utf-8")
@@ -319,29 +514,41 @@ def check_scenario_ids() -> None:
                     errors.append(f"{rel}: シナリオID {sid} の定義が {defined[sid]} と重複している")
                     continue
                 defined[sid] = rel
-        if not defined:
-            continue
-
-        for sid in sorted(retired & defined.keys()):
-            errors.append(f"{defined[sid]}: {sid} は欠番と宣言されているのに定義もされている（番号の再利用は禁止）")
-
+            for sid in sorted(_pending_definitions(text)):
+                pending.setdefault(sid, rel)
         for spec in sorted(contracts.glob("*.yaml")):
             texts[spec.relative_to(ROOT).as_posix()] = spec.read_text(encoding="utf-8")
 
-        for rel, text in texts.items():
-            for sid in sorted(set(SCENARIO_ID_RE.findall(text))):
-                if sid not in defined and sid not in retired:
-                    errors.append(f"{rel}: 参照しているシナリオID {sid} が どの.featureにも定義されていない")
+    if not defined:
+        return
+
+    for sid in sorted(retired & defined.keys()):
+        errors.append(f"{defined[sid]}: {sid} は欠番と宣言されているのに定義もされている（番号の再利用は禁止）")
+
+    for rel, text in sorted(texts.items()):
+        for sid in sorted(set(SCENARIO_ID_RE.findall(text))):
+            if sid not in defined and sid not in retired:
+                errors.append(f"{rel}: 参照しているシナリオID {sid} が どの.featureにも定義されていない")
+
+    if pending:
+        reports.append(
+            f"実装待ち（{PENDING_SCENARIO_TAG}）のまま残っているシナリオ {len(pending)}件"
+            "（実装スライスで消化されているか、契約だけの意図的な先行下書きかを判断すること）"
+        )
+        for sid in sorted(pending):
+            reports.append(f"  実装待ち: {sid}（{pending[sid]}）")
 
 
 # ---------------------------------------------------------------- main
 def main() -> int:
     check_role_agent_ssot()
+    check_verification_gate_lock()
     adrs = check_adrs()
     check_adr_links(adrs)
     report_pending_adrs(adrs)
     check_friction_logs()
     check_scenario_ids()
+    check_contract_status()
 
     print(f"govlint: ADR {len(adrs)}本を検証")
     if reports:
