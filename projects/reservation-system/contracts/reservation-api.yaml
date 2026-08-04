@@ -17,6 +17,11 @@
 #       API形状のみを対象とし、受け入れシナリオ(一覧内容・name昇順・0件=空一覧)は断面②で実装スライスとして
 #       reservation-rooms.feature(RSV-L-01/02)に起こした。詳細な裁定はadr/0007を参照。断面①(API形状)の承認材料は
 #       reservation-frontend/design/reconciliation/rsv-l-room-list-ssot-reconciliation.md
+# 改訂(承認待ち: ドラフト) 2026-08-01 POST /roomsのAPI形状(会議室登録)を追記(下記「RSV-T追記」ブロックと
+#       paths./rooms post)。GET /rooms・POST /reservations・POST /reservations/{reservationId}/cancel・
+#       GET /rooms/{roomId}/availability・GET /rooms/{roomId}/rulesを含む既存部分は無変更。新しい拒否理由コード
+#       ROOM_NAME_DUPLICATE(409)・INVALID_BUSINESS_HOURS(422)をProblemResponse.code説明文に追記。受け入れ
+#       シナリオはcontracts/reservation-room-registration.feature(RSV-T-01〜04)。詳細な裁定はadr/0008(ドラフト)を参照
 # 範囲: このスライスで使う操作だけを定義する。先のスライスの分は書かない
 #
 # ============================================================
@@ -207,6 +212,64 @@
 #       rules.feature・本ファイルのRSV-R追記)は変更しない。役割分担の裁定はadr/0007を参照
 #
 # ---- RSV-L追記ここまで ----
+# ============================================================
+#
+# ---- RSV-T「会議室を登録できる」追記(承認待ち: ドラフト。API形状。受け入れシナリオはreservation-room-registration.feature) ----
+# 4行目の要約:
+#   会議室を登録する: POST /rooms に「名前・営業時間・定員」を送る。
+#                     成功は201+登録された会議室の概要(roomIdはサーバ採番)。表示名の重複は409、
+#                     営業時間が成立しない(終了が開始以前)場合は422
+#
+# リクエスト例(会議室Cを09:00-18:00、定員8人で登録):
+#   POST /rooms
+#   { "name": "会議室C", "businessHoursStart": "09:00", "businessHoursEnd": "18:00", "capacity": 8 }
+#
+# 成功レスポンス例(201):
+#   { "roomId": "room-c(サーバ採番)", "name": "会議室C", "businessHoursStart": "09:00",
+#     "businessHoursEnd": "18:00", "capacity": 8 }
+#
+# 拒否レスポンス例(409、表示名が重複している場合):
+#   { "code": "ROOM_NAME_DUPLICATE", "message": "同じ名前の会議室が既に存在します" }
+#
+# 拒否レスポンス例(422、営業時間が成立しない場合):
+#   { "code": "INVALID_BUSINESS_HOURS", "message": "営業時間の終了時刻は開始時刻より後でなければなりません" }
+#
+# 新しい拒否理由コードとシナリオの対応(このスライスの追加分):
+#   ROOM_NAME_DUPLICATE     … RSV-T-02(表示名の重複) → 409
+#   INVALID_BUSINESS_HOURS  … RSV-T-03/04(営業時間が成立しない) → 422
+#
+# 発端: ローカルで予約システムとして一通り動くかを確かめようとしたところ、通常起動(acceptanceプロファイル
+# 以外)では会議室を1件も作れないことが判明した(POST /test-support/roomsが@Profile("acceptance")限定・
+# Flywayにseedなし・data.sql等の経路もなし)。人間が「会議室を登録する正式なAPIを足す」ことを決定
+# (2026-08-01、dev用seedデータ・DB直接投入は不採用)。詳細な裁定はadr/0008(ドラフト)を参照
+#
+# 解釈ポイント(architectの判断。承認時に確認されたい。シナリオ側の解釈ポイントは
+# contracts/reservation-room-registration.featureのヘッダも参照):
+#   (1) roomIdはサーバ採番とし、リクエストボディに含めない。POST /reservationsがreservationIdを
+#       サーバ採番する形、およびtest-supportのPOST /test-support/roomsが既に"サーバ採番"のroomIdを
+#       応答している実績と整合させた(adr/0008決定1)
+#   (2) 成功時の応答は新しいスキーマを作らず、既存のRoomSummary(RSV-L追記)をそのまま再利用する。
+#       GET /roomsの一覧要素と、単体登録の結果は同じ形(roomId・name・businessHoursStart・
+#       businessHoursEnd・capacity)で過不足がないため(adr/0008決定2)
+#   (3) 表示名(name)の重複を409(ROOM_NAME_DUPLICATE)で拒否する。GET /rooms(RSV-L)がname昇順を
+#       一覧の唯一の並び順基準としており(adr/0007決定4)、重複を許すと利用者が名前で会議室を
+#       取り違える事故を招くため。既存のTIME_SLOT_CONFLICT(RSV-C、時間帯の重なり)と同種の「既存の
+#       状態と衝突する」意味論のため409を用いた(adr/0008決定3)
+#   (4) 営業時間の終了時刻が開始時刻より後でない場合を422(INVALID_BUSINESS_HOURS)で拒否する。
+#       RSV-C-06/07(予約単体の時間帯の逆転・同一時刻をINVALID_TIME_SLOTで拒否)と同型の判断を、
+#       会議室自身の営業時間という別の対象に適用したもの。対象が異なるため既存のINVALID_TIME_SLOT
+#       コードは再利用せず、新設した(adr/0008決定4、検討した代替案A)
+#   (5) 定員の下限(1人以上)は拒否理由コードを持つ業務ルールとしては表現しない。スキーマの
+#       minimum: 1のみで表現する。CreateReservationRequest.attendeeCountの既存の扱い(同じ
+#       minimum: 1を持つが対応する拒否シナリオを持たない)と揃えた(adr/0008決定5)
+#   (6) 営業時間の幅が最小予約時間(30分)未満になる登録は拒否しない。空き枠確認(RSV-A)側の
+#       「全て埋まっている」の意味論で吸収でき、会議室自身の設定として構造的に破綻しているわけでは
+#       ないため(P-02、adr/0008決定6)
+#   (7) 登録者の識別(reserverId相当)は要求しない。会議室管理者という主体の識別・権限モデルは
+#       ワーク・既存契約のいずれにも存在せず、更新・削除(所有者チェックが必要になりうる操作)は
+#       本スライスの範囲外のため、今は使い道がない(adr/0008決定7)
+#
+# ---- RSV-T追記ここまで ----
 # ============================================================
 openapi: 3.0.3
 info:
@@ -441,7 +504,54 @@ paths:
                     businessHoursStart: "08:00"
                     businessHoursEnd: "20:00"
                     capacity: 10
-  # ---- RSV-L追記ここまで ----
+  # ---- RSV-L追記(GET)ここまで。上のGETは無変更 ----
+    # ---- ここから RSV-T追記(POST、承認待ち: ドラフト) ----
+    post:
+      operationId: registerRoom
+      summary: 会議室を登録する(RSV-T追記)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoomRegistrationRequest"
+            example:
+              name: 会議室C
+              businessHoursStart: "09:00"
+              businessHoursEnd: "18:00"
+              capacity: 8
+      responses:
+        "201":
+          description: 会議室が登録された(RSV-T-01)。roomIdはサーバ採番
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomSummary"
+              example:
+                roomId: room-c
+                name: 会議室C
+                businessHoursStart: "09:00"
+                businessHoursEnd: "18:00"
+                capacity: 8
+        "409":
+          description: 同じ表示名の会議室が既に存在する(RSV-T-02)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemResponse"
+              example:
+                code: ROOM_NAME_DUPLICATE
+                message: 同じ名前の会議室が既に存在します
+        "422":
+          description: 営業時間が成立しない(終了時刻が開始時刻より後でない、RSV-T-03/04)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemResponse"
+              example:
+                code: INVALID_BUSINESS_HOURS
+                message: 営業時間の終了時刻は開始時刻より後でなければなりません
+  # ---- RSV-T追記(POST)ここまで ----
 components:
   schemas:
     CreateReservationRequest:
@@ -609,6 +719,27 @@ components:
           minimum: 1
           description: 定員(会議室ごとの現在の設定)
     # ---- RSV-L追記ここまで。minReservationDurationMinutesは含めない(理由はadr/0007) ----
+    # ---- RSV-T追記(承認待ち: ドラフト): 会議室登録用スキーマ1つ。応答は既存RoomSummaryを再利用する ----
+    RoomRegistrationRequest:
+      type: object
+      required: [name, businessHoursStart, businessHoursEnd, capacity]
+      properties:
+        name:
+          type: string
+          description: 会議室の表示名。既に登録されている会議室と同じ表示名は登録できない(ROOM_NAME_DUPLICATE、RSV-T-02)
+        businessHoursStart:
+          type: string
+          pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          description: 営業時間の開始時刻
+        businessHoursEnd:
+          type: string
+          pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          description: 営業時間の終了時刻。開始時刻より後でなければならない(INVALID_BUSINESS_HOURS、RSV-T-03/04)
+        capacity:
+          type: integer
+          minimum: 1
+          description: 定員
+    # ---- RSV-T追記ここまで ----
     ProblemResponse:
       type: object
       required: [code, message]
@@ -621,10 +752,13 @@ components:
             OUTSIDE_BUSINESS_HOURS(営業時間外) / EXCEEDS_CAPACITY(定員超過) /
             NOT_RESERVER(本人以外のキャンセル) / CANCEL_DEADLINE_PASSED(開始15分前超過) /
             ALREADY_CANCELLED(キャンセル済み) / RESERVATION_NOT_FOUND(予約なし) /
-            ROOM_NOT_FOUND(会議室が存在しない)
+            ROOM_NOT_FOUND(会議室が存在しない) / ROOM_NAME_DUPLICATE(表示名の重複) /
+            INVALID_BUSINESS_HOURS(会議室の営業時間が成立しない)
             ※RSV-K改訂でキャンセル系4コードを追記(人間裁定に基づく承認済みテキストの改訂)
             ※RSV-A改訂(承認済み 2026-07-16): ROOM_NOT_FOUNDを追記。既存9コードの意味・割り当ては無変更
             ※RSV-L(承認済み 2026-07-27): 新規コードなし。GET /roomsに拒否レスポンスが無いため
+            ※RSV-T(承認待ち: ドラフト): ROOM_NAME_DUPLICATE(表示名の重複)・INVALID_BUSINESS_HOURS
+            (会議室の営業時間が成立しない)を追記。既存10コードの意味・割り当ては無変更
         message:
           type: string
           description: 人間が読める説明

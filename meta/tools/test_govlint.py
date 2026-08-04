@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 import tempfile
 from datetime import date
@@ -176,6 +177,72 @@ class TestCheckRoleAgentSsot(GovlintTestCase):
         write(self.root / "meta" / "agent-runtime-mapping.md", mapping)
         govlint.check_role_agent_ssot()
         self.assertTrue(any("designer のClaude runtime対応" in error for error in govlint.errors))
+
+
+# ---------------------------------------------------------------- 検証ゲートの施錠（ADR-0046）
+def write_settings_json(root: Path, deny: list[str]) -> None:
+    write(
+        root / ".claude" / "settings.json",
+        json.dumps({"permissions": {"deny": deny}}),
+    )
+
+
+def write_locked_settings_json(root: Path, *, extra_deny: list[str] | None = None) -> None:
+    """ADR-0046決定1の4項目をすべて含む、施錠された settings.json を書く。"""
+    write_settings_json(root, list(govlint.REQUIRED_DENY_ENTRIES) + (extra_deny or []))
+
+
+class TestCheckVerificationGateLock(GovlintTestCase):
+    def test_all_four_entries_present_has_no_errors(self) -> None:
+        write_locked_settings_json(self.root)
+        govlint.check_verification_gate_lock()
+        self.assertEqual(govlint.errors, [])
+
+    def test_extra_deny_entries_do_not_interfere(self) -> None:
+        write_locked_settings_json(self.root, extra_deny=["Read(./**/.env*)"])
+        govlint.check_verification_gate_lock()
+        self.assertEqual(govlint.errors, [])
+
+    def test_missing_file_is_error(self) -> None:
+        govlint.check_verification_gate_lock()
+        self.assertTrue(any("ファイルが無い" in e for e in govlint.errors))
+
+    def test_malformed_json_is_error(self) -> None:
+        write(self.root / ".claude" / "settings.json", "{not valid json")
+        govlint.check_verification_gate_lock()
+        self.assertTrue(any("JSONとして解析できない" in e for e in govlint.errors))
+
+    def test_missing_permissions_key_is_error(self) -> None:
+        write(self.root / ".claude" / "settings.json", "{}")
+        govlint.check_verification_gate_lock()
+        self.assertTrue(any("permissions.deny が無いか配列でない" in e for e in govlint.errors))
+
+    def test_deny_not_a_list_is_error(self) -> None:
+        write(
+            self.root / ".claude" / "settings.json",
+            json.dumps({"permissions": {"deny": "not-a-list"}}),
+        )
+        govlint.check_verification_gate_lock()
+        self.assertTrue(any("permissions.deny が無いか配列でない" in e for e in govlint.errors))
+
+    def test_one_missing_entry_is_error_and_named(self) -> None:
+        deny = [e for e in govlint.REQUIRED_DENY_ENTRIES if e != "Write(./**/build.gradle*)"]
+        write_settings_json(self.root, deny)
+        govlint.check_verification_gate_lock()
+        self.assertTrue(
+            any("Write(./**/build.gradle*)" in e for e in govlint.errors),
+            govlint.errors,
+        )
+
+    def test_all_entries_missing_is_error(self) -> None:
+        write_settings_json(self.root, ["Read(./**/.env*)"])
+        govlint.check_verification_gate_lock()
+        self.assertTrue(any("permissions.deny に ADR-0046決定1" in e for e in govlint.errors))
+
+    def test_no_settings_dir_at_all_is_error_not_silent_skip(self) -> None:
+        """ADR-0046: 施錠が確認できない状態を沈黙で緑にしない（ファイル欠落も含む）。"""
+        govlint.check_verification_gate_lock()
+        self.assertEqual(len(govlint.errors), 1)
 
 
 # ---------------------------------------------------------------- ADR
@@ -550,11 +617,371 @@ class TestCheckScenarioIds(GovlintTestCase):
         govlint.check_scenario_ids()
         self.assertEqual(govlint.errors, [])
 
+    # ---- 参照の境界はASCII（meta/adr/0038）。日本語の助詞で参照が消えないこと ----
+
+    def test_reference_followed_by_japanese_particle_is_detected(self) -> None:
+        r"""旧実装は `\b` を使っており、`RSV-A-77が…` の直後の仮名が `\w` 扱いになるため
+        参照として検出されず、未定義参照を**見逃していた**（統治文書は日本語で書かれるため常態）。
+        """
+        feature = dedent(
+            """
+            Feature: A
+              # RSV-A-01: 定義済み
+              Given 何か
+
+            注記: RSV-A-77が定員超過を拒否理由として持つため、人数の指定が要る
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature)
+        govlint.check_scenario_ids()
+        self.assertTrue(any("RSV-A-77" in e and "定義されていない" in e for e in govlint.errors))
+
+    def test_reference_embedded_in_longer_id_is_not_matched(self) -> None:
+        """ASCII境界にしても、別IDへの部分一致は拾わない（`RSV-A-011` は `RSV-A-01` ではない）。"""
+        feature = dedent(
+            """
+            Feature: A
+              # RSV-A-01: 定義済み
+              Given 何か
+
+            注記: RSV-A-011 という表記は別物であり RSV-A-01 の参照ではない
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature)
+        govlint.check_scenario_ids()
+        self.assertEqual(govlint.errors, [])
+
+    # ---- 定義はIDが行の主語のときだけ（meta/adr/0038） ----
+
+    def test_prose_comment_starting_with_id_is_not_a_definition(self) -> None:
+        """旧実装は行頭コメントがIDで始まれば「定義」と誤認した。説明のために行頭でIDに触れた
+        散文が実在しない定義を生み、参照検査を骨抜きにしていた。IDに続くのが行末かコロンの
+        ときだけ定義とする。
+        """
+        feature = dedent(
+            """
+            Feature: A
+              # RSV-A-01: 定義済み
+              Given 何か
+              #     RSV-A-77〜A-79が終了時刻の妥当性を拒否理由として持つ
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature)
+        govlint.check_scenario_ids()
+        self.assertTrue(any("RSV-A-77" in e and "定義されていない" in e for e in govlint.errors))
+
+    def test_prose_comment_starting_with_id_does_not_collide_with_real_definition(self) -> None:
+        """散文が本物の定義と重複衝突しないこと（同一ファイルに両方あっても定義は1つ）。"""
+        feature = dedent(
+            """
+            Feature: A
+              #       RSV-A-01で明示的にロックした（説明のための言及）
+              # RSV-A-01: 本物の定義
+              Given 何か
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature)
+        govlint.check_scenario_ids()
+        self.assertEqual(govlint.errors, [])
+
+    def test_bare_and_colon_definition_forms_are_both_accepted(self) -> None:
+        """既存の統治文書が使う2形式（`# <ID>` と `# <ID>: 説明`）はどちらも定義として通る。"""
+        feature = dedent(
+            """
+            Feature: A
+              # RSV-A-01
+              Given 何か
+              # RSV-A-02: 説明つき
+              Given 何か
+            """
+        )
+        spec = "x: RSV-A-01\ny: RSV-A-02\n"
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature)
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.yaml", spec)
+        govlint.check_scenario_ids()
+        self.assertEqual(govlint.errors, [])
+
+    # ---- 名前空間はリポジトリ全体（meta/adr/0038） ----
+
+    def test_cross_project_reference_resolves(self) -> None:
+        """consumer-driven contract（meta/adr/0023）: フロントの契約がバックエンドのシナリオを
+        引いても解決する。旧実装はcontractsディレクトリ単位で閉じており未定義扱いにしていた。
+        """
+        backend = dedent(
+            """
+            Feature: バックエンド
+              # RSV-A-01: 定員超過は拒否される
+              Given 何か
+            """
+        )
+        frontend = dedent(
+            """
+            Feature: フロント
+              # RFE-A-01: 人数を指定できる
+              Given 何か
+
+            操作自由度の導出根拠: RSV-A-01が定員超過を拒否理由として持つため
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "b.feature", backend)
+        write(self.root / "projects" / "reservation-frontend" / "contracts" / "f.feature", frontend)
+        govlint.check_scenario_ids()
+        self.assertEqual(govlint.errors, [])
+
+    def test_duplicate_definition_across_projects_is_error(self) -> None:
+        """名前空間が全体になったので、重複検出もプロジェクトを跨いで効く（検査は強くなる）。"""
+        same = dedent(
+            """
+            Feature: X
+              # RSV-A-01: 定義
+              Given 何か
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "b.feature", same)
+        write(self.root / "projects" / "reservation-frontend" / "contracts" / "f.feature", same)
+        govlint.check_scenario_ids()
+        self.assertTrue(any("RSV-A-01" in e and "重複している" in e for e in govlint.errors))
+
+
+# ---------------------------------------------------------------- 実装待ちシナリオ（friction-log FR-014）
+class TestPendingScenarios(GovlintTestCase):
+    """@pending-implementation の棚卸しREPORT。
+
+    契約(.feature)だけを実装より先にmainへ置けるようにする仕組み。govlint(L0)の参照整合は
+    緩めない――タグが付いたシナリオも「定義済み」として扱われ続けることを確認する。
+    """
+
+    def test_tagged_scenario_is_reported_as_pending(self) -> None:
+        feature = dedent(
+            """
+            Feature: サンプル
+
+              Rule: ルール
+
+                # RSV-T-01
+                @pending-implementation
+                Scenario: 未実装のシナリオ
+                  Given 何か
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature)
+        govlint.check_scenario_ids()
+        self.assertEqual(govlint.errors, [])
+        joined = "\n".join(govlint.reports)
+        self.assertIn("実装待ち（@pending-implementation）のまま残っているシナリオ 1件", joined)
+        self.assertIn("RSV-T-01", joined)
+        self.assertIn("a.feature", joined)
+
+    def test_tag_order_before_id_comment_is_also_detected(self) -> None:
+        """タグとID定義コメントの順序はどちらでもよい（`@tag`→`# ID` の順）。"""
+        feature = dedent(
+            """
+            Feature: サンプル
+
+              Rule: ルール
+
+                @pending-implementation
+                # RSV-T-01
+                Scenario: 未実装のシナリオ
+                  Given 何か
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature)
+        govlint.check_scenario_ids()
+        self.assertEqual(govlint.errors, [])
+        self.assertTrue(any("RSV-T-01" in r for r in govlint.reports))
+
+    def test_scenario_outline_tag_covers_all_examples(self) -> None:
+        """Scenario Outlineの直前に付けたタグは、Examples表の全行に及ぶ。"""
+        feature = dedent(
+            """
+            Feature: サンプル
+
+              Rule: ルール
+
+                @pending-implementation
+                Scenario Outline: <ケース>は登録できない
+                  When 何か"<x>"をする
+                  Then 拒否される
+
+                  Examples:
+                    | ID       | x  |
+                    | RSV-T-03 | a  |
+                    | RSV-T-04 | b  |
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature)
+        govlint.check_scenario_ids()
+        self.assertEqual(govlint.errors, [])
+        joined = "\n".join(govlint.reports)
+        self.assertIn("実装待ち（@pending-implementation）のまま残っているシナリオ 2件", joined)
+        self.assertIn("RSV-T-03", joined)
+        self.assertIn("RSV-T-04", joined)
+
+    def test_untagged_scenario_is_not_reported_as_pending(self) -> None:
+        feature = dedent(
+            """
+            Feature: サンプル
+              # RSV-A-01
+              Scenario: 実装済みのシナリオ
+                Given 何か
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature)
+        govlint.check_scenario_ids()
+        self.assertEqual(govlint.errors, [])
+        self.assertFalse(any("実装待ち" in r for r in govlint.reports))
+
+    def test_tag_separated_by_blank_line_does_not_apply(self) -> None:
+        """タグとキーワード行の間に空行を挟むと、タグはそのシナリオを指さない（誤検出防止）。"""
+        feature = dedent(
+            """
+            Feature: サンプル
+
+              @pending-implementation
+
+              # RSV-A-01
+              Scenario: 実は実装済みのシナリオ
+                Given 何か
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature)
+        govlint.check_scenario_ids()
+        self.assertEqual(govlint.errors, [])
+        self.assertFalse(any("実装待ち" in r for r in govlint.reports))
+
+    def test_pending_scenario_id_still_resolves_as_defined_reference(self) -> None:
+        """L0の参照整合は緩めない: 実装待ちのIDもAPI仕様からの参照が解決できること。"""
+        feature = dedent(
+            """
+            Feature: サンプル
+
+              Rule: ルール
+
+                # RSV-T-01
+                @pending-implementation
+                Scenario: 未実装のシナリオ
+                  Given 何か
+            """
+        )
+        spec = "operationId: RSV-T-01\n"
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature)
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.yaml", spec)
+        govlint.check_scenario_ids()
+        self.assertEqual(govlint.errors, [])
+
+    def test_pending_scenario_id_duplicate_definition_still_errors(self) -> None:
+        """実装待ちであることは、重複定義エラーを免除しない。"""
+        feature_a = dedent(
+            """
+            Feature: A
+
+              # RSV-T-01
+              @pending-implementation
+              Scenario: 未実装
+                Given 何か
+            """
+        )
+        feature_b = dedent(
+            """
+            Feature: B
+              # RSV-T-01
+              Scenario: 重複
+                Given 何か
+            """
+        )
+        write(self.root / "projects" / "reservation-system" / "contracts" / "a.feature", feature_a)
+        write(self.root / "projects" / "reservation-system" / "contracts" / "b.feature", feature_b)
+        govlint.check_scenario_ids()
+        self.assertTrue(any("定義が" in e and "重複している" in e for e in govlint.errors))
+
+
+# ---------------------------------------------------------------- 契約のステータス（meta/adr/0043）
+class TestCheckContractStatus(GovlintTestCase):
+    def _feature(self, status_line: str) -> str:
+        return dedent(
+            f"""
+            # 会議室予約 受け入れシナリオ — サンプル
+            {status_line}
+
+            Feature: サンプル
+              # RSV-A-01
+              Given 何か
+            """
+        )
+
+    def test_approved_with_date_is_accepted(self) -> None:
+        write(
+            self.root / "projects" / "reservation-system" / "contracts" / "a.feature",
+            self._feature("# ステータス: 承認済み(2026-07-16) — このファイルが正式な仕様"),
+        )
+        govlint.check_contract_status()
+        self.assertEqual(govlint.errors, [])
+        self.assertEqual(govlint.reports, [])
+
+    def test_pending_is_reported_not_error(self) -> None:
+        """承認すべきかは意味判定なのでERROR化しない（ADR-0035が提案中ADRをREPORTに留めたのと同じ）。"""
+        write(
+            self.root / "projects" / "reservation-system" / "contracts" / "a.feature",
+            self._feature("# ステータス: 承認待ち(人間が承認すると正式な仕様になる)"),
+        )
+        govlint.check_contract_status()
+        self.assertEqual(govlint.errors, [])
+        joined = "\n".join(govlint.reports)
+        self.assertIn("承認待ちのまま残っている契約 1本", joined)
+        self.assertIn("a.feature", joined)
+
+    def test_missing_status_line_is_error(self) -> None:
+        """ステータス行が無いと「拘束力を持つのか」を読み手が判別できない。機械が確定できるのでERROR。"""
+        write(
+            self.root / "projects" / "reservation-system" / "contracts" / "a.feature",
+            dedent(
+                """
+                # 会議室予約 受け入れシナリオ — サンプル
+
+                Feature: サンプル
+                  # RSV-A-01
+                  Given 何か
+                """
+            ),
+        )
+        govlint.check_contract_status()
+        self.assertTrue(any("ステータス行が無いか形式が不正" in e for e in govlint.errors))
+
+    def test_approved_without_date_is_error(self) -> None:
+        """「承認済み」だけで日付が無いと、いつの承認かを追えない。"""
+        write(
+            self.root / "projects" / "reservation-system" / "contracts" / "a.feature",
+            self._feature("# ステータス: 承認済み — 日付なし"),
+        )
+        govlint.check_contract_status()
+        self.assertTrue(any("ステータス行が無いか形式が不正" in e for e in govlint.errors))
+
+    def test_multiple_projects_are_scanned(self) -> None:
+        write(
+            self.root / "projects" / "reservation-system" / "contracts" / "a.feature",
+            self._feature("# ステータス: 承認済み(2026-07-16) — 正式な仕様"),
+        )
+        write(
+            self.root / "projects" / "reservation-frontend" / "contracts" / "f.feature",
+            self._feature("# ステータス: 承認待ち — 起草中"),
+        )
+        govlint.check_contract_status()
+        self.assertEqual(govlint.errors, [])
+        self.assertTrue(any("f.feature" in r for r in govlint.reports))
+        self.assertFalse(any("a.feature" in r for r in govlint.reports))
+
+    def test_no_contracts_dir_is_silently_skipped(self) -> None:
+        govlint.check_contract_status()
+        self.assertEqual(govlint.errors, [])
+        self.assertEqual(govlint.reports, [])
+
 
 # ---------------------------------------------------------------- main（統合）
 class TestMain(GovlintTestCase):
     def test_clean_repo_returns_zero(self) -> None:
         write_valid_role_layout(self.root)
+        write_locked_settings_json(self.root)
         write(self.root / "meta" / "adr" / "0001-sample.md", VALID_ADR)
         write(
             self.root / "projects" / "reservation-system" / "friction-log.md",
@@ -574,6 +1001,7 @@ class TestMain(GovlintTestCase):
     def test_report_only_state_still_returns_zero(self) -> None:
         # cause_keyの2回出現はREPORTのみで、終了コードには影響しない。
         write_valid_role_layout(self.root)
+        write_locked_settings_json(self.root)
         content = (
             fr_entry("FR-001", cause_key="shared-cause")
             + "\n---\n\n"
@@ -583,6 +1011,21 @@ class TestMain(GovlintTestCase):
         rc = govlint.main()
         self.assertEqual(rc, 0)
         self.assertTrue(any("shared-cause" in r for r in govlint.reports))
+
+    def test_unlocked_verification_gate_fails_main_even_if_otherwise_clean(self) -> None:
+        """ADR-0046決定3: 施錠が外れたままではL0（govlint）がERRORで止まる。"""
+        write_valid_role_layout(self.root)
+        write_settings_json(self.root, [])  # 4項目とも欠落＝開錠されたまま
+        write(self.root / "meta" / "adr" / "0001-sample.md", VALID_ADR)
+        write(
+            self.root / "projects" / "reservation-system" / "friction-log.md",
+            fr_entry("FR-001", found_at="AI"),
+        )
+        rc = govlint.main()
+        self.assertEqual(rc, 1)
+        self.assertTrue(
+            any("permissions.deny に ADR-0046決定1" in e for e in govlint.errors)
+        )
 
 
 if __name__ == "__main__":

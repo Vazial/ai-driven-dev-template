@@ -15,7 +15,8 @@
 
 ## 2. PR・CI
 
-- PRテンプレート必須項目: 「対象契約（シナリオID）」「DoD充足のエビデンス（CI結果）」
+- PRテンプレート必須項目: 「PR種別と承認事項」「対象契約（シナリオID）」「DoD充足のエビデンス（CI結果）」
+- **PR種別と人間の判断の要否（meta/adr/0041）**: 判定基準は「**そのPRに、人間がまだしていない決定が含まれるか**」であり、PRの形（base/head）ではない。**スライス**（base=`project/<p>`）と **meta**（base=`main`、共有ガバナンス）は**承認事項あり**。**昇格**（base=`main`、head=`project/<p>`）は中身が承認済みコミットの積み上げのみで**承認事項なし**——マージはbranch protectionの形式要件であり、本文はDoD表・承認方式・論拠を書かず「載るもの」と検証結果に絞る。**同期**（base=`project/<p>`、head=`main`）は原則承認事項なしだが、**衝突解決を含む場合は判断であり冒頭に明記する**。**機械検証（L0〜L4）はどの種別でも省略しない**——統合して初めて壊れる場合があるため、orchestratorは統合結果に対して検証してから提出する（meta/adr/0039 決定1）。「承認事項なし」は人間の判断が不要という意味であって、検証が不要という意味ではない
 - CI構成（meta/adr/0026 決定1）: L0（govlint、`.github/workflows/govlint.yml`）はリポジトリ横断の共有ゲートで**常時実行・pathsフィルタなし**。各プロジェクトのL1〜L4は `.github/workflows/ci-<project>.yml` に分割し、自プロジェクト配下（`projects/<project>/**` と当該ワークフロー自身）の変更時のみ起動する。**新プロジェクトの参入は `ci-<project>.yml` を1本足すだけ**（共有ファイル・他プロジェクトのワークフローは編集しない）
 - CI必須チェック（現状＝meta/adr/0026 決定1.3 の**案i**）: **L0（govlint）のみを hard-required** とする（全PRで必ず起動する共有ゲートのため required 化しても滞留しない）。各プロジェクトの L1 → L2 → L3 → L4（verification.md参照）は、pathsフィルタで無関係PRでは起動しないため**まだ required 化しておらず**、PR上で緑をレビュー時に目視確認する運用。将来 案ii（Rulesets のパス条件付き required）／案iii（ジョブ常時起動＋内部paths判定）で機械必須化に強化しうる。**pathsフィルタとrequired checksの噛み合わせ**（無関係PRで起動しないジョブがrequiredのまま滞留する既知の癖）の詳細は meta/adr/0026 決定1.3 参照。required checks一覧の変更は人間承認（meta/permissions.md「ゲート変更」）
 - **配線・結合の検証ゲート（meta/adr/0032）**: 部品・プロジェクトを跨ぐ配線とデータ疎通は**機械検証で
@@ -23,13 +24,15 @@
   用いない（機械検証でない＝P-01違反／アドホックな起動は非再現）。走破は**未知の帰結の探索**と、**意味
   理解が要るUX・control surfaceの確認**（meta/adr/0024）に限る。層状のゲートの構成は
   meta/verification.md「L3詳細」および §3.4 を参照
-- `main` はGitHub ruleset `protect main`（2026-07-27時点で有効）で保護されている。`project/<project>` はプロジェクト開始時に**AIが `gh` のadmin権限で GitHub Rulesets REST API（`gh api repos/:owner/:repo/rulesets`）を用いて作成し**、同じ保護（`pull_request`：PR経由のみ・直push不可／`non_fast_forward`：force push禁止／`deletion`：削除禁止／`required_status_checks`：`L0: 統治文書の整合(govlint)` を必須）をrulesetで設定する（`protect project/<project>` という名前、対象refは `refs/heads/project/<project>`。テンプレは既存の `protect main`・`protect project/toyama-weekend-radar` と同一。meta/adr/0028）。人間はプロジェクト開始をchatでauthorizeし作成結果を確認する。`project/reservation-frontend` はこの方式の初適用として作成済み（ブランチ＋ruleset `protect project/reservation-frontend`、2026-07-29。ADR-0028）。`project/reservation-system` は現時点で未作成である。rulesetの実体はGitHub設定（git管理外）に存在するため、作成・変更時は本行も更新する。
+- `main` はGitHub ruleset `protect main`（2026-07-27時点で有効）で保護されている。`project/<project>` はプロジェクト開始時に**AIが `gh` のadmin権限で GitHub Rulesets REST API（`gh api repos/:owner/:repo/rulesets`）を用いて作成し**、同じ保護（`pull_request`：PR経由のみ・直push不可／`non_fast_forward`：force push禁止／`deletion`：削除禁止／`required_status_checks`：`L0: 統治文書の整合(govlint)` を必須）をrulesetで設定する（`protect project/<project>` という名前、対象refは `refs/heads/project/<project>`。テンプレは既存の `protect main`・`protect project/toyama-weekend-radar` と同一。meta/adr/0028）。人間はプロジェクト開始をchatでauthorizeし作成結果を確認する。`project/reservation-frontend` はこの方式の初適用として作成済み（ブランチ＋ruleset `protect project/reservation-frontend`、2026-07-29。ADR-0028）。`project/toyama-dining-radar` も同じ方式で作成済み（ブランチ＋ruleset `protect project/toyama-dining-radar`、2026-07-30）。`project/reservation-system` は現時点で未作成である。rulesetの実体はGitHub設定（git管理外）に存在するため、作成・変更時は本行も更新する。
 
 ## 3. シークレット・破壊的操作
 
 | 項目 | 強制手段 |
 |---|---|
-| `.env`・認証情報・秘密鍵はAI読み取り禁止 | agentのdeny設定（口頭ルールにしない） |
+| `.env`・認証情報・秘密鍵はAIが**読み取り・編集・書き込み**いずれも禁止 | agentのdeny設定（口頭ルールにしない）。`Read`・`Edit`・`Write` の**3ツールに同一パターンを対称に**適用する（meta/adr/0040。`Write` が抜けていると、読めず編集もできないファイルを丸ごと上書き・新規作成できてしまう） |
+| 機密の実ファイルはリポジトリに入れない | `.gitignore`（meta/adr/0040）。**deny より本質的な防御**——deny はAIの1経路を塞ぐだけだが、`.gitignore` は人間・CI・他ランタイムを含む全経路を塞ぐ |
+| 共有する環境変数テンプレートは `.env*` の名前空間の外に置く | ファイル名の規約（meta/adr/0040）: `env.example`（`.env.example` ではない）。**denyは allow で上書きできず除外構文も無い**（実測、ADR-0040 文脈4）ため、`.env.example` のままではAIが保守できず実際に追記漏れが2回起きた。default-deny を緩めるのではなく、機密でないものを危険地帯の外に置くことで両立させる |
 | 本番環境への操作、データ削除系コマンドの禁止 | agentに権限を与えない（credential分離） |
 | 依存パッケージの追加はPR上で人間が差分確認 | PRレビュー + lockファイルのCODEOWNERS |
 

@@ -292,4 +292,49 @@ principles: [P-02, P-10]
   「部分的な実物への置き換えで前提が崩れる」事象が観測されたら、このcause_keyを再利用すること
 
 ---
+
+## FR-008: orchestratorがtesterに前提作成の技法まで指定し、成立しない構成を強いた上に「契約が実現不能」と誤診した（reviewerの独立監査が反証した）
+
+```yaml
+id: FR-008
+date: 2026-07-30
+found_at: AI
+slice: RFE-C（自分の予約・キャンセル）
+agents: [orchestrator, tester, reviewer]
+cause_category: orchestratorが役割の判断領域に踏み込んだ
+cause_key: orchestrator-as-substantive-source
+pushed_to: []
+status: 未対応
+principles: [P-01, P-08, P-10]
+```
+
+- 事象: RFE-C-05（別の画面で既にキャンセル済みの予約を、一覧が更新されないままもう一度キャンセルして
+  拒否される）のL4が落ちた。orchestratorはtesterへの指示で**前提状態の作り方を技法レベルで指定**して
+  いた——「同一browser contextに2ページを開く（localStorageを共有）」「既存の `injectReservation`
+  seam は使わず UI だけで作れ」。この構成では原理的に成立しない: 端末の記録（localStorage）は
+  ページ間で共有されるが、モックの予約台帳（`MOCK_RESERVATIONS`）は**モジュール変数＝ページごとに独立**
+  のため、2ページ目では一覧に出るのに台帳に無く `RESERVATION_NOT_FOUND` になり、検証対象の
+  `ALREADY_CANCELLED` に到達できない。**さらにorchestratorは、この失敗を「モックの状態スコープの分断
+  でL4では実現不能」と診断し、人間に先送りを提案して承認まで得た**。
+- 原因の仮説: orchestratorが役割の判断領域に踏み込んだ — 「何を検証するか」（契約由来）だけでなく
+  「どう前提を作るか」（testerの判断領域）まで指定し、しかも**既存の正しい手段を名指しで禁じた**。
+  `injectReservation` のコメントは「予約台帳はブラウザのJSモジュールインスタンス内にのみ存在する」
+  「UIだけでは作れないバックグラウンドでの競合という前提条件を成立させるための補助手段」と、今回
+  必要だったことをすべて説明していた。**RFE-B-03（別の予約者が先に予約した）が同じ形の前提を同じ
+  seam で作っている先例もあった**。cause_key は FR-006・FR-009（reservation-system側）と同一とした
+  ——成果物を直接作るのと、技法を指定して役割の判断を奪うのは、同じ「orchestratorが実質を供給する」
+  機構である
+- 押し込み先: 未定（人間判断）。**この摩擦はmeta層の役割規程の問題であり、本プロジェクト固有ではない**。
+  `meta/agents.md` 6節（orchestratorの制約、meta/adr/0011）は「実質的成果物を作らない」を定めるが、
+  **「役割の判断領域に属する技法を指定しない」は明文化されていない**。cause_key
+  `orchestrator-as-substantive-source` はreservation-system側で既に2回出ており、本FRを含めると3回目に
+  なる（ただしgovlintの再出現検出はfriction-logファイル単位のため、跨って自動検出はされない——
+  この検出漏れ自体も論点）
+- 補足: **reviewer の独立監査がorchestratorの誤診を反証した**ことは記録に値する。reviewerは
+  「testerの構成上の見落としであり実現可能」と判断し、`injectReservation` のコメントが既に制約を
+  明記している点を根拠に挙げた。orchestratorが実装を読んで検証した結果reviewerが正しく、先送りは
+  撤回して同一ページ＋既存seamで解決した。**監査を実施者から独立させる設計（meta/agents.md 3節）が、
+  実施者だけでなく指示者（orchestrator）の誤りも捕まえた**実例である
+
+---
 <!-- 記入のコツはmeta/templates/friction-log.mdを参照 -->

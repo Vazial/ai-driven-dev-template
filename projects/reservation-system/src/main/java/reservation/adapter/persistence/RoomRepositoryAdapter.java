@@ -28,6 +28,18 @@ public class RoomRepositoryAdapter implements RoomRepository {
                 .toList();
     }
 
+    @Override
+    public Optional<Room> findByName(String name) {
+        return springDataRepository.findByName(name).map(RoomRepositoryAdapter::toDomain);
+    }
+
+    @Override
+    public Room save(Room room) {
+        RoomJpaEntity saved = springDataRepository.save(new RoomJpaEntity(
+                room.id(), room.name(), room.businessHoursStart(), room.businessHoursEnd(), room.capacity()));
+        return toDomain(saved);
+    }
+
     private static Room toDomain(RoomJpaEntity entity) {
         return new Room(
                 entity.getId(),
