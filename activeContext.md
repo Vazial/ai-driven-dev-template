@@ -45,7 +45,7 @@ AI駆動開発のメタテンプレート。正しさを機械検証（L0〜L5�
 | reservation-system（会議室予約バックエンド） | Claude | 垂直スライス**6本**（RSV-C/K/A/R/L/**T**）完了・main。RSV-Tで `POST /rooms`（会議室登録）を追加し、**通常プロファイルでもループが成立**するようになった。`project/reservation-system` 作成済み。**新規作業なし** | `projects/reservation-system/activeContext.md` |
 | reservation-frontend（会議室予約フロント） | Claude | RFE-A/B/C 実装済み。**4本すべて（rooms・availability・予約作成・キャンセル）が実API opt-in**。走破で実バックエンドとの通しの動作を確認済み。**新規作業なし**。宿題: 骨格記録（adr/0021）・ADR-0004/0005承認・**RFE-A/Bの契約が未承認**（下記） | `projects/reservation-frontend/activeContext.md` |
 | toyama-weekend-radar | Codex | 休止。foundationは`project/toyama-weekend-radar`に保持し、Dining Radarへ注力する | 同ブランチ上のactiveContext |
-| toyama-dining-radar | **Claude**（2026-08-04にCodexから引き継ぎ） | 断面①完了: foundation・認証（TDR-AUTH実装まで緑）・候補検索の契約（TDR-CS-00〜08、PR #76）。**次は断面②＝TDR-CS実装**。引き継ぎ時点でオープンPRなし・CI緑 | `projects/toyama-dining-radar/activeContext.md` |
+| toyama-dining-radar | **Claude**（2026-08-04にCodexから引き継ぎ） | **TDR-CS実装（断面②）完了・人間承認待ち**。L0〜L4全緑（L4はPlaywrightで実画面15件・skipゼロ）。認証（TDR-AUTH）は実装済み。承認材料は `reviews/audit-tdr-cs.md` と ADR-0009/0010/0011＋browser-interface契約v0.2 | `projects/toyama-dining-radar/activeContext.md` |
 
 ## クロスプロジェクトの協調状態
 
