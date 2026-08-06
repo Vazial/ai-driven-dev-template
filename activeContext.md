@@ -34,7 +34,7 @@ AI駆動開発のメタテンプレート。正しさを機械検証（L0〜L5�
 - **reservation-system の activeContext スリム化**（2階層モデルへ・ADR-0033/0034）: `project/reservation-system` は作成済みなので、次に同プロジェクトを触るときに実施できる
 
 *留意事項（宿題ではないが忘れると事故る）*
-- **シナリオIDのプレフィックスはリポジトリ全体で一意**（ADR-0038決定3）。新プロジェクト追加時に重複を避ける。使用中: RFE-A/B/C・RSV-A/C/K/L/R/T・TDR（Codex予約）
+- **シナリオIDのプレフィックスはリポジトリ全体で一意**（ADR-0038決定3）。新プロジェクト追加時に重複を避ける。使用中: RFE-A/B/C・RSV-A/C/K/L/R/T・TDR-AUTH/TDR-CS
 - **権限機構の性質（ADR-0040・0046で実測・確定）**: deny は allow で上書きできず、除外構文（`!`）も無い。設定変更はセッション中に反映される。**deny はサブエージェントにも継承される**——つまりパスベースの deny で orchestrator と役割agentを区別することはできない（ADR-0046の設計はこの実測結果で組み替わった）。`Read` は deny の対象外。**再検証は不要**
 - **`.claude/settings.json` は Claude Code の機構であり、Codex には効かない**。両runtimeに効くのは共有の必須ゲート（L0 govlint）だけである。runtime横断で効かせたい規律は、権限設定ではなく govlint に置くこと
 
@@ -45,7 +45,7 @@ AI駆動開発のメタテンプレート。正しさを機械検証（L0〜L5�
 | reservation-system（会議室予約バックエンド） | Claude | 垂直スライス**6本**（RSV-C/K/A/R/L/**T**）完了・main。RSV-Tで `POST /rooms`（会議室登録）を追加し、**通常プロファイルでもループが成立**するようになった。`project/reservation-system` 作成済み。**新規作業なし** | `projects/reservation-system/activeContext.md` |
 | reservation-frontend（会議室予約フロント） | Claude | RFE-A/B/C 実装済み。**4本すべて（rooms・availability・予約作成・キャンセル）が実API opt-in**。走破で実バックエンドとの通しの動作を確認済み。**新規作業なし**。宿題: 骨格記録（adr/0021）・ADR-0004/0005承認・**RFE-A/Bの契約が未承認**（下記） | `projects/reservation-frontend/activeContext.md` |
 | toyama-weekend-radar | Codex | 休止。foundationは`project/toyama-weekend-radar`に保持し、Dining Radarへ注力する | 同ブランチ上のactiveContext |
-| toyama-dining-radar | Codex | 統合ブランチと保護ruleset作成済み。富山県庁周辺の月例ランチ会向け店舗提案のfoundation開始待ち | foundationスライスで`projects/toyama-dining-radar/activeContext.md`を配置 |
+| toyama-dining-radar | **Claude**（2026-08-04にCodexから引き継ぎ） | TDR-AUTH・TDR-CS 実装済み（PR #82）＋候補カードの洗練完了（PR #84。外部AI 1回＋以降developer改修＝ADR-0012、契約2本改訂＝ADR-0013）。L0〜L4全緑。**mainへの昇格は未実施**（24コミット先行）。宿題: Hot Pepperのフィールド名仮定が合成データ検証のみ／ADR-0003の受け皿スタック記述と実体の乖離 | `projects/toyama-dining-radar/activeContext.md` |
 
 ## クロスプロジェクトの協調状態
 

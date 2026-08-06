@@ -8,6 +8,22 @@
       "port": 5173
     },
     {
+      "name": "toyama-dining-radar-app",
+      "runtimeExecutable": "C:/Users/pomup/tdrv/Scripts/python.exe",
+      "runtimeArgs": ["projects/toyama-dining-radar/manage.py", "runserver", "127.0.0.1:8010", "--noreload", "--insecure"],
+      "port": 8010,
+      "env": {
+        "PYTHONPATH": "C:/Users/pomup/AppData/Local/Temp/claude/E--AWS-Claude-Workspace-ai-driven-dev-template/54088599-9712-47c9-9c69-de2d01093ccb/scratchpad",
+        "DJANGO_SETTINGS_MODULE": "preview_settings"
+      }
+    },
+    {
+      "name": "toyama-dining-radar-design-preview",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "projects/toyama-dining-radar/design-preview", "run", "dev", "--", "--port", "5174"],
+      "port": 5174
+    },
+    {
       "name": "reservation-frontend-real-api",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "projects/reservation-frontend", "run", "dev"],
