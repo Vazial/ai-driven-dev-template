@@ -45,7 +45,7 @@ AI駆動開発のメタテンプレート。正しさを機械検証（L0〜L5�
 | reservation-system（会議室予約バックエンド） | Claude | 垂直スライス**6本**（RSV-C/K/A/R/L/**T**）完了・main。RSV-Tで `POST /rooms`（会議室登録）を追加し、**通常プロファイルでもループが成立**するようになった。`project/reservation-system` 作成済み。**新規作業なし** | `projects/reservation-system/activeContext.md` |
 | reservation-frontend（会議室予約フロント） | Claude | RFE-A/B/C 実装済み。**4本すべて（rooms・availability・予約作成・キャンセル）が実API opt-in**。走破で実バックエンドとの通しの動作を確認済み。**新規作業なし**。宿題: 骨格記録（adr/0021）・ADR-0004/0005承認・**RFE-A/Bの契約が未承認**（下記） | `projects/reservation-frontend/activeContext.md` |
 | toyama-weekend-radar | Codex | 休止。foundationは`project/toyama-weekend-radar`に保持し、Dining Radarへ注力する | 同ブランチ上のactiveContext |
-| toyama-dining-radar | **Claude**（2026-08-04にCodexから引き継ぎ） | **TDR-CS実装（断面②）完了・PR #82マージ済み**。L0〜L4全緑（L4はPlaywrightで実画面15件・skipゼロ）。認証（TDR-AUTH）も実装済み。**mainへの昇格は未実施**（`project/`が18コミット先行）。宿題: Hot Pepperのフィールド名仮定が合成データ検証のみ | `projects/toyama-dining-radar/activeContext.md` |
+| toyama-dining-radar | **Claude**（2026-08-04にCodexから引き継ぎ） | TDR-AUTH・TDR-CS 実装済み（PR #82）。**候補カードの洗練スライスがPR中**（外部AI 1回＋以降developer改修＝ADR-0012、契約2本改訂＝ADR-0013）。L0〜L4全緑。**mainへの昇格は未実施**。宿題: Hot Pepperのフィールド名仮定が合成データ検証のみ／ADR-0003の受け皿スタック記述と実体の乖離 | `projects/toyama-dining-radar/activeContext.md` |
 
 ## クロスプロジェクトの協調状態
 
