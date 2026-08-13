@@ -22,7 +22,7 @@ AI駆動開発のメタテンプレート。正しさを機械検証（L0〜L5�
 - ~~FR-022: orchestratorが検証インフラを自分で直す違反が4回目~~ **対応済み（2026-08-03、ADR-0046）**。`meta/tools/**`・`build.gradle*` を deny で施錠し、開錠は人間のコミット、**施錠されていることを govlint が ERROR で検証**する（開錠したままマージできない）。あわせて `meta/permissions.md` の段差（検証ツール本体をゲートでなく実装として扱っていた行）を正した。**再発可能性は消えていない**——決定5の限界（`Bash` の抜け道／deny は Claude Code のみで Codex には届かない）を承知のうえで「うっかりだけ止まれば足りる」と判断している
 - **RFE-A・RFE-B の契約が未承認のまま実装が載っている**。RFE-B は契約と実装が同一コミット（`f1dac2a`）だが、これは規律違反ではなく**当時は機械的に契約先行が不可能だった**（ADR-0045で解消）。ADR-0043 は遡って承認せず govlint のREPORTで可視化し続ける方針。**未承認の契約に対する実装を止める機械的な仕組みは無い**（PRテンプレのチェックは自己申告）
 - **RSV-L の監査が未実施**（`reviews/audit-rsv-l.md` が存在しない）。RSV-Tの監査でreviewerが独立に再発見した。`activeContext` に記録済みの規程違反（4承認点の1つを飛ばした）と一致
-- ~~提案中ADRの滞留~~ **解消（2026-08-03）**。meta 7本（0022〜0027・0030）を個別判断のうえ承認した。承認の根拠は「読んで納得した」ではなく**6スライスの実運用で決定どおりに回りきったこと**（ADR-0035決定3が禁じる「読まずに一括承認」との違いはここ）。残る提案中は `reservation-frontend/adr/0004`・`0005` の2本のみで、**これは意図した保留**——つまり `提案中` という状態が「まだ決めていない」の意味を取り戻した（ADR-0035が狙った状態）
+- ~~提案中ADRの滞留~~ **解消（2026-08-03）**。meta 7本（0022〜0027・0030）を個別判断のうえ承認した。承認の根拠は「読んで納得した」ではなく**6スライスの実運用で決定どおりに回りきったこと**（ADR-0035決定3が禁じる「読まずに一括承認」との違いはここ）。残る提案中は `reservation-frontend/adr/0004`・`0005`・`toyama-dining-radar/adr/0018`（cache・永続provider IDの採用可否。provider規約の再確認と人間の意思決定が要る）の3本のみで、**いずれも意図した保留**——つまり `提案中` という状態が「まだ決めていない」の意味を取り戻した（ADR-0035が狙った状態）
 
 *機械で塞げていない穴*
 - **`Bash` の deny が prefix 一致で回避できる**: `Bash(git reset --hard*)` は `git reset -q --hard` を止められない（実測）。ADR-0040 は `Read`/`Edit`/`Write` のみ扱い、`Bash` は引数の組み合わせが爆発するため別途設計が要る
@@ -45,7 +45,7 @@ AI駆動開発のメタテンプレート。正しさを機械検証（L0〜L5�
 | reservation-system（会議室予約バックエンド） | Claude | 垂直スライス**6本**（RSV-C/K/A/R/L/**T**）完了・main。RSV-Tで `POST /rooms`（会議室登録）を追加し、**通常プロファイルでもループが成立**するようになった。`project/reservation-system` 作成済み。**新規作業なし** | `projects/reservation-system/activeContext.md` |
 | reservation-frontend（会議室予約フロント） | Claude | RFE-A/B/C 実装済み。**4本すべて（rooms・availability・予約作成・キャンセル）が実API opt-in**。走破で実バックエンドとの通しの動作を確認済み。**新規作業なし**。宿題: 骨格記録（adr/0021）・ADR-0004/0005承認・**RFE-A/Bの契約が未承認**（下記） | `projects/reservation-frontend/activeContext.md` |
 | toyama-weekend-radar | Codex | 休止。foundationは`project/toyama-weekend-radar`に保持し、Dining Radarへ注力する | 同ブランチ上のactiveContext |
-| toyama-dining-radar | **Claude**（2026-08-04にCodexから引き継ぎ） | TDR-AUTH・TDR-CS＋候補カードの洗練・実データ運用での是正（ADR-0015〜0019）まで**mainにマージ済み**（PR #88まで）。**ADR-0020でUI検証ハーネスを新設**（描画観測ツール／UI規則の機械化／回帰ゲートの3層。L5をピクセル差分でなくDOM/幾何スナップショット比較として具体化し、meta/adr/0021・0024はsupersedeしない）。L0〜L5全緑。宿題: Hot Pepperのフィールド名仮定が合成データ検証のみ／ADR-0003の受け皿スタック記述と実体の乖離／`project/toyama-dining-radar` ブランチがmainより8コミット遅れ（refresh or retireの判断待ち） | `projects/toyama-dining-radar/activeContext.md` |
+| toyama-dining-radar | **Claude**（2026-08-04にCodexから引き継ぎ） | TDR-AUTH・TDR-CSから**絞り込みモデルへの組み替え**（ADR-0023。`ConceptKind`を廃し、絞り込み＋固定の近い順＋近傍プールからの無作為抽出へ。product-brief §2の「決定的ルールだけで選ぶ」を人間判断で緩めた再承認点を含む）まで**mainにマージ済み**（PR #92まで）。**ADR-0020でUI検証ハーネスを新設**（描画観測ツール／UI規則の機械化／回帰ゲートの3層。L5をピクセル差分でなくDOM/幾何スナップショット比較として具体化し、meta/adr/0021・0024はsupersedeしない）。**無料公開構成を準備済み**（ADR-0021。Render Free + Neon Free。resourceも公開originも未作成で、外部accountの変更とsecret投入は人間の実施待ち）。L0〜L5全緑。宿題: Hot Pepperのフィールド名仮定が合成データ検証のみ／ADR-0003の受け皿スタック記述と実体の乖離／`project/toyama-dining-radar` ブランチがmainより大きく遅れ（refresh or retireの判断待ち）／**FR-017の押し下げ**（ADR本文の承認宣言とfrontmatterの`status`の照合をgovlintで機械化する案。`meta/tools/**`の開錠が要るため人間の判断待ち） | `projects/toyama-dining-radar/activeContext.md` |
 
 ## クロスプロジェクトの協調状態
 
