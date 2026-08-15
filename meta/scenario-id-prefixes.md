@@ -13,6 +13,7 @@
 | `RFE` | `projects/reservation-frontend` | 2026-07-22 | 会議室予約フロントエンド。`RFE-A`(空き状況画面)/`RFE-B`(予約作成画面)等 |
 | `TWR` | `projects/toyama-weekend-radar` | 2026-07-29 | 富山市近郊の週末イベント提案。`TWR-W`(週末イベント一覧)等 |
 | `TDR` | `projects/toyama-dining-radar` | 2026-07-29 | 富山県庁周辺の月例ランチ会向け飲食店提案。`TDR-L`(ランチ候補提案)等 |
+| `CSR` | `projects/connpass-session-radar` | 2026-08-15 | Connpassの興味深いセッションを見つける画面。`CSR-B`(セッション閲覧)等 |
 
 ## 新規プロジェクトがプレフィックスを予約する手順
 
