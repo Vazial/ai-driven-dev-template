@@ -6,7 +6,21 @@
 
 ## 現在
 
-立ち上げ直後。**断面①（骨格合意）の途中**であり、契約もADRもまだ無い。実装は一行も無い。
+**断面①（骨格合意）の成果物が揃い、人間の承認を待っている**。実装は一行も無い。
+
+- `adr/0001-adopt-pipeline-pack-and-resolve-delivery-architecture.md`（`status: 提案中`）——パイプライン
+  パック採用／通知先はLINE Messaging API（人間裁定）／トリガはGitHub Actionsのスケジュール実行／
+  「直近何日分」はYAML設定値（既定7日を推奨）の4決定
+- `contracts/daily-digest.feature`——受け入れシナリオ `CSR-D-01`〜`CSR-D-10`。**10本すべてに
+  `@pending-implementation`** が付いている（meta/adr/0045。契約だけを先に置き、実装は承認後）
+- `contracts/daily-digest-contract.yaml`（`version: 0.1.0-draft`）——毎朝1回のパイプラインが扱うデータの形。
+  **`openapi:`・`paths:` を持たない**。画面もサーバも公開エンドポイントも無いプロジェクトであり、
+  存在しないHTTP面を装わないという判断による
+- `contracts/daily-digest-test-support.yaml`——受け入れテストのための差し替え境界
+
+`design.md`・`ARCHITECTURE.md` は未作成。ADR-0001が未承認のため、承認後に骨格を投影して新設する。
+
+**UIを持たないため designer は登場しない**（meta/adr/0022。断面①はAPI形状＋ADRのみで完結する）。
 
 スライスブランチ `docs/connpass-session-radar-digest-spec` が `project/connpass-session-radar` から
 出ている（meta/adr/0028）。プロジェクトブランチとシナリオIDプレフィックス `CSR` の予約（PR #100、
@@ -67,9 +81,19 @@ activeContext・CIワークフローは無い状態で引き継いだ。
 6. **申込・キャンセルのAPIは無い**（読み取り専用）。参加者一覧を取るAPIも無い。API以外の手段による
    スクレイピングは利用規約で禁止されているため、**APIで取れないものはHTMLから取らない**
 
-**APIキーは未申請**。申請は人間が行う（審査あり）。キー未発行でも仕様の確定は進められる。
+**APIキーは申請中**（2026-08-16時点。審査待ち）。キー未発行でも仕様の確定は進められるが、**実測が要る
+項目は発行後になる**——特に `ymd` の複数値がOR結合かどうか（上記制約1、ADR-0001が決定4で「どちらでも
+成立する設計」により吸収した空白）は、キーが出てから実測して埋める。
 
 ## 検証の状態
 
-L0（govlint）以外はまだ対象物が無い。CIワークフロー `ci-connpass-session-radar.yml` は、走らせる
-テストが生まれる実装スライスで足す（meta/adr/0026。P-05: 要るようになってから）。
+**L0（govlint）: orchestratorが実行し、エラーなし**（exit=0）。REPORTには、この時点で正しい3種の
+未確定状態が現れている——提案中ADR 1本（`adr/0001`）、承認待ち契約1本（`daily-digest.feature`）、
+実装待ちシナリオ10本（`CSR-D-01`〜`10`）。L1〜L4はまだ対象物が無い。
+
+**役割の成果物は緑を独立に確認してから次段へ渡している**（meta/adr/0027・0039）。architectはBashを
+持たないため機械検証を実行できず、その旨を申告した上で目視照合の結果だけを報告した——orchestratorが
+`govlint` を実行して確認した。
+
+CIワークフロー `ci-connpass-session-radar.yml` は、走らせるテストが生まれる実装スライスで足す
+（meta/adr/0026。P-05: 要るようになってから）。

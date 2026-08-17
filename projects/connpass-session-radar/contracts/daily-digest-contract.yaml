@@ -1,0 +1,235 @@
+# Connpass Session Radar — daily digest data contract
+# ステータス: 承認待ち — adr/0001（プロジェクト基盤ADR）がまだ人間の承認前（status: 提案中）であり、
+#   本契約はその決定を前提に書かれている。承認方式はmeta/adr/0043の(ii)（記録のみ・承認は後日）。
+#   adr/0001・daily-digest.featureとあわせて人間のレビューを経てから承認する。
+#
+# 2026-08-16 起草 (adr/0001): これはHTTP経由で外部から呼び出せるAPIの仕様ではない——本プロジェクトは
+# 画面を持たず、永続稼働するサーバも公開エンドポイントも持たない（adr/0001決定1・3、
+# product-brief.md §5）。ここで定めるのは、毎朝1回のパイプライン実行（取得→絞り込み→算出→整形→配信、
+# adr/0001決定1）が扱うデータの形である。取得段・配信段の2つだけが外部と通信し、それ以外の段は
+# ここで定めるスキーマだけを介して合成データでも検証できる（architecture-selection.md 4節
+# 「入出力スキーマ検証中心」）。したがって `openapi:`・`paths:` は持たない——存在しないHTTP面を
+# 装うのは正直でない。
+#
+# 用語の対応:
+#   InterestConditions — 利用者がYAMLへcommitする興味の条件（adr/0001決定4の取得ウィンドウ設定を含む）
+#   NormalizedEvent    — 絞り込み・算出後、connpassの生の形式から独立したイベント1件の内部表現
+#   DailyDigest        — 整形段の出力であり、配信段（Notifier）への入力。1回の配信＝1つのDailyDigest
+#   NotifierPort        — 配信先を差し替え可能にする境界（adr/0001決定2）。LINE実装は本ADRで確定した
+#                        既定実装であり、この契約自体はLINE固有ではない
+#
+# connpass API v2自体のフィールド名・制約は `connpass-api-v2-facts.md` が一次情報として持つ。本契約は
+# それを再定義しない——NormalizedEventは、絞り込み・算出を終えたあとの内部表現だけを定める。
+# 同様にLINE Messaging APIの実際のリクエスト/レスポンス形式もLINE自身の外部契約であり、本契約は
+# NotifierPortの入出力（DailyDigestとNotifierResult）だけを定め、LINE固有のペイロード形式は
+# 定めない（adr/0001決定2の実装時に、DailyDigestからLINEのbroadcast形式へ変換するアダプタが持つ）。
+#
+# 2026-08-16 改訂: CSR-D-02・CSR-D-07は、daily-digest.feature・daily-digest-test-support.yamlの
+# どちらのpayload形状にも直接現れにくい性質のシナリオである——CSR-D-02は「一致しない」という
+# 消極的な結果、CSR-D-07は設定の読み直しという実行間の性質だからである。orchestratorの指摘を受け、
+# 両方とも実在する契約上の性質として本ファイルへ受け皿を設けた（InterestProfileの一致規則、
+# InterestConditionsの読み直し方針）——force-fitではなく、元から書かれるべきだった記述である。
+
+title: Connpass Session Radar — daily digest data contract
+version: 0.1.0-draft
+description: >-
+  毎朝1回のパイプライン実行が生成・消費するデータの形。CSR-D-* の受け入れシナリオ
+  (daily-digest.feature) が観測する外部から見た振る舞いを、実装可能な形へ橋渡しする。
+
+components:
+  schemas:
+    InterestConditions:
+      type: object
+      additionalProperties: false
+      required: [profiles]
+      description: >-
+        利用者がリポジトリ内のYAMLへcommitする、興味の条件の全体（product-brief §2「条件の変更手段は
+        YAMLのcommitである」）。ファイル形式（YAML）は決定済みだが、正確なファイルパス・キー名の
+        大文字小文字規約等は本契約では決めない——ここではデータとして持つべき情報の形だけを定める。
+        この内容は毎朝の配信実行のたびに読み直され、その実行時点のYAMLの内容がそのまま使われる。
+        前回までの実行結果・配信済みの一覧・過去のInterestConditionsの内容を記憶したり、それらと
+        比較したりする仕組みは無い——したがってYAMLをcommitで変更すれば、次の実行から即座に反映される
+        （CSR-D-07、product-brief §2「状態を持たない」）。
+      properties:
+        profiles:
+          type: array
+          minItems: 1
+          description: >-
+            1つ以上の興味プロファイル。複数プロファイルは、互いに異なる条件の組み合わせ
+            （例: 「富山県内の勉強会」と「オンラインのAWS関連イベント」）を同時に持つための単位であり、
+            結果はOR結合で一覧に合流する。取得段は、必要ならプロファイルごとに別個の取得を行う
+            （adr/0001決定4の内部実装事項）。
+          items:
+            $ref: '#/components/schemas/InterestProfile'
+
+    InterestProfile:
+      type: object
+      additionalProperties: false
+      description: >-
+        1つの興味プロファイルが表す一致規則。keywords・keywordsAny・prefectures・groupIdsのいずれも
+        指定しない（空、または省略した）フィールドは、そのフィールドによる絞り込みを行わない——
+        すべてのフィールドを省略したプロファイルは、あらゆるイベントに一致する。指定されたフィールドの
+        条件を1つでも満たさないイベントは、このプロファイルには一致しない。あるイベントが、
+        InterestConditions.profilesのどのプロファイルにも一致しなければ、そのイベントは
+        DailyDigest.eventsに含まれない（CSR-D-02）。したがってNormalizedEventは、常に少なくとも
+        1つのプロファイルの一致条件をすべて満たしたイベントだけを表す。
+      properties:
+        keywords:
+          type: array
+          items:
+            type: string
+          description: >-
+            すべてを満たす（AND）ことを求める語。connpassの`keyword`パラメータに対応する
+            （connpass-api-v2-facts.md）。空、または省略時は語による絞り込みを行わない。
+        keywordsAny:
+          type: array
+          items:
+            type: string
+          description: >-
+            いずれかを満たせばよい（OR）語。connpassの`keyword_or`パラメータに対応する。
+            検索対象にはイベントの住所も含まれるため、地名を語として使うと意図しない一致が
+            起きうる（connpass-api-v2-facts.md 制約3）——地域を絞りたい場合は`prefectures`を使う。
+        prefectures:
+          type: array
+          items:
+            type: string
+          description: >-
+            connpassの`prefecture`パラメータに対応する。値の語彙（47都道府県のローマ字表記、および
+            オンライン開催を表す特別な値）はconnpass自身が定めるものであり、本契約では列挙しない
+            （connpass-api-v2-facts.md参照）。空、または省略時は地域による絞り込みを行わない。
+        groupIds:
+          type: array
+          items:
+            type: integer
+          description: >-
+            connpassの`group_id`パラメータに対応する。特定の主催グループのイベントだけに絞りたい
+            場合に使う。空、または省略時はグループによる絞り込みを行わない。
+        windowDays:
+          type: integer
+          minimum: 1
+          default: 7
+          description: >-
+            当日から何日先までのイベントを対象にするか（adr/0001決定4）。既定値7はadr/0001が推奨する
+            値であり、固定値ではない——興味の条件に合う件数の実際の分量を見て利用者が調整してよい。
+            この値がそのまま取得段の内部実装（`ymd`列挙か`ym`取得のいずれか、adr/0001決定4）を
+            決めるわけではなく、取得段はこの日数を満たす結果を返すという契約だけを守ればよい。
+
+    NormalizedEvent:
+      type: object
+      additionalProperties: false
+      required:
+        [title, url, eventType, isOnline, remainingSeatsKnown, isFull]
+      description: >-
+        絞り込み・算出を終えた後の、イベント1件の内部表現。中止イベント（`open_status=cancelled`）は
+        この表現に現れない——絞り込み段で除かれる（CSR-D-06）。DailyDigest.eventsの各要素はこの形を持つ。
+      properties:
+        title:
+          type: string
+          description: connpassのイベント名（`title`）。
+        url:
+          type: string
+          format: uri
+          description: connpassのイベントページへのリンク（`url`）。申し込み・詳細確認の導線（CSR-D-01）。
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            開催日時。connpassが返さない場合がある（`started_at`がnull）ため、その場合はnullのまま
+            扱い、日時を推測・断定しない。
+        place:
+          type: string
+          nullable: true
+        address:
+          type: string
+          nullable: true
+        isOnline:
+          type: boolean
+          description: connpassの`prefecture`がオンライン開催を表す値であったことを示す。
+        groupTitle:
+          type: string
+          nullable: true
+          description: 主催グループ名。グループに属さないイベントはnull。
+        eventType:
+          type: string
+          enum: [participation, advertisement]
+          description: >-
+            `participation`はconnpassで参加受付があるイベント、`advertisement`はconnpass外の
+            場所で申し込むイベント（CSR-D-05）。いずれも一覧では同列に示す（product-brief §3の
+            2026-08-16人間判断）。
+        remainingSeatsKnown:
+          type: boolean
+          description: >-
+            残席の目安を示せるかどうか。`eventType=advertisement`のとき、および`limit`が無い
+            （定員なし）ときはfalse（CSR-D-05・CSR-D-08）。
+        remainingSeats:
+          type: integer
+          nullable: true
+          description: >-
+            `limit - accepted`で算出した残席の目安。remainingSeatsKnownがfalseのときは常にnull。
+        isFull:
+          type: boolean
+          description: >-
+            残席が無い、または新たな申し込みが補欠（`waiting > 0`）になっている状態を表す
+            （CSR-D-09）。remainingSeatsKnownがfalseのときも、`waiting`から独立に判定してよい。
+
+    DailyDigest:
+      type: object
+      additionalProperties: false
+      required: [status, events]
+      description: >-
+        整形段の出力であり、配信段（NotifierPort）への唯一の入力。1回の配信実行につき、必ず
+        ちょうど1つのDailyDigestが作られ、必ず配信が試みられる（product-brief §6「毎朝必ず1通届く」）。
+      properties:
+        status:
+          type: string
+          enum: [ok, zero, failed]
+          description: >-
+            `ok`は1件以上該当（CSR-D-01）、`zero`は該当0件（CSR-D-03）、`failed`は取得または
+            一覧作りに失敗（CSR-D-04）。この3値のいずれかに必ず定まり、4つ目の「沈黙」という状態は
+            この契約の外側（配信そのものの失敗）でだけ起こりうる（product-brief §6の原理的な限界）。
+        events:
+          type: array
+          description: >-
+            statusが`ok`のときは1件以上、`zero`または`failed`のときは空配列。
+          items:
+            $ref: '#/components/schemas/NormalizedEvent'
+        failureReason:
+          type: string
+          nullable: true
+          description: >-
+            statusが`failed`のときだけ意味を持つ、利用者向けの安全な要約。APIキー、内部の例外詳細、
+            スタックトレース、非公開の設定値を含めてはならない（product-brief §4）。statusが`ok`・
+            `zero`のときは省略またはnull。
+
+    NotifierPort:
+      type: object
+      description: >-
+        配信段の抽象境界（adr/0001決定2）。DailyDigestを受け取り、配信先固有の表現へ変換して送信し、
+        NotifierResultを返す。LINE実装（adr/0001で確定した既定）・将来のSlack実装のいずれも、この
+        入出力契約だけを満たせばよく、パイプラインの他の段（取得・絞り込み・算出・整形）はどちらの
+        実装が使われているかを意識しない。この境界自体はOpenAPIのHTTP操作ではなく、実装内の関数・
+        インターフェース境界として実現する（言語非依存。architecture-selection.md 6節）。
+      properties:
+        request:
+          $ref: '#/components/schemas/DailyDigest'
+        response:
+          $ref: '#/components/schemas/NotifierResult'
+
+    NotifierResult:
+      type: object
+      additionalProperties: false
+      required: [delivered]
+      description: >-
+        配信の試みの結果。`delivered=false`になった場合、パイプラインの実行全体は0以外の終了状態で
+        終える必要がある——GitHub自身の失敗通知を二次防御として機能させるための必須条件
+        （adr/0001決定3）。
+      properties:
+        delivered:
+          type: boolean
+        errorSummary:
+          type: string
+          nullable: true
+          description: >-
+            配信に失敗した場合の安全な要約。配信先の秘密（トークン・Webhook URL等）や、配信先APIの
+            生のエラー内容をそのまま含めてはならない。
