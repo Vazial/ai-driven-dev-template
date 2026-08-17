@@ -1,9 +1,9 @@
 ---
 id: 0001
 scope: project/connpass-session-radar
-status: 提案中
+status: 承認済み
 date: 2026-08-16
-approved_by: null
+approved_by: "人間がchatで承認（2026-08-17）「ふるまい、決め事ともに承認します」。起草時はmeta/adr/0035 方式(ii)（提案中で起こし承認は後日）を選んでおり、PR #102 のマージは記録をmainへ載せる行為であって承認ではなかった——本承認はその後日にあたる。決定2（通知先）は2026-08-16の人間裁定でSlackからLINEへ上書き済み"
 supersedes: []
 superseded_by: null
 relates_to: [P-01, P-02, P-05, P-08, P-09, P-11]

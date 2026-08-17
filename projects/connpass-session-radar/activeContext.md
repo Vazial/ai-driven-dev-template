@@ -6,7 +6,13 @@
 
 ## 現在
 
-**断面①（骨格合意）の成果物が揃い、人間の承認を待っている**。実装は一行も無い。
+**断面①（骨格合意）が完了した——2026-08-17に人間がchatで契約とADRを承認した**。実装は一行も無く、
+次はdeveloper（実装＋単体テスト）とtester（step定義＋DSL）の並行作業に入れる状態である。
+
+承認の経緯に注意点がある。契約もADRも**起草時に方式(ii)（記録のみ・承認は後日）を選んでいた**ため、
+`PR #102` のマージは記録をmainへ載せる行為であって承認ではなかった。承認はその後のchatで別途行われ、
+`docs/connpass-session-radar-approval-record` がその記録である。**マージ＝承認ではない**という方式(ii)の
+性質が実際に効いた事例として残す。
 
 - `adr/0001-adopt-pipeline-pack-and-resolve-delivery-architecture.md`（`status: 提案中`）——パイプライン
   パック採用／通知先はLINE Messaging API（人間裁定）／トリガはGitHub Actionsのスケジュール実行／
