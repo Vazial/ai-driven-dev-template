@@ -22,7 +22,7 @@ relates_to: [P-01, P-04, P-05, P-08, P-10, FR-017]
 
 ## 文脈
 
-Toyama Dining Radarの認証実装で、L1〜L3、L4、GitHub Actions、実ブラウザ確認を行った。正しさを
+Dining Radarの認証実装で、L1〜L3、L4、GitHub Actions、実ブラウザ確認を行った。正しさを
 機械検証で担保するため、L1〜L3をPR前に実行し、L4も既存のtesterフローに従うこと自体は必要である。
 人間も2026-08-01にL1〜L3の維持を明示した。
 
