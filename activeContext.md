@@ -34,7 +34,7 @@ AI駆動開発のメタテンプレート。正しさを機械検証（L0〜L5�
 - **reservation-system の activeContext スリム化**（2階層モデルへ・ADR-0033/0034）: `project/reservation-system` は作成済みなので、次に同プロジェクトを触るときに実施できる
 
 *留意事項（宿題ではないが忘れると事故る）*
-- **シナリオIDのプレフィックスはリポジトリ全体で一意**（ADR-0038決定3）。新プロジェクト追加時に重複を避ける。使用中: RFE-A/B/C・RSV-A/C/K/L/R/T・TDR-AUTH/TDR-CS
+- **シナリオIDのプレフィックスはリポジトリ全体で一意**（ADR-0038決定3）。新プロジェクト追加時に重複を避ける。台帳のSSoTは `meta/scenario-id-prefixes.md`。使用中: RFE-A/B/C・RSV-A/C/K/L/R/T・TDR-AUTH/TDR-CS・TWR・**CSR**（connpass-session-radar、PR #100で予約済み）
 - **権限機構の性質（ADR-0040・0046で実測・確定）**: deny は allow で上書きできず、除外構文（`!`）も無い。設定変更はセッション中に反映される。**deny はサブエージェントにも継承される**——つまりパスベースの deny で orchestrator と役割agentを区別することはできない（ADR-0046の設計はこの実測結果で組み替わった）。`Read` は deny の対象外。**再検証は不要**
 - **`.claude/settings.json` は Claude Code の機構であり、Codex には効かない**。両runtimeに効くのは共有の必須ゲート（L0 govlint）だけである。runtime横断で効かせたい規律は、権限設定ではなく govlint に置くこと
 
@@ -45,6 +45,7 @@ AI駆動開発のメタテンプレート。正しさを機械検証（L0〜L5�
 | reservation-system（会議室予約バックエンド） | Claude | 垂直スライス**6本**（RSV-C/K/A/R/L/**T**）完了・main。RSV-Tで `POST /rooms`（会議室登録）を追加し、**通常プロファイルでもループが成立**するようになった。`project/reservation-system` 作成済み。**新規作業なし** | `projects/reservation-system/activeContext.md` |
 | reservation-frontend（会議室予約フロント） | Claude | RFE-A/B/C 実装済み。**4本すべて（rooms・availability・予約作成・キャンセル）が実API opt-in**。走破で実バックエンドとの通しの動作を確認済み。**新規作業なし**。宿題: 骨格記録（adr/0021）・ADR-0004/0005承認・**RFE-A/Bの契約が未承認**（下記） | `projects/reservation-frontend/activeContext.md` |
 | toyama-weekend-radar | Codex | 休止。foundationは`project/toyama-weekend-radar`に保持し、Dining Radarへ注力する | 同ブランチ上のactiveContext |
+| connpass-session-radar（connpassの毎朝ダイジェスト通知） | **Claude**（2026-08-16にCodexの先行準備を引き継ぎ） | **断面①完了・2026-08-17に人間が契約とADR-0001を承認**（シナリオ `CSR-D-01`〜`10` は全て `@pending-implementation`）。実装は一行も無く、次はdeveloper/testerの並行作業に入れる。**方式(ii)（記録のみ・承認は後日）で起草したため PR #102 のマージは承認ではなく、承認はその後のchatで別途行った**。ユースケースは確定（探す手間をなくす／毎朝「今日の一覧」を配る／**状態を持たない**＝通知済みIDを永続化しない／条件はリポジトリ内のYAML／**UIを持たないためdesignerは登場しない**）。**通知先はLINEかSlackで未定**——難度比較のうえADRで選定する。connpass API v2の一次情報は取得済み（`openapi.json`を直接取得）で、**開催日の範囲指定が無い・除外語NOTが無い・1秒1リクエストでキーは1本**といった制約が契約を縛る。**APIキーは申請中**（2026-08-16時点、審査待ち。実測が要る項目は発行後）。Codexが先行して `project/connpass-session-radar` ブランチと `CSR` プレフィックス予約（PR #100）を用意済み | `projects/connpass-session-radar/activeContext.md` |
 | toyama-dining-radar | **Claude**（2026-08-04にCodexから引き継ぎ） | TDR-AUTH・TDR-CSから**絞り込みモデルへの組み替え**（ADR-0023。`ConceptKind`を廃し、絞り込み＋固定の近い順＋近傍プールからの無作為抽出へ。product-brief §2の「決定的ルールだけで選ぶ」を人間判断で緩めた再承認点を含む）まで**mainにマージ済み**（PR #92まで）。**ADR-0020でUI検証ハーネスを新設**（描画観測ツール／UI規則の機械化／回帰ゲートの3層。L5をピクセル差分でなくDOM/幾何スナップショット比較として具体化し、meta/adr/0021・0024はsupersedeしない）。**無料公開構成を準備済み**（ADR-0021。Render Free + Neon Free。resourceも公開originも未作成で、外部accountの変更とsecret投入は人間の実施待ち）。L0〜L5全緑。宿題: Hot Pepperのフィールド名仮定が合成データ検証のみ／ADR-0003の受け皿スタック記述と実体の乖離／`project/toyama-dining-radar` ブランチがmainより大きく遅れ（refresh or retireの判断待ち）／**FR-017の押し下げ**（ADR本文の承認宣言とfrontmatterの`status`の照合をgovlintで機械化する案。`meta/tools/**`の開錠が要るため人間の判断待ち） | `projects/toyama-dining-radar/activeContext.md` |
 
 ## クロスプロジェクトの協調状態

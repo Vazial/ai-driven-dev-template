@@ -1,0 +1,102 @@
+# Connpass Session Radar test-support seam — acceptance-test Given/Then seams
+#
+# これはテストインフラであり、業務向けのAPIではない。CSR-D-*の受け入れシナリオが必要とする
+# 決定的なGiven（イベント取得の差し替え）とThenの観測（配信されたDailyDigestの捕捉）を定義する
+# machine-readable SSoTである。developer/testerはこのファイルを逐語で読む（meta/adr/0008の精神）。
+#
+# ステータス: 承認済み(2026-08-17) — adr/0001・daily-digest.featureとあわせて人間がchatで承認した。
+#   起草時は meta/adr/0043 の方式(ii)（記録のみ・承認は後日）を選んでおり、PR #102 のマージは記録を
+#   mainへ載せる行為であって承認ではなかった。本ファイルを含むPRがその承認の記録である。
+#
+# 2026-08-16 起草 (adr/0001): 本プロジェクトはtoyama-dining-radarのように永続稼働するWebサーバを
+# 持たない——毎朝1回、単発で実行されて終わるパイプラインである（adr/0001決定1・3）。したがって
+# toyama-dining-radarのtest-support-api.yamlのようなHTTPエンドポイント（`paths:`）は存在しない。
+# 代わりに、外部I/Oに触れる2つの段（取得・配信、adr/0001決定1）だけを差し替え可能にする
+# インターフェース境界を定める。差し替えの正確な機構（環境変数、依存性注入、テスト専用の実行
+# エントリポイント等）は実装言語を選ぶ段階で決める（architecture-selection.md 6節、言語非依存）。
+#
+# 可用性: ここで定める差し替えは受け入れテスト実行時にだけ有効であり、本番の定期実行（adr/0001決定3の
+# GitHub Actionsスケジュール実行）では常に本物の取得・配信を使う。差し替えは合成データだけを扱い、
+# 実connpass APIキー・実LINE秘密・実利用者の興味の条件には一切触れない。
+
+title: Connpass Session Radar — acceptance-test seams
+version: 0.1.0-draft
+description: >-
+  CSR-D-01〜CSR-D-10（daily-digest.feature）が必要とする、取得段の差し替えと配信段の捕捉を定める。
+
+components:
+  schemas:
+    FixtureEventSource:
+      type: object
+      additionalProperties: false
+      required: [mode]
+      description: >-
+        取得段の差し替え可能な情報源（adr/0001決定1の外部I/O境界）。本番はconnpass APIを呼ぶが、
+        受け入れテスト実行時はこの合成イベント集合を実通信の代わりに返す。取得対象期間
+        （InterestProfile.windowDays、adr/0001決定4）を跨ぐ判定が要るモードは、合成イベントの
+        開催日時をテスト実行時刻からの相対値として持つ——固定の絶対日時にすると経過日数で
+        シナリオが陳腐化するため。
+      properties:
+        mode:
+          type: string
+          enum:
+            [NORMAL_WITH_MATCH, NO_MATCH, FETCH_FAILURE, ADVERTISEMENT_MIXED,
+             CANCELLED_MIXED, UNLIMITED_CAPACITY, FULL_OR_WAITLISTED,
+             OUT_OF_WINDOW_MIXED]
+          description: >-
+            NORMAL_WITH_MATCH — 興味の条件に合う開催前イベントを少なくとも1件、条件に合わない
+            イベントも少なくとも1件、あわせて含む合成集合（CSR-D-01・CSR-D-02の同時Given）。
+
+            NO_MATCH — 興味の条件に合う開催前イベントを一つも含まない合成集合（CSR-D-03）。取得
+            そのものは成功する点でFETCH_FAILUREと区別される。
+
+            FETCH_FAILURE — 取得段が例外的に完了しない状態を模擬する（CSR-D-04）。合成イベントを
+            返さず、取得段の失敗経路をそのまま起動する。
+
+            ADVERTISEMENT_MIXED — `eventType=participation`と`eventType=advertisement`が
+            興味の条件に合う形で混在する合成集合（CSR-D-05）。advertisementのイベントは残席算出の
+            対象外である。
+
+            CANCELLED_MIXED — 興味の条件に合うイベントの中に、中止済み（`open_status=cancelled`）の
+            ものを含む合成集合（CSR-D-06）。絞り込み段より前の生データ相当として提供し、絞り込みが
+            実際に除外することを検証できるようにする。
+
+            UNLIMITED_CAPACITY — 興味の条件に合うイベントの中に、定員が設定されていない
+            （`limit`が無い）ものを含む合成集合（CSR-D-08）。
+
+            FULL_OR_WAITLISTED — 興味の条件に合うイベントの中に、残席が無い、または
+            `waiting > 0`のものを含む合成集合（CSR-D-09）。
+
+            OUT_OF_WINDOW_MIXED — 興味の条件に合うイベントの中に、配信の対象とする期間
+            （windowDays）の内側のものと外側のものを両方含む合成集合（CSR-D-10）。開催日時は
+            テスト実行時刻からの相対値で構成する。
+      x-acceptance-scenarios:
+        [CSR-D-01, CSR-D-02, CSR-D-03, CSR-D-04, CSR-D-05, CSR-D-06,
+         CSR-D-08, CSR-D-09, CSR-D-10]
+
+    NotifierCapture:
+      type: object
+      additionalProperties: false
+      required: [attempted]
+      description: >-
+        配信段（NotifierPort、daily-digest-contract.yaml）の差し替え実装が記録する観測値。本番の
+        LINE送信は行わず、渡された値をそのまま記録するだけの二重（テストダブル）を使う。
+      properties:
+        attempted:
+          type: boolean
+          description: >-
+            配信段が実際に呼ばれたかどうか。FETCH_FAILUREのように取得が失敗した場合でも、整形段は
+            `status: failed`のDailyDigestを作り、配信は試みられる（CSR-D-04、product-brief §6の
+            「毎朝必ず1通」）ため、通常は常にtrueになるはずである。falseが観測された場合、それ自体が
+            「毎朝必ず1通」という要求に対する契約違反の兆候である。
+        receivedDigest:
+          $ref: 'daily-digest-contract.yaml#/components/schemas/DailyDigest'
+          nullable: true
+          description: 配信段に渡されたDailyDigest。attemptedがfalseのときはnull。
+        result:
+          $ref: 'daily-digest-contract.yaml#/components/schemas/NotifierResult'
+          nullable: true
+          description: 差し替え実装が返した（模擬した）送信結果。attemptedがfalseのときはnull。
+      x-acceptance-scenarios:
+        [CSR-D-01, CSR-D-03, CSR-D-04, CSR-D-05, CSR-D-06, CSR-D-08,
+         CSR-D-09, CSR-D-10]
