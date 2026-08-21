@@ -50,7 +50,7 @@ export const steps = {
     assert.deepEqual(capture.notification.events, []);
   },
 
-  failureWasDelivered(capture) {
-    assertSafeFailure(capture);
+  failureWasDelivered(capture, forbiddenCanary) {
+    assertSafeFailure(capture, forbiddenCanary);
   },
 };

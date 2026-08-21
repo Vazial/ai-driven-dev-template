@@ -2,6 +2,7 @@
 // These adapters never read secrets or call an external provider.
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+export const FETCH_FAILURE_CANARY = 'CSR_D_04_SYNTHETIC_PRIVATE_CANARY_NOT_A_REAL_SECRET';
 const fixtureEvent = (fixtureEventRef, now, overrides = {}) => ({
   fixtureEventRef, title: `${fixtureEventRef} study session`, url: `https://example.test/events/${fixtureEventRef}`,
   started_at: new Date(now.getTime() + 2 * DAY_MS).toISOString(), place: 'Tokyo', address: 'Tokyo',
@@ -11,7 +12,7 @@ const fixtureEvent = (fixtureEventRef, now, overrides = {}) => ({
 
 export function createFixtureEventSource({ fixtureRef }) {
   return { async fetch(conditions, now = new Date()) {
-    if (fixtureRef === 'fetch-failure') throw new Error('fixture fetch failure');
+    if (fixtureRef === 'fetch-failure') throw new Error(`fixture fetch failure: ${FETCH_FAILURE_CANARY}`);
     const matching = (ref, overrides = {}) => fixtureEvent(ref, now, overrides);
     const nonmatching = matching('nonmatching-event', { title: 'unrelated event', catch: 'unrelated' });
     switch (fixtureRef) {

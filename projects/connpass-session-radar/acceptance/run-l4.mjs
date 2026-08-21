@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { acceptanceInput } from './dsl/daily-digest.mjs';
+import { acceptanceInput, fetchFailureCanary } from './dsl/daily-digest.mjs';
 import { steps } from './steps/daily-digest.steps.mjs';
 
 const scenarios = [
@@ -19,7 +19,7 @@ const scenarios = [
   },
   async (bridge) => {
     const capture = await steps.dailyDelivery(bridge, 'CSR-D-04');
-    steps.failureWasDelivered(capture);
+    steps.failureWasDelivered(capture, fetchFailureCanary);
   },
   async (bridge) => {
     const capture = await steps.dailyDelivery(bridge, 'CSR-D-05');

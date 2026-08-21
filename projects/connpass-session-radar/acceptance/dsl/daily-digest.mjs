@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 
+// Exact value from fixtures.fetch-failure.fetchFailureCanaryExpectation in the approved v0.3 seam.
+export const fetchFailureCanary = 'CSR_D_04_SYNTHETIC_PRIVATE_CANARY_NOT_A_REAL_SECRET';
+
 const conditionRevisions = {
   'standard-conditions': {
     revisionRef: 'standard-conditions',
@@ -69,9 +72,10 @@ export function assertDigestEventFields(item) {
   assert.ok(item.capacity && typeof item.capacity.kind === 'string');
 }
 
-export function assertSafeFailure(capture) {
+export function assertSafeFailure(capture, forbiddenCanary) {
   assertOneRecipientNotification(capture);
   assert.equal(capture.notification.kind, 'failure');
   assert.deepEqual(capture.notification.events, []);
   assert.equal(typeof capture.notification.safeFailureSummary, 'string');
+  assert.equal(capture.notification.safeFailureSummary.includes(forbiddenCanary), false);
 }

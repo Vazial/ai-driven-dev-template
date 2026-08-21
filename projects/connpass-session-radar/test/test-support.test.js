@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createFixtureEventSource, createRecipientNotificationCapture } from '../src/acceptance-support.js';
+import { createFixtureEventSource, createRecipientNotificationCapture, FETCH_FAILURE_CANARY } from '../src/acceptance-support.js';
 import { runAcceptance } from '../src/acceptance-bridge.js';
 import { runDailyDigest } from '../src/pipeline.js';
 
@@ -27,7 +27,9 @@ test('capture exposes recipient-visible capacity and outcome semantics', async (
   assert.deepEqual(mixed.notification.events.map((event) => event.capacity.kind), ['remaining-estimate', 'omitted-for-advertisement']);
   assert.equal((await run('no-match')).notification.kind, 'no-matching-events');
   assert.equal((await run('fetch-failure')).notification.kind, 'failure');
-  assert.equal((await run('fetch-failure')).notification.safeFailureSummary.includes('fixture'), false);
+  const failureSource = createFixtureEventSource({ fixtureRef: 'fetch-failure' });
+  await assert.rejects(() => failureSource.fetch(standard, now), new RegExp(FETCH_FAILURE_CANARY));
+  assert.equal((await run('fetch-failure')).notification.safeFailureSummary.includes(FETCH_FAILURE_CANARY), false);
 });
 
 test('acceptance bridge runs the approved input shape without provider I/O', async () => {
