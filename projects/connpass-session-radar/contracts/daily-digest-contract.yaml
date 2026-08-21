@@ -15,14 +15,17 @@
 #   InterestConditions — 利用者がYAMLへcommitする興味の条件（adr/0001決定4の取得ウィンドウ設定を含む）
 #   NormalizedEvent    — 絞り込み・算出後、connpassの生の形式から独立したイベント1件の内部表現
 #   DailyDigest        — 整形段の出力であり、配信段（Notifier）への入力。1回の配信＝1つのDailyDigest
-#   NotifierPort        — 配信先を差し替え可能にする境界（adr/0001決定2）。LINE実装は本ADRで確定した
-#                        既定実装であり、この契約自体はLINE固有ではない
+#   NotifierPort        — 配信先を差し替え可能にする境界（adr/0001決定2、adr/0002）。Slack Incoming
+#                        Webhook実装が現在の既定であり、この契約自体はSlack固有ではない
 #
 # connpass API v2自体のフィールド名・制約は `connpass-api-v2-facts.md` が一次情報として持つ。本契約は
 # それを再定義しない——NormalizedEventは、絞り込み・算出を終えたあとの内部表現だけを定める。
-# 同様にLINE Messaging APIの実際のリクエスト/レスポンス形式もLINE自身の外部契約であり、本契約は
-# NotifierPortの入出力（DailyDigestとNotifierResult）だけを定め、LINE固有のペイロード形式は
-# 定めない（adr/0001決定2の実装時に、DailyDigestからLINEのbroadcast形式へ変換するアダプタが持つ）。
+# 同様にSlack Incoming Webhookの実際のリクエスト/レスポンス形式もSlack自身の外部契約であり、本契約は
+# NotifierPortの入出力（DailyDigestとNotifierResult）だけを定め、Slack固有のペイロード形式は
+# 定めない（adr/0002の実装時に、DailyDigestからWebhook形式へ変換するアダプタが持つ）。
+#
+# 2026-08-22 改訂: adr/0002により既定NotifierをLINEからSlack Incoming Webhookへ置換した。
+# NotifierPortのスキーマとCSR-D-01〜10の振る舞いは変更しない。このPRのマージが注記の再承認となる。
 #
 # 2026-08-16 改訂: CSR-D-02・CSR-D-07は、daily-digest.feature・daily-digest-test-support.yamlの
 # どちらのpayload形状にも直接現れにくい性質のシナリオである——CSR-D-02は「一致しない」という
@@ -206,7 +209,7 @@ components:
       type: object
       description: >-
         配信段の抽象境界（adr/0001決定2）。DailyDigestを受け取り、配信先固有の表現へ変換して送信し、
-        NotifierResultを返す。LINE実装（adr/0001で確定した既定）・将来のSlack実装のいずれも、この
+        NotifierResultを返す。Slack Incoming Webhook実装（adr/0002で確定した既定）・将来の実装も、この
         入出力契約だけを満たせばよく、パイプラインの他の段（取得・絞り込み・算出・整形）はどちらの
         実装が使われているかを意識しない。この境界自体はOpenAPIのHTTP操作ではなく、実装内の関数・
         インターフェース境界として実現する（言語非依存。architecture-selection.md 6節）。

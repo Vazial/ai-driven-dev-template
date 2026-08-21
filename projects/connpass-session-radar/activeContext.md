@@ -5,14 +5,18 @@
 ## 現在
 
 connpassの条件に合うイベントを毎朝1通届ける、画面・永続状態を持たないパイプラインである。興味条件は
-リポジトリ内のYAML、通知先はLINE Messaging API、起点はGitHub Actionsのスケジュール実行、対象期間は
+リポジトリ内のYAML、通知先はSlack Incoming Webhook、起点はGitHub Actionsのスケジュール実行、対象期間は
 `windowDays`である（ADR-0001）。外部I/Oはconnpass API v2の取得と通知だけで、NotifierPortは将来の
 通知先の差し替えを許す。
 
-`daily-digest-test-support.yaml` v0.3は承認済みである。CSR-D-01〜10の実装とL4 translationは完了し、
+`daily-digest-test-support.yaml` v0.3は承認済みである。ADR-0002により既定NotifierをSlack Incoming
+Webhookへ置き換えた。NotifierPortとCSR-D-01〜10の振る舞いは変わらないが、LINE実装は現在の決定と
+一致しないため、Slackアダプターへ置換するまで実装断面は再び未完了である。
+
+LINE切り替え前のCSR-D-01〜10実装とL4 translationは完了し、
 orchestratorによる独立確認はL0 green、通常・UTC環境のNode tests 17/17、syntax green、
 L4 CSR-D-01〜10 greenである。PR #113のGitHub ActionsもL0→L4が全緑である。reviewerは東京暦日修正後も
-全translationを受理した。PR #113のマージにより実装とstep/DSLは人間承認済みとなり、断面②は完了した。
+全translationを受理した。PR #113のマージにより当時の実装とstep/DSLは人間承認済みとなった。
 すべてのCSR-Dシナリオから`@pending-implementation`を外している。
 
 ## 保留・外部事実
@@ -21,7 +25,8 @@ L4 CSR-D-01〜10 greenである。PR #113のGitHub ActionsもL0→L4が全緑で
 - `ymd`の複数値がOR結合するかは、まだ実測していない。
 - プロジェクト専用CIはL1→L4を直列実行する。scheduled workflowは毎日08:00
   `Asia/Tokyo`に設定し、手動実行も許す。scheduleはGitHubの仕様上、mainへの昇格後に既定ブランチの
-  最新版として動く。GitHub Secretsへの`CONNPASS_API_KEY`・`LINE_CHANNEL_ACCESS_TOKEN`登録状態は
-  未確認であり、実プロバイダへの接続もまだ行っていない。
-- 次は承認済みprojectブランチをmainへ昇格し、Secretsを安全な経路で設定してから手動実行で実通信を
-  確認する。`ymd`複数値のOR結合も、その確認時に実測する。
+  最新版として動く。GitHub Secretsへの`CONNPASS_API_KEY`・`SLACK_WEBHOOK_URL`登録状態は未確認であり、
+  実プロバイダへの接続もまだ行っていない。
+- 次はLINEアダプターをSlack Incoming Webhookへ置き換えてL1〜L4を再実行する。テスト用Slack
+  チャンネルへ実送信し、人間が受信内容を確認するまでmainへ昇格しない。`ymd`複数値のOR結合も、
+  実connpass API確認時に実測する。
