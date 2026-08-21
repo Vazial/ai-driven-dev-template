@@ -45,6 +45,7 @@ export function normalizeEvents(events, conditions, now = new Date()) {
       remainingSeats,
       isFull: remainingSeatsKnown && (remainingSeats === 0 || event.waiting > 0)
     };
+    if (event.fixtureEventRef !== undefined) normalized.fixtureEventRef = event.fixtureEventRef;
     byUrl.set(normalized.url, normalized);
   }
   return [...byUrl.values()].sort((left, right) => (left.startedAt ?? '').localeCompare(right.startedAt ?? ''));
