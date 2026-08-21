@@ -12,8 +12,8 @@
 |---|---|---|---|
 | architect | `sonnet` | `.claude/agents/architect.md` (`sonnet`) | `gpt-5.6-terra` |
 | designer | `opus` | `.claude/agents/designer.md` (`opus`) | `gpt-5.6-sol` |
-| developer | `sonnet` | `.claude/agents/developer.md` (`sonnet`) | `gpt-5.6-terra` |
-| tester | `sonnet` | `.claude/agents/tester.md` (`sonnet`) | `gpt-5.6-terra` |
+| developer | `sonnet` | `.claude/agents/developer.md` (`sonnet`) | `gpt-5.6-luna` |
+| tester | `sonnet` | `.claude/agents/tester.md` (`sonnet`) | `gpt-5.6-luna` |
 | reviewer | `sonnet` | `.claude/agents/reviewer.md` (`sonnet`) | `gpt-5.6-terra` |
 
 Claude Codeは `.claude/agents/<role>.md` をruntime定義として使う。Codexはrole定義を自動発見しないため、
@@ -21,6 +21,9 @@ Claude Codeは `.claude/agents/<role>.md` をruntime定義として使う。Code
 
 指定されたruntime modelが利用できない場合は、別モデルへ黙って代替しない。利用不能を報告し、人間の判断
 またはこの対応表のレビュー済み更新を待つ。
+
+`developer` と `tester` をLunaへ割り当て、判断・監査を担うroleを上位モデルに維持する根拠は
+ADR-0048を参照する。reasoning effortはこの対応表では固定しない。
 
 ## 並行開発
 

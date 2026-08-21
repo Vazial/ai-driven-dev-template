@@ -15,6 +15,7 @@ AI駆動開発のメタテンプレート。正しさを機械検証（L0〜L5�
 - 0035 ADRの承認記録をPR1本で閉じる（方式(i)/(ii)＋提案中の棚卸しREPORT） ／ 0036 `.claude/agents` を役割定義のSSoT（Codex） ／ 0037 CodexのホストCLI確認手順（Codex） ／ 0038 シナリオID検査の3欠陥（ASCII境界・定義形式・全体名前空間）
 - 0039 orchestratorと役割の境界（検証の申告／技法を指定しない／reviewerは緑後） ／ 0040 機密ガードレールの守備範囲（Write対称化・gitignore・`env.example`） ／ 0041 PR種別ごとの承認事項 ／ 0042 デプロイは当面着手しない
 - 0043 契約の承認記録もPR1本で閉じる ／ 0044 Codexの検証を弱めず冗長作業を減らす（Codex） ／ 0045 契約だけを先にmainへ載せられるようにする（`@pending-implementation`） ／ 0046 検証ツール（govlint・build.gradle）をゲートとして施錠し、開錠は人間・施錠の確認は機械 ／ 0047 メタADRの起草はorchestratorの領分（architectはプロジェクトscopeのADR）
+- 0048 Codexはdeveloper/testerをLunaへ割り当て、architect/reviewerはTerra、designerはSolを維持する
 
 **未対応の宿題（open のものだけ。完了した判断は上に畳んだ）**:
 
