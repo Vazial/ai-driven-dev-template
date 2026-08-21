@@ -1,8 +1,6 @@
 import { addTokyoDays, tokyoYmd } from './calendar.js';
 
 const CONNPASS_EVENTS_URL = 'https://connpass.com/api/v2/events/';
-const LINE_BROADCAST_URL = 'https://api.line.me/v2/bot/message/broadcast';
-
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 function datesFor(profile, now) {
@@ -52,22 +50,21 @@ export function createConnpassEventSource({ apiKey, fetchImpl = fetch, sleepImpl
   };
 }
 
-export function createLineNotifier({ channelAccessToken, fetchImpl = fetch }) {
-  if (!channelAccessToken) throw new Error('LINE_CHANNEL_ACCESS_TOKEN is required');
+export function createSlackNotifier({ webhookUrl, fetchImpl = fetch }) {
+  if (!webhookUrl) throw new Error('SLACK_WEBHOOK_URL is required');
   return {
     async send(_digest, text) {
       try {
-        const response = await fetchImpl(LINE_BROADCAST_URL, {
+        const response = await fetchImpl(webhookUrl, {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${channelAccessToken}`,
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ messages: [{ type: 'text', text }] })
+          body: JSON.stringify({ text })
         });
-        return response.ok ? { delivered: true, errorSummary: null } : { delivered: false, errorSummary: `LINE delivery failed (${response.status})` };
+        return response.ok ? { delivered: true, errorSummary: null } : { delivered: false, errorSummary: `Slack delivery failed (${response.status})` };
       } catch {
-        return { delivered: false, errorSummary: 'LINE delivery request failed' };
+        return { delivered: false, errorSummary: 'Slack delivery request failed' };
       }
     }
   };

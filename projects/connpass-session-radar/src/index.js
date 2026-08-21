@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { createConnpassEventSource, createLineNotifier } from './adapters.js';
+import { createConnpassEventSource, createSlackNotifier } from './adapters.js';
 import { loadInterestConditions } from './config.js';
 import { runDailyDigest } from './pipeline.js';
 
@@ -8,7 +8,7 @@ export async function main({ conditionsPath = new URL('../interest-conditions.ya
   return runDailyDigest({
     conditions,
     eventSource: createConnpassEventSource({ apiKey: process.env.CONNPASS_API_KEY }),
-    notifier: createLineNotifier({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN })
+    notifier: createSlackNotifier({ webhookUrl: process.env.SLACK_WEBHOOK_URL })
   });
 }
 

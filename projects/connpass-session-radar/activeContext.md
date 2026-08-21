@@ -10,13 +10,12 @@ connpassの条件に合うイベントを毎朝1通届ける、画面・永続�
 通知先の差し替えを許す。
 
 `daily-digest-test-support.yaml` v0.3は承認済みである。ADR-0002により既定NotifierをSlack Incoming
-Webhookへ置き換えた。NotifierPortとCSR-D-01〜10の振る舞いは変わらないが、LINE実装は現在の決定と
-一致しないため、Slackアダプターへ置換するまで実装断面は再び未完了である。
+Webhookへ置き換え、実装もWebhook URLへ`text`を1回POSTするアダプターへ置換した。NotifierPortと
+CSR-D-01〜10の振る舞いは変わらない。
 
-LINE切り替え前のCSR-D-01〜10実装とL4 translationは完了し、
-orchestratorによる独立確認はL0 green、通常・UTC環境のNode tests 17/17、syntax green、
-L4 CSR-D-01〜10 greenである。PR #113のGitHub ActionsもL0→L4が全緑である。reviewerは東京暦日修正後も
-全translationを受理した。PR #113のマージにより当時の実装とstep/DSLは人間承認済みとなった。
+CSR-D-01〜10実装とL4 translationは完了し、Slack置換後のorchestrator確認もL0 green、通常・UTC環境の
+Node tests 17/17、syntax green、L4 CSR-D-01〜10 greenである。既存のreviewer監査対象だった
+steps/DSLと受け入れbridgeは変更していない。
 すべてのCSR-Dシナリオから`@pending-implementation`を外している。
 
 ## 保留・外部事実
@@ -27,6 +26,5 @@ L4 CSR-D-01〜10 greenである。PR #113のGitHub ActionsもL0→L4が全緑で
   `Asia/Tokyo`に設定し、手動実行も許す。scheduleはGitHubの仕様上、mainへの昇格後に既定ブランチの
   最新版として動く。GitHub Secretsへの`CONNPASS_API_KEY`・`SLACK_WEBHOOK_URL`登録状態は未確認であり、
   実プロバイダへの接続もまだ行っていない。
-- 次はLINEアダプターをSlack Incoming Webhookへ置き換えてL1〜L4を再実行する。テスト用Slack
-  チャンネルへ実送信し、人間が受信内容を確認するまでmainへ昇格しない。`ymd`複数値のOR結合も、
-  実connpass API確認時に実測する。
+- 次はテスト用Slackチャンネルへ実送信し、人間が受信内容を確認する。確認が終わるまで実装PRもmain昇格も
+  マージしない。`ymd`複数値のOR結合も、実connpass API確認時に実測する。

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createConnpassEventSource, createLineNotifier } from '../src/adapters.js';
+import { createConnpassEventSource, createSlackNotifier } from '../src/adapters.js';
 
 test('connpass adapter uses an API-key header, query filters, paging, and profile association', async () => {
   const calls = [];
@@ -53,17 +53,25 @@ test('connpass adapter emits Tokyo calendar dates independent of host timezone',
   assert.deepEqual(requestUrl.searchParams.getAll('ymd'), ['20260820', '20260821']);
 });
 
-test('LINE adapter sends one broadcast request and keeps provider errors safe', async () => {
+test('Slack adapter posts one webhook message and keeps provider errors safe', async () => {
+  assert.throws(() => createSlackNotifier({ webhookUrl: '' }), /SLACK_WEBHOOK_URL is required/);
+
   let call;
-  const notifier = createLineNotifier({ channelAccessToken: 'test-token', fetchImpl: async (url, options) => {
+  const webhookUrl = 'https://hooks.slack.com/services/T000/B000/test-secret';
+  const notifier = createSlackNotifier({ webhookUrl, fetchImpl: async (url, options) => {
     call = { url, options };
     return { ok: true, status: 200 };
   } });
   assert.deepEqual(await notifier.send({}, 'digest body'), { delivered: true, errorSummary: null });
-  assert.equal(call.url, 'https://api.line.me/v2/bot/message/broadcast');
-  assert.equal(call.options.headers.Authorization, 'Bearer test-token');
-  assert.deepEqual(JSON.parse(call.options.body), { messages: [{ type: 'text', text: 'digest body' }] });
+  assert.equal(call.url, webhookUrl);
+  assert.equal(call.options.method, 'POST');
+  assert.deepEqual(call.options.headers, { 'Content-Type': 'application/json' });
+  assert.deepEqual(JSON.parse(call.options.body), { text: 'digest body' });
 
-  const failed = createLineNotifier({ channelAccessToken: 'test-token', fetchImpl: async () => ({ ok: false, status: 401 }) });
-  assert.deepEqual(await failed.send({}, 'body'), { delivered: false, errorSummary: 'LINE delivery failed (401)' });
+  const failed = createSlackNotifier({ webhookUrl, fetchImpl: async () => ({ ok: false, status: 403 }) });
+  assert.deepEqual(await failed.send({}, 'body'), { delivered: false, errorSummary: 'Slack delivery failed (403)' });
+  assert.equal((await failed.send({}, 'body')).errorSummary.includes('test-secret'), false);
+
+  const unavailable = createSlackNotifier({ webhookUrl, fetchImpl: async () => { throw new Error('network unavailable'); } });
+  assert.deepEqual(await unavailable.send({}, 'body'), { delivered: false, errorSummary: 'Slack delivery request failed' });
 });
