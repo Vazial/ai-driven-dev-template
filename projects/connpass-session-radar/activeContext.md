@@ -18,4 +18,7 @@ reviewerは全translationを受理し、承認材料は揃っている。人間�
 
 - APIキーは発行済みだが、値は読まず、保存・使用もしていない。
 - `ymd`の複数値がOR結合するかは、まだ実測していない。
-- プロジェクト専用CIワークフローとGitHub Actionsのscheduled workflowは、いずれも未作成。
+- プロジェクト専用CIはL1→L4を直列実行する。scheduled workflowは毎日08:00
+  `Asia/Tokyo`に設定し、手動実行も許す。scheduleはGitHubの仕様上、mainへの昇格後に既定ブランチの
+  最新版として動く。GitHub Secretsへの`CONNPASS_API_KEY`・`LINE_CHANNEL_ACCESS_TOKEN`登録状態は
+  未確認であり、実プロバイダへの接続もまだ行っていない。
