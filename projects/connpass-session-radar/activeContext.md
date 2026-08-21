@@ -10,9 +10,10 @@ connpassの条件に合うイベントを毎朝1通届ける、画面・永続�
 通知先の差し替えを許す。
 
 `daily-digest-test-support.yaml` v0.3は承認済みである。CSR-D-01〜10の実装とL4 translationは完了し、
-orchestratorによる独立確認はL0 green、Node tests 15/15、syntax green、L4 CSR-D-01〜10 greenである。
-reviewerは全translationを受理し、承認材料は揃っている。人間によるstep/DSL承認が、実装PRでの唯一の
-残る承認点である。すべてのCSR-Dシナリオから`@pending-implementation`を外した。
+orchestratorによる独立確認はL0 green、通常・UTC環境のNode tests 17/17、syntax green、
+L4 CSR-D-01〜10 greenである。PR #113のGitHub ActionsもL0→L4が全緑である。reviewerは東京暦日修正後も
+全translationを受理し、承認材料は揃っている。人間によるstep/DSL承認が、実装PRでの唯一の残る承認点
+である。すべてのCSR-Dシナリオから`@pending-implementation`を外した。
 
 ## 保留・外部事実
 

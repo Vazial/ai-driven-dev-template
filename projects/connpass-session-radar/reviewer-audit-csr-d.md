@@ -73,7 +73,11 @@
 
 ## 4. 申し送り注記
 
-なし。
+### PR #113 CI follow-up: Tokyo calendar
+
+Developer-owned calendar/window/query-date code now derives both the event-window start and connpass `ymd` dates from `Asia/Tokyo`. The CSR-D-10 runner remains the same: it still checks that an in-window event is visible and an after-window event is hidden. The changed implementation makes that already-approved translation stable on UTC and other host time zones; it neither changes the scenario meaning nor adds a tester-side assumption.
+
+No translation discrepancy found.
 
 ## 5. 結論
 
