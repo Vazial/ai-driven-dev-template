@@ -53,6 +53,12 @@ test('CSR-D-10: events beyond a profile window are excluded', () => {
   assert.deepEqual(events.map((event) => event.title), ['AWS study session']);
 });
 
+test('CSR-D-10: window boundaries use the Tokyo calendar on UTC hosts', () => {
+  const atWindowEnd = { ...baseEvent, title: 'AWS at Tokyo day eight', url: 'https://connpass.com/event/8/', started_at: '2026-08-27T00:00:00+09:00' };
+  const atWindowStart = { ...baseEvent, title: 'AWS at Tokyo day seven', url: 'https://connpass.com/event/9/', started_at: '2026-08-26T23:59:59+09:00' };
+  assert.deepEqual(normalizeEvents([atWindowEnd, atWindowStart], conditions, now).map((event) => event.title), ['AWS at Tokyo day seven']);
+});
+
 test('CSR-D-04: a fetch failure still makes one safe failed digest delivery attempt', async () => {
   const received = [];
   const digest = await runDailyDigest({

@@ -1,14 +1,12 @@
+import { addTokyoDays, tokyoYmd } from './calendar.js';
+
 const CONNPASS_EVENTS_URL = 'https://connpass.com/api/v2/events/';
 const LINE_BROADCAST_URL = 'https://api.line.me/v2/bot/message/broadcast';
 
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 function datesFor(profile, now) {
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return Array.from({ length: profile.windowDays }, (_, index) => {
-    const date = new Date(start.getTime() + index * 86_400_000);
-    return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
-  });
+  return Array.from({ length: profile.windowDays }, (_, index) => tokyoYmd(addTokyoDays(now, index)));
 }
 
 function queryFor(profile, now, start = 1) {

@@ -40,6 +40,19 @@ test('connpass adapter retries a throttled request after one second', async () =
   assert.deepEqual(waits, [1_000]);
 });
 
+test('connpass adapter emits Tokyo calendar dates independent of host timezone', async () => {
+  let requestUrl;
+  const source = createConnpassEventSource({
+    apiKey: 'test-key', sleepImpl: async () => {},
+    fetchImpl: async (url) => {
+      requestUrl = new URL(url);
+      return { ok: true, json: async () => ({ results_start: 1, results_returned: 0, results_available: 0, events: [] }) };
+    }
+  });
+  await source.fetch({ profiles: [{ windowDays: 2 }] }, new Date('2026-08-20T09:00:00+09:00'));
+  assert.deepEqual(requestUrl.searchParams.getAll('ymd'), ['20260820', '20260821']);
+});
+
 test('LINE adapter sends one broadcast request and keeps provider errors safe', async () => {
   let call;
   const notifier = createLineNotifier({ channelAccessToken: 'test-token', fetchImpl: async (url, options) => {

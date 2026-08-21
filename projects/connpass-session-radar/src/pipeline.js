@@ -1,9 +1,11 @@
+import { tokyoMidnight } from './calendar.js';
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function isInWindow(startedAt, windowDays, now = new Date()) {
   if (startedAt == null) return true;
   const start = new Date(startedAt).getTime();
-  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const dayStart = tokyoMidnight(now).getTime();
   return start >= dayStart && start < dayStart + windowDays * DAY_MS;
 }
 
