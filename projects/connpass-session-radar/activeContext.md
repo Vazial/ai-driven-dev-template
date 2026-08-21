@@ -1,105 +1,25 @@
 # activeContext.md — Connpass Session Radar
 
-> P-11: このファイルは常に「現在」だけを映す。更新は上書き。歴史はgitとADRが持つ。
-> 役割（meta/adr/0033）: このプロジェクト内部の状態だけを持つ。クロスプロジェクトの事実はルートの
-> `activeContext.md` が唯一の所有者であり、ここに複製しない。
+> P-11: このファイルは常に現在だけを映す。履歴はgitとADRが持つ。
 
 ## 現在
 
-**断面①（骨格合意）が完了した——2026-08-17に人間がchatで契約とADRを承認した**。developerの実装draftは
-別worktreeに未commitで存在する。L4だけが、testerが報告したtest-support境界の不足により停止している。
-この改訂はADR-0043方式(i)を用い、PRのマージ時に承認記録と恒久SSoTを1本で閉じる人間レビュー待ちのdraftである。
+connpassの条件に合うイベントを毎朝1通届ける、画面・永続状態を持たないパイプラインである。興味条件は
+リポジトリ内のYAML、通知先はLINE Messaging API、起点はGitHub Actionsのスケジュール実行、対象期間は
+`windowDays`である（ADR-0001）。外部I/Oはconnpass API v2の取得と通知だけで、NotifierPortは将来の
+通知先の差し替えを許す。
 
-承認の経緯に注意点がある。契約もADRも**起草時に方式(ii)（記録のみ・承認は後日）を選んでいた**ため、
-`PR #102` のマージは記録をmainへ載せる行為であって承認ではなかった。承認はその後のchatで別途行われ、
-`docs/connpass-session-radar-approval-record` がその記録である。**マージ＝承認ではない**という方式(ii)の
-性質が実際に効いた事例として残す。
+v0.2のtest-support契約はPR #111のマージにより2026-08-21に人間承認済みである。実装スライスは別の
+feature worktree/branchに存在する。独立した検証根拠はL0 green、Node tests 15/15、CSR-D-01〜10のL4 green。
+reviewerはCSR-D-04のsecret-leak観測以外の翻訳をすべて受理している。
 
-- `adr/0001-adopt-pipeline-pack-and-resolve-delivery-architecture.md`（`status: 承認済み`）——パイプライン
-  パック採用／通知先はLINE Messaging API（人間裁定）／トリガはGitHub Actionsのスケジュール実行／
-  「直近何日分」はYAML設定値（既定7日を推奨）の4決定
-- `contracts/daily-digest.feature`——受け入れシナリオ `CSR-D-01`〜`CSR-D-10`。**10本すべてに
-  `@pending-implementation`** が付いている（meta/adr/0045。契約だけを先に置き、実装は承認後）
-- `contracts/daily-digest-contract.yaml`（`version: 0.1.0-draft`）——毎朝1回のパイプラインが扱うデータの形。
-  **`openapi:`・`paths:` を持たない**。画面もサーバも公開エンドポイントも無いプロジェクトであり、
-  存在しないHTTP面を装わないという判断による
-- `contracts/daily-digest-test-support.yaml`（`version: 0.2.0-draft`）——受け入れテストの差し替え境界。
-  CSR-D L4翻訳で明らかになった、commit済み設定の入力、受信者向け通知の観測、fixtureイベントの安定IDを
-  canonical contractへ直接追加した。これが人間レビュー対象かつ、マージ後の唯一のSSoTである
+`contracts/daily-digest-test-support.yaml` v0.3.0-draftは、FETCH_FAILUREだけに固定のsynthetic private
+canaryを加え、受信者向けfailure summaryにそのfake secret文字列が現れないことを観測する改訂である。
+この契約改訂はADR-0043方式(i)により、PRのマージによる人間承認待ちである。`@pending-implementation`
+タグはacceptance承認フローが完了するまで残る。
 
-`design.md`・`ARCHITECTURE.md` は、ADR-0001の承認済み骨格だけを投影して新設済みである。
-test-support改訂は承認前のため両地図に投影していない。
+## 保留・外部事実
 
-**UIを持たないため designer は登場しない**（meta/adr/0022。断面①はAPI形状＋ADRのみで完結する）。
-
-スライスブランチ `docs/connpass-session-radar-digest-spec` が `project/connpass-session-radar` から
-出ている（meta/adr/0028）。プロジェクトブランチとシナリオIDプレフィックス `CSR` の予約（PR #100、
-`meta/scenario-id-prefixes.md`）はCodexが2026-08-15に先行して用意したもので、ディレクトリ・
-activeContext・CIワークフローは無い状態で引き継いだ。
-
-## 確定しているユースケース（2026-08-16、人間との整理）
-
-**解く問題は「探す手間」**。connpassを見に行く行為そのものを消すのが価値であり、新着の速報性は
-主目的ではない。したがって品質軸は**絞り込みの精度と読みやすさ**であって、検知の速さではない。
-
-- **毎朝、条件に合うイベントの一覧を配る**。「今日の一覧」型であり、新着差分ではない
-- **状態を持たない**。通知済みイベントIDを永続化せず、毎朝その日の条件で出し直す。同じイベントが
-  複数日にわたって載ることを許容する代わりに、永続ストアが丸ごと不要になる
-- **興味の条件はリポジトリ内のYAML**に置き、commitして変更する
-- **UIを持たない**。したがって標準フロー（meta/agents.md §4）に designer は登場せず、断面①は
-  API形状＋ADRのみで完結する（meta/adr/0022）
-- **通知先はLINE Messaging API**（ADR-0001決定2）。将来の差し替えに備え、配送先を差し替えられる
-  NotifierPort境界を設計に持つ
-
-## 追加で確定した内容（2026-08-16、人間の判断）
-
-- **connpass外で申し込むイベント（`event_type=advertisement`）も同列に並べる**。「どこにも申し込め
-  ない」のではなく主催者の別サイトで受け付けているものであり、たどれば申し込める以上は区別しない。
-  節も印も分けない。**帰結**: connpass側に受付が無いため参加者数・定員が意味を持たず、この種の
-  イベントでは**残席の行を出さない**（0席と書かない）
-- **除外語の仕組みは作らない**。APIにNOTが無く自前フィルタになるが、まずは探す言葉と場所だけで運用し、
-  実際に邪魔だと分かってから足す（P-05）。設定項目を増やさないことを優先した
-- **0件の朝も「0件」と送る。失敗した朝も「失敗した」と送る。** 結果として**毎朝必ず1通届く**ため、
-  **「通知が来ない朝」＝仕組み自体が止まっている**と意味が固定される。沈黙が3つの意味（0件・失敗・
-  停止）を持つことを避けた判断であり、静けさより判別可能性を取っている。
-  **原理的な限界**: 送信経路そのものが壊れていれば失敗通知も届かない——実行基盤側の失敗検知で補える
-  かは、トリガ選定と一体で判断する
-
-## 次に決めること
-
-`daily-digest-test-support.yaml` v0.2.0-draftの三つのacceptance-only境界について、人間がレビューし、
-PRをマージして承認するか、マージせず差し戻す。承認まではCSR-DのL4 step/DSLを起草しない。
-
-## プロバイダ（connpass API v2）の確定事実
-
-一次情報は `connpass-api-v2-facts.md`（2026-08-16に `openapi.json` を直接取得。推測を含まない）。
-**設計を縛るのは次の点**——契約のThenに直接効くので、シナリオ起票前に読むこと。
-
-1. **開催日の範囲指定ができない**。`ym`（年月）と `ymd`（年月日）のピンポイント複数指定のみ。
-   「直近N日」は `ymd` をN個並べるか、`ym` で月を取ってクライアント側で絞る
-2. **除外語（NOT）が無い**。`keyword`（AND）と `keyword_or`（OR）の部分一致だけ。しかも検索対象に
-   **住所が含まれる**ため、地名をキーワードに入れると誤爆する（地域で絞るなら `prefecture`）
-3. **1秒1リクエスト・APIキーは1本**（個人申請では追加不可）。並列化で回避できず、ページング数が
-   そのまま所要時間になる
-4. **中止イベント（`open_status=cancelled`）と告知のみイベント（`event_type=advertisement`）が
-   混ざる**。落とす判断が要る
-5. **残席のフィールドが無い**。`limit - accepted` で出す。`limit` は null（定員なし）を取りうる
-6. **申込・キャンセルのAPIは無い**（読み取り専用）。参加者一覧を取るAPIも無い。API以外の手段による
-   スクレイピングは利用規約で禁止されているため、**APIで取れないものはHTMLから取らない**
-
-**APIキーは申請中**（2026-08-16時点。審査待ち）。キー未発行でも仕様の確定は進められるが、**実測が要る
-項目は発行後になる**——特に `ymd` の複数値がOR結合かどうか（上記制約1、ADR-0001が決定4で「どちらでも
-成立する設計」により吸収した空白）は、キーが出てから実測して埋める。
-
-## 検証の状態
-
-**L0（govlint）**: orchestratorが今回のdraftに対して独立に実行し、exit 0を確認済み。
-Node testsもorchestratorが独立に実行し、12/12成功を確認済み。L4だけがtest-support契約の改訂未承認により
-実行不能（失敗ではない）。
-
-**役割の成果物は緑を独立に確認してから次段へ渡している**（meta/adr/0027・0039）。architectはBashを
-持たないため機械検証を実行できず、その旨を申告した上で目視照合の結果だけを報告した——orchestratorが
-`govlint` を実行して確認した。
-
-CIワークフロー `ci-connpass-session-radar.yml` は、走らせるテストが生まれる実装スライスで足す
-（meta/adr/0026。P-05: 要るようになってから）。
+- APIキーは人間から発行済みと報告されたが、値は読まず、保存・使用もしていない。
+- `ymd`の複数値がOR結合するかは、まだ実測していない。
+- プロジェクト専用CIワークフローとGitHub Actionsのscheduled workflowは、いずれも未作成。
