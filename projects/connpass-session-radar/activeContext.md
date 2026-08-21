@@ -9,17 +9,17 @@ connpassの条件に合うイベントを毎朝1通届ける、画面・永続�
 `windowDays`である（ADR-0001）。外部I/Oはconnpass API v2の取得と通知だけで、NotifierPortは将来の
 通知先の差し替えを許す。
 
-v0.2のtest-support契約はPR #111のマージにより2026-08-21に人間承認済みである。実装スライスは別の
-feature worktree/branchに存在する。独立した検証根拠はL0 green、Node tests 15/15、CSR-D-01〜10のL4 green。
-reviewerはCSR-D-04のsecret-leak観測以外の翻訳をすべて受理している。
-
-`contracts/daily-digest-test-support.yaml` v0.3.0-draftは、FETCH_FAILUREだけに固定のsynthetic private
-canaryを加え、受信者向けfailure summaryにそのfake secret文字列が現れないことを観測する改訂である。
-この契約改訂はADR-0043方式(i)により、PRのマージによる人間承認待ちである。`@pending-implementation`
-タグはacceptance承認フローが完了するまで残る。
+`daily-digest-test-support.yaml` v0.3は承認済みである。CSR-D-01〜10の実装とL4 translationは完了し、
+orchestratorによる独立確認はL0 green、通常・UTC環境のNode tests 17/17、syntax green、
+L4 CSR-D-01〜10 greenである。PR #113のGitHub ActionsもL0→L4が全緑である。reviewerは東京暦日修正後も
+全translationを受理し、承認材料は揃っている。人間によるstep/DSL承認が、実装PRでの唯一の残る承認点
+である。すべてのCSR-Dシナリオから`@pending-implementation`を外した。
 
 ## 保留・外部事実
 
-- APIキーは人間から発行済みと報告されたが、値は読まず、保存・使用もしていない。
+- APIキーは発行済みだが、値は読まず、保存・使用もしていない。
 - `ymd`の複数値がOR結合するかは、まだ実測していない。
-- プロジェクト専用CIワークフローとGitHub Actionsのscheduled workflowは、いずれも未作成。
+- プロジェクト専用CIはL1→L4を直列実行する。scheduled workflowは毎日08:00
+  `Asia/Tokyo`に設定し、手動実行も許す。scheduleはGitHubの仕様上、mainへの昇格後に既定ブランチの
+  最新版として動く。GitHub Secretsへの`CONNPASS_API_KEY`・`LINE_CHANNEL_ACCESS_TOKEN`登録状態は
+  未確認であり、実プロバイダへの接続もまだ行っていない。

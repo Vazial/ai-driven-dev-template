@@ -1,0 +1,6 @@
+profiles:
+  - keywordsAny:
+      - AWS
+    prefectures:
+      - online
+    windowDays: 7
