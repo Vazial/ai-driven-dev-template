@@ -12,8 +12,8 @@ connpassの条件に合うイベントを毎朝1通届ける、画面・永続�
 `daily-digest-test-support.yaml` v0.3は承認済みである。CSR-D-01〜10の実装とL4 translationは完了し、
 orchestratorによる独立確認はL0 green、通常・UTC環境のNode tests 17/17、syntax green、
 L4 CSR-D-01〜10 greenである。PR #113のGitHub ActionsもL0→L4が全緑である。reviewerは東京暦日修正後も
-全translationを受理し、承認材料は揃っている。人間によるstep/DSL承認が、実装PRでの唯一の残る承認点
-である。すべてのCSR-Dシナリオから`@pending-implementation`を外した。
+全translationを受理した。PR #113のマージにより実装とstep/DSLは人間承認済みとなり、断面②は完了した。
+すべてのCSR-Dシナリオから`@pending-implementation`を外している。
 
 ## 保留・外部事実
 
@@ -23,3 +23,5 @@ L4 CSR-D-01〜10 greenである。PR #113のGitHub ActionsもL0→L4が全緑で
   `Asia/Tokyo`に設定し、手動実行も許す。scheduleはGitHubの仕様上、mainへの昇格後に既定ブランチの
   最新版として動く。GitHub Secretsへの`CONNPASS_API_KEY`・`LINE_CHANNEL_ACCESS_TOKEN`登録状態は
   未確認であり、実プロバイダへの接続もまだ行っていない。
+- 次は承認済みprojectブランチをmainへ昇格し、Secretsを安全な経路で設定してから手動実行で実通信を
+  確認する。`ymd`複数値のOR結合も、その確認時に実測する。
