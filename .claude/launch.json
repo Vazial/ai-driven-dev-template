@@ -2,10 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "toyama-dining-radar-live",
+      "name": "dining-radar-live",
       "runtimeExecutable": "C:/Users/pomup/tdrv/Scripts/python.exe",
       "runtimeArgs": [
-        "projects/toyama-dining-radar/manage.py",
+        "projects/dining-radar/manage.py",
         "runserver",
         "127.0.0.1:8020",
         "--noreload",
@@ -28,10 +28,10 @@
       "port": 5173
     },
     {
-      "name": "toyama-dining-radar-app",
+      "name": "dining-radar-app",
       "runtimeExecutable": "C:/Users/pomup/tdrv/Scripts/python.exe",
       "runtimeArgs": [
-        "projects/toyama-dining-radar/manage.py",
+        "projects/dining-radar/manage.py",
         "runserver",
         "127.0.0.1:8010",
         "--noreload",
@@ -44,11 +44,11 @@
       }
     },
     {
-      "name": "toyama-dining-radar-design-preview",
+      "name": "dining-radar-design-preview",
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "--prefix",
-        "projects/toyama-dining-radar/design-preview",
+        "projects/dining-radar/design-preview",
         "run",
         "dev",
         "--",
