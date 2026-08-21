@@ -6,15 +6,16 @@
 
 ## 現在
 
-**断面①（骨格合意）が完了した——2026-08-17に人間がchatで契約とADRを承認した**。実装は一行も無く、
-次はdeveloper（実装＋単体テスト）とtester（step定義＋DSL）の並行作業に入れる状態である。
+**断面①（骨格合意）が完了した——2026-08-17に人間がchatで契約とADRを承認した**。developerの実装draftは
+別worktreeに未commitで存在する。L4だけが、testerが報告したtest-support境界の不足により停止している。
+この改訂はADR-0043方式(i)を用い、PRのマージ時に承認記録と恒久SSoTを1本で閉じる人間レビュー待ちのdraftである。
 
 承認の経緯に注意点がある。契約もADRも**起草時に方式(ii)（記録のみ・承認は後日）を選んでいた**ため、
 `PR #102` のマージは記録をmainへ載せる行為であって承認ではなかった。承認はその後のchatで別途行われ、
 `docs/connpass-session-radar-approval-record` がその記録である。**マージ＝承認ではない**という方式(ii)の
 性質が実際に効いた事例として残す。
 
-- `adr/0001-adopt-pipeline-pack-and-resolve-delivery-architecture.md`（`status: 提案中`）——パイプライン
+- `adr/0001-adopt-pipeline-pack-and-resolve-delivery-architecture.md`（`status: 承認済み`）——パイプライン
   パック採用／通知先はLINE Messaging API（人間裁定）／トリガはGitHub Actionsのスケジュール実行／
   「直近何日分」はYAML設定値（既定7日を推奨）の4決定
 - `contracts/daily-digest.feature`——受け入れシナリオ `CSR-D-01`〜`CSR-D-10`。**10本すべてに
@@ -22,9 +23,12 @@
 - `contracts/daily-digest-contract.yaml`（`version: 0.1.0-draft`）——毎朝1回のパイプラインが扱うデータの形。
   **`openapi:`・`paths:` を持たない**。画面もサーバも公開エンドポイントも無いプロジェクトであり、
   存在しないHTTP面を装わないという判断による
-- `contracts/daily-digest-test-support.yaml`——受け入れテストのための差し替え境界
+- `contracts/daily-digest-test-support.yaml`（`version: 0.2.0-draft`）——受け入れテストの差し替え境界。
+  CSR-D L4翻訳で明らかになった、commit済み設定の入力、受信者向け通知の観測、fixtureイベントの安定IDを
+  canonical contractへ直接追加した。これが人間レビュー対象かつ、マージ後の唯一のSSoTである
 
-`design.md`・`ARCHITECTURE.md` は未作成。ADR-0001が未承認のため、承認後に骨格を投影して新設する。
+`design.md`・`ARCHITECTURE.md` は、ADR-0001の承認済み骨格だけを投影して新設済みである。
+test-support改訂は承認前のため両地図に投影していない。
 
 **UIを持たないため designer は登場しない**（meta/adr/0022。断面①はAPI形状＋ADRのみで完結する）。
 
@@ -44,8 +48,8 @@ activeContext・CIワークフローは無い状態で引き継いだ。
 - **興味の条件はリポジトリ内のYAML**に置き、commitして変更する
 - **UIを持たない**。したがって標準フロー（meta/agents.md §4）に designer は登場せず、断面①は
   API形状＋ADRのみで完結する（meta/adr/0022）
-- **通知先は未定**。普段使いはLINEだが実装難度を見て決めるため、**配送先を差し替えられる境界**を
-  設計に持たせ、LINEとSlackの比較と選定はアーキテクチャ選定ADRで行う
+- **通知先はLINE Messaging API**（ADR-0001決定2）。将来の差し替えに備え、配送先を差し替えられる
+  NotifierPort境界を設計に持つ
 
 ## 追加で確定した内容（2026-08-16、人間の判断）
 
@@ -61,14 +65,10 @@ activeContext・CIワークフローは無い状態で引き継いだ。
   **原理的な限界**: 送信経路そのものが壊れていれば失敗通知も届かない——実行基盤側の失敗検知で補える
   かは、トリガ選定と一体で判断する
 
-## 未決（次に決めること）
+## 次に決めること
 
-1. **通知先の選定**（LINE Messaging API か Slack Incoming Webhook か）。難度・必要secret・整形能力の
-   比較材料をADRで出したうえで人間が決める
-2. 定期実行のトリガ（cron／GitHub Actions／常駐）と、無料枠で成立するか。送信経路ごと壊れた場合の
-   検知をここで補えるかも併せて見る
-3. 「直近何日分」を配るか。connpass APIに開催日の範囲指定が無いため、この値がそのままリクエスト回数
-   （＝所要時間）になる。下記の制約1・5を参照
+`daily-digest-test-support.yaml` v0.2.0-draftの三つのacceptance-only境界について、人間がレビューし、
+PRをマージして承認するか、マージせず差し戻す。承認まではCSR-DのL4 step/DSLを起草しない。
 
 ## プロバイダ（connpass API v2）の確定事実
 
@@ -93,9 +93,9 @@ activeContext・CIワークフローは無い状態で引き継いだ。
 
 ## 検証の状態
 
-**L0（govlint）: orchestratorが実行し、エラーなし**（exit=0）。REPORTには、この時点で正しい3種の
-未確定状態が現れている——提案中ADR 1本（`adr/0001`）、承認待ち契約1本（`daily-digest.feature`）、
-実装待ちシナリオ10本（`CSR-D-01`〜`10`）。L1〜L4はまだ対象物が無い。
+**L0（govlint）**: orchestratorが今回のdraftに対して独立に実行し、exit 0を確認済み。
+Node testsもorchestratorが独立に実行し、12/12成功を確認済み。L4だけがtest-support契約の改訂未承認により
+実行不能（失敗ではない）。
 
 **役割の成果物は緑を独立に確認してから次段へ渡している**（meta/adr/0027・0039）。architectはBashを
 持たないため機械検証を実行できず、その旨を申告した上で目視照合の結果だけを報告した——orchestratorが
