@@ -28,7 +28,9 @@ export function parseInterestConditions(yaml) {
   let listKey;
 
   for (const originalLine of yaml.split(/\r?\n/)) {
-    const line = originalLine.replace(/\s+#.*$/, '');
+    // A comment at column zero was rejected as an unsupported line, which made
+    // it impossible to label the profiles in the one file a person hand-edits.
+    const line = originalLine.replace(/(^\s*|\s+)#.*$/, '');
     if (!line.trim()) continue;
     if (line === 'profiles:') continue;
 

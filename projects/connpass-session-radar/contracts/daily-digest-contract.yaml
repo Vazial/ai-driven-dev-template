@@ -24,6 +24,12 @@
 # NotifierPortの入出力（DailyDigestとNotifierResult）だけを定め、Discord固有のペイロード形式は
 # 定めない（adr/0003の実装時に、DailyDigestからEmbedまたは添付形式へ変換するアダプタが持つ）。
 #
+# 2026-08-23 改訂3: NormalizedEventに`attendeeCount`を足した。利用者が「話題性のあるもの（申込者が
+# 多いもの）」を知りたいと述べたのに対し、connpass APIには参加者数で絞る・並べる手段が無い——できるのは
+# 取得済みの`accepted`を示して読み手に判断を委ねることだけである。CSR-D-01〜10のThenは変わらない
+# （示す情報が1つ増えるだけで、含まれない・示されないと定めた事項は増えていない）。あわせて
+# `adr/0004`が興味条件に地域を書く判断を記録した。このPRのマージが本改訂の承認となる。
+#
 # 2026-08-22 改訂2: adr/0003により既定NotifierをDiscord Webhookへ置換した。通常はEmbed、容量超過時は
 # 同じ1メッセージへ完全一覧を添付し、mentionを無効化する。NotifierPortのスキーマとCSR-D-01〜10の
 # 振る舞いは変更しない。このPRのマージが注記の再承認となる。
@@ -35,7 +41,7 @@
 # InterestConditionsの読み直し方針）——force-fitではなく、元から書かれるべきだった記述である。
 
 title: Connpass Session Radar — daily digest data contract
-version: 0.1.0-draft
+version: 0.2.0-draft
 description: >-
   毎朝1回のパイプライン実行が生成・消費するデータの形。CSR-D-* の受け入れシナリオ
   (daily-digest.feature) が観測する外部から見た振る舞いを、実装可能な形へ橋渡しする。
@@ -176,6 +182,16 @@ components:
           description: >-
             残席が無い、または新たな申し込みが補欠（`waiting > 0`）になっている状態を表す
             （CSR-D-09）。remainingSeatsKnownがfalseのときも、`waiting`から独立に判定してよい。
+        attendeeCount:
+          type: integer
+          nullable: true
+          description: >-
+            connpassで参加を受け付けているイベントの参加者数（`accepted`）。**話題性の目安**であり、
+            残席とは別の情報である——定員が大きければ残席が多いまま参加者も多い、ということが起こる。
+            利用者は「申込者が多いイベント」を知りたいと述べており（2026-08-23の人間判断）、
+            connpass APIには参加者数で絞る・並べるパラメータが無いため、値を示して読み手に委ねる。
+            `eventType=advertisement`のときはconnpass側に受付が無く意味を持たないためnull
+            （product-brief §3の2026-08-16人間判断と同じ理由）。
 
     DailyDigest:
       type: object

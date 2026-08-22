@@ -46,7 +46,8 @@ export function normalizeEvents(events, conditions, now = new Date()) {
       eventType: event.event_type,
       remainingSeatsKnown,
       remainingSeats,
-      isFull: remainingSeatsKnown && (remainingSeats === 0 || event.waiting > 0)
+      isFull: remainingSeatsKnown && (remainingSeats === 0 || event.waiting > 0),
+      attendeeCount: event.event_type === 'participation' ? event.accepted ?? null : null
     };
     if (event.fixtureEventRef !== undefined) normalized.fixtureEventRef = event.fixtureEventRef;
     byUrl.set(normalized.url, normalized);
@@ -102,6 +103,7 @@ export function formatDigest(digest) {
       event.startedAt ? tokyoTimeLabel(event.startedAt) : '時刻未定',
       placeOf(event),
       event.groupTitle,
+      event.attendeeCount == null ? null : `${event.attendeeCount}人`,
       capacityOf(event)
     ].filter(Boolean).join(' ・ ');
     lines.push(`[${event.title}](${event.url})`);

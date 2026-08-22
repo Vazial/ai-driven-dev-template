@@ -16,14 +16,14 @@ test('CSR-D-01 and CSR-D-02: only matching events become a complete daily digest
   assert.deepEqual(events[0], {
     title: 'AWS study session', url: 'https://connpass.com/event/1/', startedAt: '2026-08-22T19:00:00+09:00',
     place: 'Tokyo', address: 'Tokyo', isOnline: false, groupTitle: 'Cloud group', eventType: 'participation',
-    remainingSeatsKnown: true, remainingSeats: 10, isFull: false
+    remainingSeatsKnown: true, remainingSeats: 10, isFull: false, attendeeCount: 10
   });
   const { title, body } = formatDigest(createDigest(events));
   assert.equal(title, 'Connpass Session Radar — 8/22(土) 1件');
   assert.equal(body, [
     '**8/22(土)**',
     '[AWS study session](https://connpass.com/event/1/)',
-    '　19:00 ・ Tokyo ・ Cloud group ・ 残り10'
+    '　19:00 ・ Tokyo ・ Cloud group ・ 10人 ・ 残り10'
   ].join('\n'));
 });
 
@@ -109,4 +109,18 @@ test('a failed morning reports its cause to the injected sink and not to the rec
   assert.equal(digest.status, 'failed');
   assert.deepEqual(reported, ['connpass request failed with status 503']);
   assert.doesNotMatch(`${message.title}\n${message.body}`, /503/);
+});
+
+test('the attendee count travels as the popularity hint, and stays absent off connpass', () => {
+  const events = normalizeEvents([
+    { ...baseEvent, title: 'AWS popular', url: 'https://connpass.com/event/10/', limit: 200, accepted: 148 },
+    { ...baseEvent, title: 'AWS elsewhere', url: 'https://connpass.com/event/11/', event_type: 'advertisement', accepted: 0 }
+  ], conditions, now);
+  assert.deepEqual(events.map(({ title, attendeeCount }) => ({ title, attendeeCount })), [
+    { title: 'AWS popular', attendeeCount: 148 },
+    { title: 'AWS elsewhere', attendeeCount: null }
+  ]);
+  const { body } = formatDigest(createDigest(events));
+  assert.match(body, /AWS popular\]\(https:\/\/connpass.com\/event\/10\/\)\n　19:00 ・ Tokyo ・ Cloud group ・ 148人 ・ 残り52/);
+  assert.doesNotMatch(body.split('AWS elsewhere')[1], /人 ・/);
 });

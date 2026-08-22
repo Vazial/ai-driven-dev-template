@@ -38,3 +38,17 @@ test('refuses a bare scalar where the contract declares a list', () => {
 test('keeps numeric-looking keywords as text', () => {
   assert.deepEqual(parseInterestConditions('profiles:\n  - keywords:\n      - 2026\n').profiles[0].keywords, ['2026']);
 });
+
+test('accepts a comment at column zero, where the profile labels live', () => {
+  assert.deepEqual(parseInterestConditions(`# 興味の条件
+profiles:
+  # AI/LLM
+  - keywordsAny:
+      - LLM
+    windowDays: 3
+`), { profiles: [{ keywordsAny: ['LLM'], windowDays: 3 }] });
+});
+
+test('keeps a hash that belongs to the value, such as C#', () => {
+  assert.deepEqual(parseInterestConditions('profiles:\n  - keywordsAny:\n      - C#\n      - .NET\n').profiles[0].keywordsAny, ['C#', '.NET']);
+});
