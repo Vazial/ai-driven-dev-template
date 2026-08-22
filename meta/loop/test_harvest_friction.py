@@ -165,3 +165,18 @@ def test_無関係なコマンドでは発火しない():
 def test_コマンドが空でも落ちない():
     assert not hf.is_merge_command("")
     assert not hf.is_merge_command(None)
+
+
+def test_worktreeから呼んでも主リポジトリのルートを返す():
+    """ログの置き場はチェックアウト先ごとに分かれる。worktree内でそのまま走らせると
+    自分の分しか見えず、本体のログを丸ごと取りこぼす（実測で踏んだ）。
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    resolved = hf.main_worktree(here)
+    # .git がディレクトリとして実在する側＝主リポジトリ
+    assert os.path.isdir(os.path.join(resolved, ".git"))
+
+
+def test_gitの外では渡された場所をそのまま返す(tmp_path):
+    # git が失敗しても落とさない（ログが見つからないだけで済ませる）
+    assert hf.main_worktree(str(tmp_path)) == str(tmp_path)

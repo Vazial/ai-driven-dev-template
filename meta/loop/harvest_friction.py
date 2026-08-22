@@ -20,12 +20,13 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 from collections import defaultdict
 from datetime import datetime, timezone
 
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-STATE_PATH = os.path.join(ROOT, ".claude", "harvest-state.json")
+HERE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+STATE_PATH = os.path.join(HERE, ".claude", "harvest-state.json")
 
 # ---------------------------------------------------------------- シグナル定義
 #
@@ -199,6 +200,22 @@ def scan_session(path: str, since: str | None) -> dict | None:
 # ---------------------------------------------------------------- ログの置き場
 
 
+def main_worktree(start: str) -> str:
+    """worktreeから呼ばれても**主リポジトリのルート**を返す。
+
+    ログの置き場はチェックアウト先ごとに分かれる。worktree内でそのまま走らせると
+    自分の分しか見えず、本体のログを丸ごと取りこぼす。
+    """
+    try:
+        common = subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            cwd=start, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return start
+    return os.path.dirname(common) if os.path.basename(common) == ".git" else start
+
+
 def transcript_dirs(repo_root: str) -> list[str]:
     """このリポジトリのセッションログが置かれたディレクトリ（worktree分を含む）。"""
     slug = re.sub(r"[^A-Za-z0-9-]", "-", os.path.abspath(repo_root))
@@ -307,7 +324,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0  # `if` フィルタの誤発火。収穫位置も進めない
 
     since = None if args.all else (args.since or load_since())
-    _, hot, report = harvest(ROOT, since, args.threshold, args.top)
+    _, hot, report = harvest(main_worktree(HERE), since, args.threshold, args.top)
     now = datetime.now(timezone.utc).isoformat()
 
     if args.hook:
