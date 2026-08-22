@@ -1,15 +1,18 @@
 ---
 id: 0002
 scope: project/connpass-session-radar
-status: 承認済み
+status: superseded
 date: 2026-08-22
 approved_by: "本PRのマージをもって承認（ADR-0035 方式(i)。人間裁定 2026-08-22 chat: LINEを廃止しSlackへ切り替える。固定チャンネルへの毎朝1通にはIncoming Webhookを採用する）"
 supersedes: []
-superseded_by: null
+superseded_by: 0003
 relates_to: [P-01, P-02, P-05, P-08, P-09, P-11, ADR-0001, CSR-D-01, CSR-D-03, CSR-D-04]
 ---
 
 # ADR-0002: 既定の通知先をSlack Incoming Webhookへ置き換える
+
+> **（2026-08-22 追記。`adr/0003`）** 本ADRのSlack Incoming Webhook決定は、実運用前に`adr/0003`の
+> Discord Webhook決定へ置き換えられた。実Slack送信とprojectブランチへのSlack実装マージは行われていない。
 
 > **承認者向けサマリ**: ADR-0001の決定2だけを置き換え、既定のNotifierをLINE Messaging APIから
 > **Slack Incoming Webhook**へ変更する。固定された1チャンネルへ毎朝1通送る現在の用途では、Webhook URL
@@ -82,4 +85,3 @@ ADR-0001は4つの決定を持つため、ファイル全体を`superseded`に�
 - Incoming Webhookの投稿は本システムから削除できない。誤送信時の削除能力が必要になった場合は、
   `chat.postMessage`等への再変更を新しい判断として扱う。
 - ADR・契約の承認後、Slackアダプター、環境変数、workflow、単体テストを実装し直す。
-
