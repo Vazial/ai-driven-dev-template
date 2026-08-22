@@ -17,7 +17,15 @@
 
 - PRテンプレート必須項目: 「PR種別と承認事項」「対象契約（シナリオID）」「DoD充足のエビデンス（CI結果）」
 - **PR種別と人間の判断の要否（meta/adr/0041）**: 判定基準は「**そのPRに、人間がまだしていない決定が含まれるか**」であり、PRの形（base/head）ではない。**スライス**（base=`project/<p>`）と **meta**（base=`main`、共有ガバナンス）は**承認事項あり**。**昇格**（base=`main`、head=`project/<p>`）は中身が承認済みコミットの積み上げのみで**承認事項なし**——マージはbranch protectionの形式要件であり、本文はDoD表・承認方式・論拠を書かず「載るもの」と検証結果に絞る。**同期**（base=`project/<p>`、head=`main`）は原則承認事項なしだが、**衝突解決を含む場合は判断であり冒頭に明記する**。**機械検証（L0〜L4）はどの種別でも省略しない**——統合して初めて壊れる場合があるため、orchestratorは統合結果に対して検証してから提出する（meta/adr/0039 決定1）。「承認事項なし」は人間の判断が不要という意味であって、検証が不要という意味ではない
+- **ADRの採番（meta/adr/0026 決定4・meta/adr/0052）**: 番号は**mainだけでなく、未マージのリモートブランチ全部**を見てから取る。「オープン中のPR」だけでは足りない——**PRを持たないブランチが番号を握っていた実例がある**（採番衝突4回目）。確認は次の1本で足りる。番号を取ったら**本文を書き終える前にプレースホルダをコミットしDraft PRを開く**（meta/adr/0026 決定4 手順2）——PRを開かずに番号だけ握ることは、下記CI検査の**検出網の外に出る**行為である（GitHub Actionsは対象PRのイベントでしか走らない）
+  ```bash
+  git fetch --all --quiet
+  for b in $(git ls-remote --heads origin | awk '{sub("refs/heads/","",$2); print $2}'); do
+    git ls-tree -r --name-only "origin/$b" -- meta/adr | grep -oE '[0-9]{4}'
+  done | sort -u | tail -5
+  ```
 - CI構成（meta/adr/0026 決定1）: L0（govlint、`.github/workflows/govlint.yml`）はリポジトリ横断の共有ゲートで**常時実行・pathsフィルタなし**。各プロジェクトのL1〜L4は `.github/workflows/ci-<project>.yml` に分割し、自プロジェクト配下（`projects/<project>/**` と当該ワークフロー自身）の変更時のみ起動する。**新プロジェクトの参入は `ci-<project>.yml` を1本足すだけ**（共有ファイル・他プロジェクトのワークフローは編集しない）
+- **ADR採番の衝突検査（meta/adr/0052）**: `.github/workflows/adr-number.yml` が、(1)ツリー内の同一ディレクトリ・同一番号の重複と、(2)このPRが追加・改名したADR番号を他のオープンPRが主張していないかを検査する。**落ちるのは後発のPR＝振り直すべき側**。govlintに同居させないのは、govlintの「ネットワーク不使用・ROOT配下のみ」という性格（meta/adr/0014）と施錠（meta/adr/0046）を保つため。**required化はしていない**（PR画面の赤で足りる、で始める。P-05）
 - CI必須チェック（現状＝meta/adr/0026 決定1.3 の**案i**）: **L0（govlint）のみを hard-required** とする（全PRで必ず起動する共有ゲートのため required 化しても滞留しない）。各プロジェクトの L1 → L2 → L3 → L4（verification.md参照）は、pathsフィルタで無関係PRでは起動しないため**まだ required 化しておらず**、PR上で緑をレビュー時に目視確認する運用。将来 案ii（Rulesets のパス条件付き required）／案iii（ジョブ常時起動＋内部paths判定）で機械必須化に強化しうる。**pathsフィルタとrequired checksの噛み合わせ**（無関係PRで起動しないジョブがrequiredのまま滞留する既知の癖）の詳細は meta/adr/0026 決定1.3 参照。required checks一覧の変更は人間承認（meta/permissions.md「ゲート変更」）
 - **配線・結合の検証ゲート（meta/adr/0032）**: 部品・プロジェクトを跨ぐ配線とデータ疎通は**機械検証で
   担保する**。agentが実スタックを手で起動して画面を目視する「ユースケース走破」を、この回帰ゲートに
