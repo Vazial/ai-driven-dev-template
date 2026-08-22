@@ -1,0 +1,77 @@
+# 興味の条件。ここを書き換えてcommitすると、翌朝の一覧に反映される（product-brief §2）。
+# このファイルは公開リポジトリに入る。何に興味があり、どの地域を見ているかは公開される（adr/0004）。
+#
+# プロファイルは複数書ける。結果はORで1通に合流し、同じイベントは1回だけ載る。
+# keywordsAny は「どれかを含む」の部分一致。検索対象はタイトル・キャッチ・概要・住所なので、
+# 地名を語に書くと誤爆する——地域で絞るときは prefectures を使うこと。
+# windowDays は当日から何日先までを見るか。
+
+profiles:
+  # AI/LLM、開発の進め方そのもの
+  - keywordsAny:
+      - LLM
+      - 生成AI
+      - AIエージェント
+      - Claude
+      - ChatGPT
+      - Copilot
+      - プロンプト
+      - AI駆動
+      - 仕様駆動
+    prefectures:
+      - online
+    windowDays: 7
+
+  # アーキテクチャ・設計思想
+  - keywordsAny:
+      - アーキテクチャ
+      - 設計
+      - ドメイン駆動
+      - DDD
+      - マイクロサービス
+      - 技術選定
+      - リファクタリング
+    prefectures:
+      - online
+    windowDays: 7
+
+  # クラウド
+  - keywordsAny:
+      - AWS
+      - GCP
+      - Google Cloud
+      - Azure
+      - Cloudflare
+    prefectures:
+      - online
+    windowDays: 7
+
+  # コンテナ・IaC
+  - keywordsAny:
+      - Docker
+      - Kubernetes
+      - コンテナ
+      - Terraform
+      - IaC
+    prefectures:
+      - online
+    windowDays: 7
+
+  # 言語・フレームワーク
+  - keywordsAny:
+      - TypeScript
+      - React
+      - Vue
+      - C#
+      - .NET
+      - Java
+      - Go
+      - Python
+    prefectures:
+      - online
+    windowDays: 7
+
+  # 地元。件数が少ないので話題を絞らず全部見る。オンライン開催は上のプロファイルが拾う
+  - prefectures:
+      - toyama
+    windowDays: 14

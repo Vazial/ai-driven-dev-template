@@ -1,0 +1,82 @@
+name: CI connpass-session-radar
+
+# Project-local L1 -> L4 chain (meta/verification.md, meta/adr/0026).
+# L0 remains the repository-wide required check in govlint.yml.
+
+on:
+  pull_request:
+    branches: [main, "project/**"]
+    paths:
+      - "projects/connpass-session-radar/**"
+      - ".github/workflows/ci-connpass-session-radar.yml"
+  push:
+    branches: [main, "project/**"]
+    paths:
+      - "projects/connpass-session-radar/**"
+      - ".github/workflows/ci-connpass-session-radar.yml"
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: projects/connpass-session-radar
+
+jobs:
+  l1-unit-lint:
+    name: "L1: internal quality (unit and syntax)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: JavaScript syntax
+        run: |
+          node --check src/acceptance-bridge.js
+          node --check src/acceptance-support.js
+          node --check src/adapters.js
+          node --check src/calendar.js
+          node --check src/config.js
+          node --check src/index.js
+          node --check src/pipeline.js
+      - name: Unit tests
+        run: node --test test/config.test.js test/pipeline.test.js
+
+  l2-structure:
+    name: "L2: structural boundaries"
+    runs-on: ubuntu-latest
+    needs: l1-unit-lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Architecture rules
+        run: node --test test/architecture.test.js
+
+  l3-boundary:
+    name: "L3: provider and acceptance boundaries"
+    runs-on: ubuntu-latest
+    needs: l2-structure
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Provider and test-support contracts
+        run: node --test test/adapters.test.js test/index.test.js test/test-support.test.js
+
+  l4-acceptance:
+    name: "L4: acceptance scenarios (CSR-D-01..10)"
+    runs-on: ubuntu-latest
+    needs: l3-boundary
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Daily digest acceptance translation
+        run: >-
+          node acceptance/run-l4.mjs
+          "file://${{ github.workspace }}/projects/connpass-session-radar/src/acceptance-bridge.js"

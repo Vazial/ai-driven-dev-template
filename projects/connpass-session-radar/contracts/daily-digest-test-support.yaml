@@ -4,9 +4,10 @@
 # 決定的なGiven（イベント取得の差し替え）とThenの観測（配信されたDailyDigestの捕捉）を定義する
 # machine-readable SSoTである。developer/testerはこのファイルを逐語で読む（meta/adr/0008の精神）。
 #
-# ステータス: 承認済み(2026-08-17) — adr/0001・daily-digest.featureとあわせて人間がchatで承認した。
-#   起草時は meta/adr/0043 の方式(ii)（記録のみ・承認は後日）を選んでおり、PR #102 のマージは記録を
-#   mainへ載せる行為であって承認ではなかった。本ファイルを含むPRがその承認の記録である。
+# ステータス: 承認済み(2026-08-22) — このPRのマージをもって、CSR-D-04のFETCH_FAILURE用
+#   synthetic private canary境界の改訂が承認される（meta/adr/0043 方式(i)）。マージしない場合、この改訂は承認されない。
+# v0.1は2026-08-17にadr/0001・daily-digest.featureとあわせて人間が承認した。v0.2は2026-08-21に
+# 追加L4 test-support境界として承認された。本v0.3改訂は、それらの承認記録を置換しない。
 #
 # 2026-08-16 起草 (adr/0001): 本プロジェクトはdining-radarのように永続稼働するWebサーバを
 # 持たない——毎朝1回、単発で実行されて終わるパイプラインである（adr/0001決定1・3）。したがって
@@ -17,12 +18,22 @@
 #
 # 可用性: ここで定める差し替えは受け入れテスト実行時にだけ有効であり、本番の定期実行（adr/0001決定3の
 # GitHub Actionsスケジュール実行）では常に本物の取得・配信を使う。差し替えは合成データだけを扱い、
-# 実connpass APIキー・実LINE秘密・実利用者の興味の条件には一切触れない。
+# 実connpass APIキー・実Discord Webhook URL・実利用者の興味の条件には一切触れない。
+#
+# 2026-08-21 改訂: tester-escalation-csr-d.mdが報告したL4翻訳の三つの不足（CSR-D-07のcommit済み
+# 条件入力、受信者に伝わる通知の観測、fixtureイベントの安定ID）をこのcanonical contractへ直接追加する。
+# 別の補足ファイルを残すと、承認記録と恒久SSoTが別PRになり、二つのtest-support原本が併存するため、
+# meta/adr/0043方式(i)でこのPRのマージと同時に承認・確定する。
+#
+# 2026-08-22 改訂: CSR-D-04のFETCH_FAILURE fixtureへ、実運用では決して使わない固定のfake secret
+# canaryを追加する。受信者に示されるfailure summaryがこの内部エラー文字列を含まないことを、実値で
+# 受け入れテストが検証できるようにする。取得失敗だけが対象であり、一覧作りの失敗を追加しない。
 
 title: Connpass Session Radar — acceptance-test seams
-version: 0.1.0-draft
+version: 0.3.0-draft
 description: >-
-  CSR-D-01〜CSR-D-10（daily-digest.feature）が必要とする、取得段の差し替えと配信段の捕捉を定める。
+  CSR-D-01〜CSR-D-10（daily-digest.feature）が必要とする、取得段の差し替え、commit済み条件の入力、
+  配信段の捕捉、および受信者に伝わる通知内容の観測を定める。
 
 components:
   schemas:
@@ -80,7 +91,7 @@ components:
       required: [attempted]
       description: >-
         配信段（NotifierPort、daily-digest-contract.yaml）の差し替え実装が記録する観測値。本番の
-        LINE送信は行わず、渡された値をそのまま記録するだけの二重（テストダブル）を使う。
+        Discord送信は行わず、渡された値をそのまま記録するだけの二重（テストダブル）を使う。
       properties:
         attempted:
           type: boolean
@@ -100,3 +111,237 @@ components:
       x-acceptance-scenarios:
         [CSR-D-01, CSR-D-03, CSR-D-04, CSR-D-05, CSR-D-06, CSR-D-08,
          CSR-D-09, CSR-D-10]
+
+    CommittedInterestConditions:
+      type: object
+      additionalProperties: false
+      required: [revisionRef, sourceFormat, committed, conditions]
+      description: >-
+        受け入れ実行に渡す、commit済みYAML設定の論理的表現。revisionRefはテスト内だけで使う安定した
+        参照名であり、実GitのSHAや実ファイルパスではない。committed=trueは、この内容が実行開始時点で
+        commit済みであり、実行が過去の設定を読み直さないことを表す（CSR-D-07）。
+      properties:
+        revisionRef:
+          type: string
+          minLength: 1
+        sourceFormat:
+          type: string
+          enum: [yaml]
+        committed:
+          type: boolean
+          enum: [true]
+        conditions:
+          $ref: 'daily-digest-contract.yaml#/components/schemas/InterestConditions'
+
+    AcceptanceRunInput:
+      type: object
+      additionalProperties: false
+      required: [fixtureRef, committedInterestConditions]
+      description: >-
+        1回の毎朝の配信を受け入れテストで起動する入力。fixtureRefの合成イベント集合と、実行時点の
+        commit済み条件だけを渡す。実行時刻はfixtureの相対日時の基準として固定されるが、clockの
+        差し替え機構は定めない。
+      properties:
+        fixtureRef:
+          type: string
+          enum:
+            [normal-with-match, no-match, fetch-failure, advertisement-mixed,
+             cancelled-mixed, conditions-changed, unlimited-capacity,
+             full-or-waitlisted, out-of-window-mixed]
+        committedInterestConditions:
+          $ref: '#/components/schemas/CommittedInterestConditions'
+
+    RecipientNotificationCapture:
+      type: object
+      additionalProperties: false
+      required: [attempted, notificationCount, notification]
+      description: >-
+        NotifierPortによる配信先固有の変換の後、受信者に伝わる事実を捕捉するacceptance-only観測。
+        DiscordのHTTPペイロードや文面の構文は定めない。notificationが表す各事実は受信者に分かる形で
+        伝えられ、captureはその結果を観測する。
+      properties:
+        attempted:
+          type: boolean
+          enum: [true]
+        notificationCount:
+          type: integer
+          enum: [1]
+        notification:
+          $ref: '#/components/schemas/RecipientVisibleNotification'
+
+    RecipientVisibleNotification:
+      type: object
+      additionalProperties: false
+      required: [kind, events]
+      properties:
+        kind:
+          type: string
+          enum: [digest, no-matching-events, failure]
+          description: >-
+            digestは1件以上の一覧、no-matching-eventsは該当なし、failureは取得または一覧作りの失敗。
+            三者は受信者に区別して伝わる（CSR-D-03、CSR-D-04）。
+        events:
+          type: array
+          description: digest以外では空配列。digestでは受信者に示されるイベントだけを含む。
+          items:
+            $ref: '#/components/schemas/RecipientVisibleEvent'
+        safeFailureSummary:
+          type: string
+          nullable: true
+          description: >-
+            kind=failureでのみ利用者に示す安全な要約。APIキー、通知先secret、非公開設定値、
+            スタックトレース、または生の外部APIエラーを含めない。
+
+    RecipientVisibleEvent:
+      type: object
+      additionalProperties: false
+      required: [fixtureEventRef, title, startedAt, location, groupTitle, link, capacity]
+      description: >-
+        受信者に示されたイベントの意味的な内容。fixtureEventRefはcaptureだけの追跡用であり、
+        受信者向け文面に表示することを要求しない。他のフィールドは受信者が判断できる形で示される。
+      properties:
+        fixtureEventRef:
+          type: string
+        title:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        location:
+          type: object
+          additionalProperties: false
+          required: [kind]
+          properties:
+            kind:
+              type: string
+              enum: [place, online]
+            place:
+              type: string
+              nullable: true
+        groupTitle:
+          type: string
+          nullable: true
+        link:
+          type: string
+          format: uri
+        capacity:
+          type: object
+          additionalProperties: false
+          required: [kind]
+          properties:
+            kind:
+              type: string
+              enum: [remaining-estimate, omitted-for-advertisement, unlimited, full]
+            remainingSeats:
+              type: integer
+              nullable: true
+
+    FetchFailureCanaryExpectation:
+      type: object
+      additionalProperties: false
+      required: [internalErrorCanary, recipientVisibleSummaryMustNotContain]
+      description: >-
+        FETCH_FAILUREだけに使う、internal synthetic errorへ埋め込む固定のfake secret文字列と、
+        受信者向けfailure summaryにその文字列が出ないことの期待。値はテスト専用であり、実APIキー、
+        実通知先secret、利用者の非公開設定値ではない。
+      properties:
+        internalErrorCanary:
+          type: string
+          minLength: 1
+        recipientVisibleSummaryMustNotContain:
+          type: string
+          minLength: 1
+      x-acceptance-scenarios: [CSR-D-04]
+
+# fixtureRefとfixtureEventRefは合成データの安定した論理名である。実connpassのevent ID、タイトル、
+# URLを固定しない。shownはRecipientVisibleNotification.eventsに現れること、hiddenは現れないことを表す。
+fixtures:
+  normal-with-match:
+    sourceMode: NORMAL_WITH_MATCH
+    scenarios: [CSR-D-01, CSR-D-02]
+    committedInterestConditions: standard-conditions
+    events:
+      matching-event:
+        expected: shown
+        visibleFacts: [title, startedAt, location, groupTitle, link, remaining-estimate]
+      nonmatching-event: { expected: hidden }
+  no-match:
+    sourceMode: NO_MATCH
+    scenarios: [CSR-D-03]
+    committedInterestConditions: standard-conditions
+    events:
+      nonmatching-event: { expected: hidden }
+    expectedNotification: no-matching-events
+  fetch-failure:
+    sourceMode: FETCH_FAILURE
+    scenarios: [CSR-D-04]
+    committedInterestConditions: standard-conditions
+    events: {}
+    expectedNotification: failure
+    fetchFailureCanaryExpectation:
+      internalErrorCanary: CSR_D_04_SYNTHETIC_PRIVATE_CANARY_NOT_A_REAL_SECRET
+      recipientVisibleSummaryMustNotContain: CSR_D_04_SYNTHETIC_PRIVATE_CANARY_NOT_A_REAL_SECRET
+  advertisement-mixed:
+    sourceMode: ADVERTISEMENT_MIXED
+    scenarios: [CSR-D-05]
+    committedInterestConditions: standard-conditions
+    events:
+      participation-event: { expected: shown, visibleFacts: [remaining-estimate] }
+      advertisement-event: { expected: shown, visibleFacts: [omitted-for-advertisement] }
+  cancelled-mixed:
+    sourceMode: CANCELLED_MIXED
+    scenarios: [CSR-D-06]
+    committedInterestConditions: standard-conditions
+    events:
+      active-event: { expected: shown }
+      cancelled-event: { expected: hidden }
+  conditions-changed:
+    sourceMode: NORMAL_WITH_MATCH
+    scenarios: [CSR-D-07]
+    committedInterestConditions: revised-conditions
+    events:
+      matches-revised-condition: { expected: shown }
+      matches-previous-condition-only: { expected: hidden }
+  unlimited-capacity:
+    sourceMode: UNLIMITED_CAPACITY
+    scenarios: [CSR-D-08]
+    committedInterestConditions: standard-conditions
+    events:
+      unlimited-event: { expected: shown, visibleFacts: [unlimited] }
+  full-or-waitlisted:
+    sourceMode: FULL_OR_WAITLISTED
+    scenarios: [CSR-D-09]
+    committedInterestConditions: standard-conditions
+    events:
+      no-seat-event: { expected: shown, visibleFacts: [full] }
+      waitlisted-event: { expected: shown, visibleFacts: [full] }
+  out-of-window-mixed:
+    sourceMode: OUT_OF_WINDOW_MIXED
+    scenarios: [CSR-D-10]
+    committedInterestConditions: standard-conditions
+    events:
+      within-window-event: { expected: shown }
+      after-window-event: { expected: hidden }
+
+committed-interest-condition-revisions:
+  standard-conditions:
+    revisionRef: standard-conditions
+    sourceFormat: yaml
+    committed: true
+    conditions:
+      profiles:
+        - keywords: [standard-topic]
+          windowDays: 7
+  revised-conditions:
+    revisionRef: revised-conditions
+    sourceFormat: yaml
+    committed: true
+    replaces: standard-conditions
+    conditions:
+      profiles:
+        - keywords: [revised-topic]
+          windowDays: 7
+    description: >-
+      CSR-D-07用の変更後のcommit済み興味条件。matches-revised-conditionには一致し、
+      matches-previous-condition-onlyには一致しないことを保証する。
