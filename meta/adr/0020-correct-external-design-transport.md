@@ -1,11 +1,11 @@
 ---
 id: 0020
 scope: meta
-status: 承認済み
+status: superseded
 date: 2026-07-20
 approved_by: "本PRのマージをもって承認"
 supersedes: [0019]
-superseded_by: null
+superseded_by: 0050
 relates_to: [P-01, P-02, P-06, P-07, P-08, P-10, FR-001, FR-002, FR-003]
 ---
 # ADR-0020: designerの外部AI連携の伝送方式を訂正し、成果物形式・ブリーフ構成を精緻化する

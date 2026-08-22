@@ -31,7 +31,7 @@ mutation testing（PIT / Stryker等）は実装に変異を入れてテストが
 ### L2 — 構造の健全性
 - 問い: **変更に耐える形を保っているか**
 - 手段: 静的構造検証（ArchUnit等）、依存関係lint（dependency-cruiser、ESLint境界ルール等）
-- 確定: 機械（ルールは設計パックが定義する）
+- 確定: 機械（ルールはADR第1号が設計軸ごとに挙げる「禁じる依存」から起こす。meta/architecture-selection.md 4節）
 
 ### L3 — 境界の整合
 - 問い: **部品同士は噛み合うか**

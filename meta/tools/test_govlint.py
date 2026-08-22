@@ -179,17 +179,20 @@ class TestCheckRoleAgentSsot(GovlintTestCase):
         self.assertTrue(any("designer のClaude runtime対応" in error for error in govlint.errors))
 
 
-# ---------------------------------------------------------------- 検証ゲートの施錠（ADR-0046）
-def write_settings_json(root: Path, deny: list[str]) -> None:
+# ---------------------------------------------------------------- 検証ゲートのask登録（ADR-0054）
+def write_settings_json(root: Path, ask: list[str], *, deny: list[str] | None = None) -> None:
+    permissions: dict[str, list[str]] = {"ask": ask}
+    if deny is not None:
+        permissions["deny"] = deny
     write(
         root / ".claude" / "settings.json",
-        json.dumps({"permissions": {"deny": deny}}),
+        json.dumps({"permissions": permissions}),
     )
 
 
-def write_locked_settings_json(root: Path, *, extra_deny: list[str] | None = None) -> None:
-    """ADR-0046決定1の4項目をすべて含む、施錠された settings.json を書く。"""
-    write_settings_json(root, list(govlint.REQUIRED_DENY_ENTRIES) + (extra_deny or []))
+def write_locked_settings_json(root: Path, *, extra_ask: list[str] | None = None) -> None:
+    """ADR-0054決定1の4項目をすべて含む、ask登録済みの settings.json を書く。"""
+    write_settings_json(root, list(govlint.REQUIRED_ASK_ENTRIES) + (extra_ask or []))
 
 
 class TestCheckVerificationGateLock(GovlintTestCase):
@@ -198,8 +201,8 @@ class TestCheckVerificationGateLock(GovlintTestCase):
         govlint.check_verification_gate_lock()
         self.assertEqual(govlint.errors, [])
 
-    def test_extra_deny_entries_do_not_interfere(self) -> None:
-        write_locked_settings_json(self.root, extra_deny=["Read(./**/.env*)"])
+    def test_extra_ask_entries_do_not_interfere(self) -> None:
+        write_locked_settings_json(self.root, extra_ask=["Read(./**/.env*)"])
         govlint.check_verification_gate_lock()
         self.assertEqual(govlint.errors, [])
 
@@ -215,19 +218,19 @@ class TestCheckVerificationGateLock(GovlintTestCase):
     def test_missing_permissions_key_is_error(self) -> None:
         write(self.root / ".claude" / "settings.json", "{}")
         govlint.check_verification_gate_lock()
-        self.assertTrue(any("permissions.deny が無いか配列でない" in e for e in govlint.errors))
+        self.assertTrue(any("permissions.ask が無いか配列でない" in e for e in govlint.errors))
 
-    def test_deny_not_a_list_is_error(self) -> None:
+    def test_ask_not_a_list_is_error(self) -> None:
         write(
             self.root / ".claude" / "settings.json",
-            json.dumps({"permissions": {"deny": "not-a-list"}}),
+            json.dumps({"permissions": {"ask": "not-a-list"}}),
         )
         govlint.check_verification_gate_lock()
-        self.assertTrue(any("permissions.deny が無いか配列でない" in e for e in govlint.errors))
+        self.assertTrue(any("permissions.ask が無いか配列でない" in e for e in govlint.errors))
 
     def test_one_missing_entry_is_error_and_named(self) -> None:
-        deny = [e for e in govlint.REQUIRED_DENY_ENTRIES if e != "Write(./**/build.gradle*)"]
-        write_settings_json(self.root, deny)
+        ask = [e for e in govlint.REQUIRED_ASK_ENTRIES if e != "Write(./**/build.gradle*)"]
+        write_settings_json(self.root, ask)
         govlint.check_verification_gate_lock()
         self.assertTrue(
             any("Write(./**/build.gradle*)" in e for e in govlint.errors),
@@ -237,12 +240,18 @@ class TestCheckVerificationGateLock(GovlintTestCase):
     def test_all_entries_missing_is_error(self) -> None:
         write_settings_json(self.root, ["Read(./**/.env*)"])
         govlint.check_verification_gate_lock()
-        self.assertTrue(any("permissions.deny に ADR-0046決定1" in e for e in govlint.errors))
+        self.assertTrue(any("permissions.ask に ADR-0054決定1" in e for e in govlint.errors))
 
     def test_no_settings_dir_at_all_is_error_not_silent_skip(self) -> None:
-        """ADR-0046: 施錠が確認できない状態を沈黙で緑にしない（ファイル欠落も含む）。"""
+        """ADR-0054: 保護が確認できない状態を沈黙で緑にしない（ファイル欠落も含む）。"""
         govlint.check_verification_gate_lock()
         self.assertEqual(len(govlint.errors), 1)
+
+    def test_entries_only_in_deny_is_still_error(self) -> None:
+        """新方式が見るのは ask であり、deny にだけ4項目が揃っていてもERROR（ADR-0054決定2）。"""
+        write_settings_json(self.root, [], deny=list(govlint.REQUIRED_ASK_ENTRIES))
+        govlint.check_verification_gate_lock()
+        self.assertTrue(any("permissions.ask に ADR-0054決定1" in e for e in govlint.errors))
 
 
 # ---------------------------------------------------------------- ADR
@@ -1013,9 +1022,9 @@ class TestMain(GovlintTestCase):
         self.assertTrue(any("shared-cause" in r for r in govlint.reports))
 
     def test_unlocked_verification_gate_fails_main_even_if_otherwise_clean(self) -> None:
-        """ADR-0046決定3: 施錠が外れたままではL0（govlint）がERRORで止まる。"""
+        """ADR-0054決定2: askへの登録が外れたままではL0（govlint）がERRORで止まる。"""
         write_valid_role_layout(self.root)
-        write_settings_json(self.root, [])  # 4項目とも欠落＝開錠されたまま
+        write_settings_json(self.root, [])  # 4項目ともask未登録のまま
         write(self.root / "meta" / "adr" / "0001-sample.md", VALID_ADR)
         write(
             self.root / "projects" / "reservation-system" / "friction-log.md",
@@ -1024,7 +1033,7 @@ class TestMain(GovlintTestCase):
         rc = govlint.main()
         self.assertEqual(rc, 1)
         self.assertTrue(
-            any("permissions.deny に ADR-0046決定1" in e for e in govlint.errors)
+            any("permissions.ask に ADR-0054決定1" in e for e in govlint.errors)
         )
 
 

@@ -30,26 +30,48 @@ property` で提案を取得する全シナリオが落ちる（実測: 11 error
 検証しているので、必須項目を任意に緩めても解消しない。既存シナリオに実装待ちの印を付けると、いま
 守れている検査まで止まる。この製品で「契約だけ先にマージする」が成立しないことは `ADR-0024` の実績
 （契約・実装・テストが同一コミット `6dd0fb1`）とも一致する。ドラフトはブランチ
-`docs/tdr-cs-contract-draft-adr-0025` に退避し、内容は
+`docs/tdr-cs-contract-draft-rebased` に退避し（旧 `docs/tdr-cs-contract-draft-adr-0025` は改名前のパスを
+指すため使わない）、内容は
 `adr-0025-candidate-search-contract-notes.md` が持つ。改訂の要点は `populationAttributes` の同一性境界で、
 生の徒歩分を載せると匿名の母集団行と表示中の候補が値の一致で結びつくため、`walkingTimeBand` を
 「ブラウザが提示している上限候補のうち、この候補がなお該当する最小値」と定義した。禁止属性の列は
 `walkingTimeBand` だけを明示的な例外として書き直し、座標・基点・設定探索範囲・正確な距離・経路・
 現在地は禁止のまま残した。徒歩時間の算出方式（直線距離か道のり基準か）には踏み込んでいない——
-`ADR-0025` 決定2 が実装スライスへ送った判断であり、契約はどちらでも満たせる形にしてある。
+`ADR-0025` 決定2 が実装スライスへ送った判断であり、契約はどちらでも満たせる形にしてある。製品側では
+**直線距離からの概算**を採ることが人間の選択で決着している。実装で必ず踏むのは
+`src/dining_radar/recommendation/pipeline.py` の `_distance()` が**度単位**を返すことで、docstring が
+その理由（正確な距離をブラウザに返さないので測地線の精度は要らない）を明記している。`ADR-0025` で
+この前提が崩れたため、徒歩時間を表示するにはメートル換算が要る。`src/dining_radar/**` は mutation
+testing の対象なのでテストも要る。
 
 `design/explorations/` に店を絞る画面のラフ3枚を置いた。**承認済み設計ではない**。これらは designer の
 パイプラインを通っておらず orchestrator が直接描いたもので、`meta/adr/0018`・`0020`・`0021` の
 design integrator の定義に沿っていない。現状のまま「設計骨格」の承認材料として提出してはならない。
 
 未決が3つある。**(1)** 上記の由来問題——プロジェクトのモック承認プロセスADRで逸脱を明文化するか、
-designer に描き直させるか。**(2)** `ADR-0003` 決定2 が `design-preview` に「検索基点」「数値距離」を
+designer に描き直させるか。**ラフ3枚の扱いだけは決着している**（人間が選択）——`design/explorations/`
+に**探索資料のまま置く**。README に由来を記録済みで、承認材料に昇格させない。残っているのは画面作業
+そのものを designer 経由でやり直す件である。**(2)** `ADR-0003` 決定2 が `design-preview` に「検索基点」「数値距離」を
 置くことを禁じているが、`ADR-0025` で両方が製品の表示物になった。合成値なら本来問題ないはずの条文が
 修飾なしで並んでおり、実装スライスで読み直しが要る。**(3)** スマホの C 画面は案2（地図を畳む）と
 案3（余地バーを地図に重ねる）が未選択。
 
-別セッションで、プロジェクト名から実在の地名 "toyama" を外す改名作業が走っている。同じパスを触るため、
-本ブランチを先に通し、改名をその上へリベースさせる想定である。
+**(3) の前提は確定した（人間裁定 2026-08-22）**——**幹事はスマホ中心でこの作業をする**。したがって
+スマホの C 画面は「一応動く」で済ませられず、案2か案3かは本番の判断である。2026-08-11 に人間承認済みの
+モバイル優先の配置とも、L5 が 375×812 で走ることとも整合する。なお探索の過程で orchestrator が描いた
+「会の進みかた」の図は幹事＝PC・参加者＝スマホとしており**この裁定と食い違う**。図は探索資料であって
+承認済み設計ではないため、正はこの裁定である。
+
+画面作業そのものは**一時停止中**である。止めた理由は成果物の質ではなく作られ方で、orchestrator が
+designer を起動せず直接描いた（上記(1)）。designer を「発案しない統合役」から `/design` の実行者へ
+再定義する meta ADR（`meta/adr/0050`、ブランチ `meta/designer-adopts-design-skill`）の承認が先である。
+この状態で再開すると同じ経路の問題を繰り返す。**0050 は PR #127 で承認待ち**——#121 は
+セッションのコンテキスト混濁で閉じたものであり内容の否決ではない。0050 がマージされたら、画面作業は
+designer を起動して `/design` で再実施する。
+
+プロジェクト名から実在の地名 "toyama" を外す改名は**完了している**（2026-08-20、`adr/0026`）。
+Pythonパッケージ `dining_radar` とシナリオIDプレフィックス `TDR` は据え置き、ブランチ
+`project/toyama-dining-radar` と ruleset `protect project/toyama-dining-radar` も意図して旧名のまま残す。
 
 Claude took this project over from Codex on 2026-08-04, with no open pull request and a green project branch, so no unmerged Codex artifact was inherited. The project branch was promoted to `main` through merged PR #86; work now runs on ordinary feature branches based on `main`.
 

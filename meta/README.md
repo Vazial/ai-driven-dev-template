@@ -9,13 +9,14 @@
 | 信条 | PRINCIPLES.md | 不変（変更はADR必須）。1ページ | **全agentが常時ロード** |
 | 規程 | permissions.md | 権限とエスカレーション | 全agent（成果物に触れる前） |
 | 規程 | verification.md | 多段保証モデル | developer / reviewer、CI設計 |
-| 規程 | architecture-selection.md | 設計パック選定 | architect（プロジェクト開始時） |
+| 規程 | architecture-selection.md | アーキテクチャ選定（設計軸ごとに決める。meta/adr/0056） | architect（プロジェクト開始時） |
 | 規程 | agents.md | agent役割分担と標準フロー | 全agent |
 | 役割定義 | ../.claude/agents/ | Claude Code / Codex共通のsubagent個別定義 | role agent起動時 |
 | 規程 | agent-runtime-mapping.md | Claude Code / Codex間の役割agent起動先・モデル対応表 | orchestrator / role agent起動時 |
 | 規程 | guardrails.md | 運用ルールの索引（実体は設定） | リポジトリ初期設定時 |
 | 決定 | adr/ | A層自身の決定履歴（1決定1枚・編集禁止。meta/adr/0001。メタデータはfrontmatter＝機械検証対象。meta/adr/0012） | 規程変更の提案・監査時 |
 | 道具 | tools/govlint.py | 統治文書（ADR・friction-log・契約ID）の機械検証。CIのL0で実行（meta/adr/0012） | CI・統治文書を書く時 |
+| 道具 | loop/ | 改善ループの道具。セッションログからfriction候補を収穫する（meta/adr/0049）。**判定しない＝ゲートではない**ので meta/adr/0046 の施錠の外 | mainへのマージ後（hookが自動実行） |
 | 状態 | activeContext.md | 進捗の「今」。常に現在だけを映す。**2階層（meta/adr/0033）**: ルート `activeContext.md`＝テンプレ管理・全プロジェクト・跨り状態（跨りの唯一の所有者）／`projects/<p>/activeContext.md`＝そのプロジェクト内部の状態 | 全agent起動時 |
 | 状態 | design.md | 設計の「今」。境界・責務の地図（各プロジェクトのC層に置く。architectが維持） | architect / developer |
 
@@ -34,4 +35,4 @@ agents.md を参照（architect / designer / developer / tester / reviewer の�
 - [x] templates/ — adr / pull-request / audit-report / friction-log / active-context / architecture / acceptance-scenario の7雛形
 - [x] guardrails/ — branch protection・deny設定・CI設定の実体ファイル（.claude/settings.json、.github/workflows/ci.yml、guardrails/。CIの実コマンドはスライスRSV-Cで実装済み。step定義lintツールは未確定）
 - [x] 検証: 予約システムプロジェクトへの初適用（スライスRSV-C完了・friction log運用中: FR-001〜005）
-- [ ] B層: 設計パックの実体。予防的に作らない。同スタック・同型の2本目のプロジェクトが現れた時に昇格で作る（meta/architecture-selection.md 6節）
+- [ ] B層: あるスタックでの具体配線の実体。予防的に作らない。同スタック・同型の2本目のプロジェクトが現れた時に昇格で作る（meta/architecture-selection.md 7節）
