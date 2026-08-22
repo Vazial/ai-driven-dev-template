@@ -28,57 +28,40 @@
 from __future__ import annotations
 
 import argparse
-import json
 import math
 import os
 import re
+import sqlite3
 import sys
 from collections import defaultdict
 from datetime import date, datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from harvest_friction import (  # noqa: E402
-    HUMAN_CORRECTION, human_prompt, main_worktree, transcript_dirs,
-)
+import index_sessions as ix  # noqa: E402
+from harvest_friction import HUMAN_CORRECTION, ensure_index  # noqa: E402
 
 HERE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-def collect(repo_root: str) -> list[dict]:
-    """人間のプロンプトを1件ずつ集める。**uuidで重複排除する**。
+def collect(db: str) -> list[dict]:
+    """人間がタイプした発話だけを、正規化インデックスから取り出す。
 
-    セッションはフォーク・再開で分岐し、同じレコードが複数ファイルに入る
-    （実測: 全レコードの21.7%が重複）。潰さずに率を出すと、分岐の多い週だけ
-    分母が膨らんで**偽のトレンドが出る**。
+    重複排除も、`role: user` に混ざる非発話の切り分けも、役割agentのブリーフを
+    人間の発話と取り違えない処理も、すべて正規化の層（`index_sessions.py`）が済ませている。
+    ここでは `kind='human_prompt'` かつ役割agentに属さない行を読むだけでよい。
     """
-    seen: set[str] = set()
-    prompts: list[dict] = []
-    for directory in transcript_dirs(repo_root):
-        for name in sorted(os.listdir(directory)):
-            if not name.endswith(".jsonl"):
-                continue
-            with open(os.path.join(directory, name), "r", encoding="utf-8", errors="replace") as fh:
-                for line in fh:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        rec = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    uuid = rec.get("uuid")
-                    stamp = rec.get("timestamp") or ""
-                    if not uuid or uuid in seen or not stamp:
-                        continue
-                    text = human_prompt(rec)
-                    if text is None:
-                        continue
-                    seen.add(uuid)
-                    prompts.append({
-                        "at": datetime.fromisoformat(stamp.replace("Z", "+00:00")).date(),
-                        "kinds": [k for pattern, k, _ in HUMAN_CORRECTION if re.search(pattern, text)],
-                    })
+    con = sqlite3.connect(db)
+    prompts = []
+    for ts, text in con.execute(
+        "SELECT ts, text FROM event WHERE kind='human_prompt' AND agent_run_id IS NULL "
+        "AND ts IS NOT NULL ORDER BY ts"
+    ):
+        prompts.append({
+            "at": datetime.fromisoformat(ts.replace("Z", "+00:00")).date(),
+            "kinds": [k for pattern, k, _ in HUMAN_CORRECTION if re.search(pattern, text or "")],
+        })
+    con.close()
     return prompts
 
 
@@ -136,13 +119,17 @@ def min_detectable_ratio(p: float, n_per_arm: float) -> float:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--weekly", action="store_true", help="週次の内訳も出す（参考。判定には使えない）")
+    ap.add_argument("--db", default=None, help="インデックスの場所")
+    ap.add_argument("--no-rebuild", action="store_true", help="インデックスを作り直さない")
     ap.add_argument("--recent", type=int, default=0,
                     help="直近N件を回帰判定の対象にする（既定: 全体の1/3）")
     args = ap.parse_args(argv)
 
-    prompts = sorted(collect(main_worktree(HERE)), key=lambda p: p["at"])
+    repo = ix.main_worktree(HERE)
+    db = ensure_index(repo, args.db, rebuild=not args.no_rebuild)
+    prompts = sorted(collect(db), key=lambda p: p["at"])
     if not prompts:
-        print("セッションログが見つからない")
+        print("人間の発話が見つからない（インデックスが空か、期間に該当が無い）")
         return 0
 
     total = len(prompts)

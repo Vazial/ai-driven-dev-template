@@ -1,65 +1,63 @@
 # -*- coding: utf-8 -*-
 """friction_trend の単体テスト（meta/adr/0049）。
 
-守りたいのは2つ。
-1. **uuidでの重複排除**。セッションはフォーク・再開で分岐し、同じレコードが複数ファイルに
-   入る（実測: 全レコードの21.7%）。潰さないと分岐の多い週だけ分母が膨らみ、偽のトレンドが出る
+重複排除と `role: user` の切り分けは正規化の層が済ませているので、そのテストは
+`test_index_sessions.py` にある。ここで守るのは2つ。
+
+1. インデックスから人間の発話だけを取り出すこと（役割agent側を混ぜない）
 2. **判定できないときに判定しないこと**。件数が足りないのに差を読むのが、この種の指標で
    最もありがちな誤りである
 """
-import json
 import math
 import os
+import sqlite3
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import friction_trend as ft  # noqa: E402
+import index_sessions as ix  # noqa: E402
 
 
-# ---------------------------------------------------------------- 重複排除
-
-
-def make_session(tmp_path, name, records):
-    path = tmp_path / name
-    path.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in records), encoding="utf-8")
+def make_db(tmp_path, rows):
+    """(kind, text, agent_run_id) の並びからインデックスを組む。"""
+    path = str(tmp_path / "index.db")
+    con = sqlite3.connect(path)
+    con.executescript(ix.SCHEMA)
+    for i, (kind, text, agent) in enumerate(rows):
+        con.execute("INSERT INTO event VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (f"e{i}", f"u{i}", "s1", agent, None, "2026-08-01T00:00:00Z",
+                     kind, "user", "main", None, None, len(text), text))
+    con.commit(); con.close()
     return path
 
 
-def prompt_record(uuid, text, stamp="2026-08-01T00:00:00Z"):
-    return {"type": "user", "uuid": uuid, "timestamp": stamp,
-            "message": {"role": "user", "content": text}}
+# ---------------------------------------------------------------- 取り出し
 
 
-def test_同じuuidは複数ファイルにあっても1件だけ数える(monkeypatch, tmp_path):
-    shared = [prompt_record("u1", "違う"), prompt_record("u2", "続けて")]
-    make_session(tmp_path, "a.jsonl", shared)
-    # フォークしたセッション: 同じレコードを引き継ぎ、続きを持つ
-    make_session(tmp_path, "b.jsonl", shared + [prompt_record("u3", "ありがとう")])
-    monkeypatch.setattr(ft, "transcript_dirs", lambda _: [str(tmp_path)])
-
-    prompts = ft.collect("(未使用)")
-    assert len(prompts) == 3  # 2 + 1。重複した2件は数えない
+def test_人間の発話だけを数える(tmp_path):
+    db = make_db(tmp_path, [
+        ("human_prompt", "違う", None),
+        ("human_prompt", "続けて", None),
+        ("notification", "違う", None),          # 人間ではない
+        ("agent_brief", "違う", "agent-a1"),      # agentへの指示であって人間ではない
+        ("coordinator_message", "違う", "agent-a1"),
+    ])
+    prompts = ft.collect(db)
+    assert len(prompts) == 2
     assert sum(1 for p in prompts if p["kinds"]) == 1
 
 
-def test_uuidもtimestampも無いレコードは数えない(monkeypatch, tmp_path):
-    make_session(tmp_path, "a.jsonl", [
-        {"type": "user", "message": {"role": "user", "content": "違う"}},              # uuid無し
-        {"type": "user", "uuid": "u1", "message": {"role": "user", "content": "違う"}},  # timestamp無し
-    ])
-    monkeypatch.setattr(ft, "transcript_dirs", lambda _: [str(tmp_path)])
-    assert ft.collect("(未使用)") == []
+def test_訂正の種別を拾う(tmp_path):
+    db = make_db(tmp_path, [("human_prompt", "勝手に消さないで", None)])
+    assert ft.collect(db)[0]["kinds"] == ["unauthorized"]
 
 
-def test_人間の発話でないものは数えない(monkeypatch, tmp_path):
-    make_session(tmp_path, "a.jsonl", [
-        prompt_record("u1", "<task-notification>違う</task-notification>"),
-        prompt_record("u2", "本当に違う"),
-    ])
-    monkeypatch.setattr(ft, "transcript_dirs", lambda _: [str(tmp_path)])
-    prompts = ft.collect("(未使用)")
-    assert len(prompts) == 1
+def test_空のインデックスでも落ちない(tmp_path):
+    assert ft.collect(make_db(tmp_path, [])) == []
+
+
+
 
 
 # ---------------------------------------------------------------- 統計

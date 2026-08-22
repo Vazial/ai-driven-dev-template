@@ -1,160 +1,166 @@
 # -*- coding: utf-8 -*-
 """harvest_friction の単体テスト（meta/adr/0049）。
 
-守りたいのは主に **人間の発話の判別**。`role: user` に混ざる非発話
-（task-notification・slash展開・引き継ぎサマリ）を落とし損ねると、候補の中身が
-ほぼ全部それになる——プロトタイプで実際にそうなった。
+`role: user` の判別など、生のログの癖を畳む部分のテストは `test_index_sessions.py` にある
+（正規化の層が持つ責務なので、そちらで1回だけ守る）。ここで守るのは3つ。
+
+1. シグナルが当たること、当たらないものに当たらないこと
+2. 閾値に届かないセッションを報告しないこと（軽い修正はここで黙って落ちる）
+3. hook の誤発火で収穫位置が進まないこと
 """
-import json
 import os
+import sqlite3
 import sys
+
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import harvest_friction as hf  # noqa: E402
+import index_sessions as ix  # noqa: E402
 
 
-def user(content, **extra):
-    return {"type": "user", "message": {"role": "user", "content": content}, **extra}
+# ---------------------------------------------------------------- 器
 
 
-# ---------------------------------------------------------------- 人間の発話の判別
+@pytest.fixture
+def db(tmp_path):
+    """イベントを直接書き込める、空のインデックス。"""
+    path = str(tmp_path / "index.db")
+    con = sqlite3.connect(path)
+    con.executescript(ix.SCHEMA)
+    con.execute("INSERT INTO session VALUES ('s1','2026-08-01T00:00:00Z','2026-08-02T00:00:00Z',"
+                "'/repo','[\"main\"]','[\"s1.jsonl\"]',0)")
+    con.commit()
+    con.close()
+    return path
 
 
-def test_人間がタイプした発話は拾う():
-    assert hf.human_prompt(user("なんで勝手に消したの？")) == "なんで勝手に消したの？"
+def put(db, kind, text, *, n=1, ts="2026-08-01T00:00:00Z", tool=None, err=None,
+        agent=None, agent_type=None):
+    con = sqlite3.connect(db)
+    if agent:
+        con.execute("INSERT OR IGNORE INTO agent_run VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (agent, "s1", agent_type, "説明", "toolu_1", 1, ts, ts, ts, 1,
+                     "ブリーフ", "成果", 0, 0, 0))
+    for i in range(n):
+        con.execute("INSERT INTO event VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (f"e{kind}{i}{text[:5]}{agent or ''}", f"u{i}", "s1", agent, None, ts,
+                     kind, "user", "main", tool, err, len(text), text))
+    con.commit()
+    con.close()
 
 
-def test_task_notificationは人間の発話ではない():
-    # promptSource が付いていても発話ではない（実測。判別に使えない）
-    rec = user("<task-notification>\n<task-id>abc</task-id>\n</task-notification>",
-               promptSource="user", origin="external")
-    assert hf.human_prompt(rec) is None
+def harvest(db, threshold=8):
+    return hf.harvest(db, None, threshold)[0]
 
 
-def test_slashコマンドの展開は人間の発話ではない():
-    assert hf.human_prompt(user("<command-name>/design</command-name>")) is None
+# ---------------------------------------------------------------- 1. シグナル
 
 
-def test_引き継ぎサマリは人間の発話ではない():
-    assert hf.human_prompt(user("This session is being continued from a previous conversation.")) is None
+def test_人間の訂正を拾う(db):
+    put(db, "human_prompt", "違う。勝手に契約を書き換えないで")
+    got = harvest(db, threshold=1)
+    assert got[0]["score"] == 10                      # denial(5) + unauthorized(5)
+    assert got[0]["hits"][0]["kind"] == "human:denial+unauthorized"
 
 
-def test_画像添付は人間の発話ではない():
-    assert hf.human_prompt(user("[Image: original 1440x2004, displayed at 1437x2000.]")) is None
+def test_普通の依頼は拾わない(db):
+    put(db, "human_prompt", "READMEのtypoを直してください")
+    assert harvest(db, threshold=1) == []
 
 
-def test_長すぎる本文は人間の発話ではない():
-    assert hf.human_prompt(user("あ" * (hf.MAX_PROMPT_CHARS + 1))) is None
+def test_役割agent側のブリーフを人間の訂正として数えない(db):
+    """agentへの指示が「人間の訂正」として並んだことが実際にあった。"""
+    put(db, "agent_brief", "違う。勝手に書き換えないで", agent="agent-a1", agent_type="developer")
+    assert harvest(db, threshold=1) == []
 
 
-def test_末尾のsystem_reminderは剥がしてから判定する():
-    rec = user("直して\n<system-reminder>\nこれは違う\n</system-reminder>")
-    assert hf.human_prompt(rec) == "直して"
+def test_割り込みを拾う(db):
+    put(db, "tool_result", "The user doesn't want to proceed with this tool use.", err=1)
+    assert harvest(db, threshold=1)[0]["hits"][0]["kind"] == "interrupted"
 
 
-def test_サブエージェントの発話は拾わない():
-    assert hf.human_prompt(user("違う", isSidechain=True)) is None
+def test_同一エラーの連発を拾う(db):
+    put(db, "tool_result", "<tool_use_error>denied", n=hf.REPEATED_ERROR_MIN, err=1)
+    assert harvest(db, threshold=1)[0]["hits"][0]["kind"].startswith("repeated-error")
 
 
-def test_tool_resultは人間の発話ではない():
-    rec = user([{"type": "tool_result", "content": "違う", "is_error": False}])
-    assert hf.human_prompt(rec) is None
+def test_エラーが閾値未満なら数えない(db):
+    put(db, "tool_result", "<tool_use_error>denied", n=hf.REPEATED_ERROR_MIN - 1, err=1)
+    assert harvest(db, threshold=1) == []
 
 
-# ---------------------------------------------------------------- 走査とスコア
+def test_役割agentのエラーも拾い_どの役割か分かる(db):
+    put(db, "tool_result", "File does not exist", n=hf.REPEATED_ERROR_MIN, err=1,
+        agent="agent-a1", agent_type="architect")
+    hit = harvest(db, threshold=1)[0]["hits"][0]
+    assert hit["kind"].startswith("repeated-error")
+    assert hit["agent"] == "architect"
 
 
-def write_session(tmp_path, records):
-    path = tmp_path / "session.jsonl"
-    path.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in records), encoding="utf-8")
-    return str(path)
+def test_ゲートが落ちた差し戻しを拾う(db):
+    put(db, "coordinator_message", "L1のゲートがあなたの成果物2ファイルで落ちています",
+        agent="agent-a1", agent_type="developer")
+    hit = harvest(db, threshold=1)[0]["hits"][0]
+    assert hit["kind"] == "agent-rework"
+    assert hit["agent"] == "developer"
 
 
-def test_摩擦のないセッションはスコアが立たない(tmp_path):
-    path = write_session(tmp_path, [
-        user("READMEのtypoを直して", timestamp="2026-08-01T00:00:00Z"),
-        {"type": "assistant", "message": {"role": "assistant",
-         "content": [{"type": "text", "text": "直しました。"}]}, "timestamp": "2026-08-01T00:01:00Z"},
-    ])
-    assert hf.scan_session(path, None)["score"] == 0
+def test_正常な途中連絡は差し戻しとして数えない(db):
+    """途中連絡の多くは設計どおりの調整であって摩擦ではない。"""
+    put(db, "coordinator_message", "人間の判断が出ました。案B採用です（ADR-0004）",
+        agent="agent-a1", agent_type="tester")
+    assert harvest(db, threshold=1) == []
 
 
-def test_人間の訂正はスコアになる(tmp_path):
-    path = write_session(tmp_path, [
-        user("違う。勝手に契約を書き換えないで", timestamp="2026-08-01T00:00:00Z"),
-    ])
-    found = hf.scan_session(path, None)
-    assert found["score"] == 10  # denial(5) + unauthorized(5)
-    assert found["hits"][0][1] == "human:denial+unauthorized"
+def test_自己訂正を拾う(db):
+    put(db, "assistant_text", "失礼しました。前の測定は誤りでした")
+    assert harvest(db, threshold=1)[0]["hits"][0]["kind"] == "self-correction"
 
 
-def test_割り込みはスコアになる(tmp_path):
-    path = write_session(tmp_path, [
-        user([{"type": "tool_result", "is_error": True,
-               "content": "The user doesn't want to proceed with this tool use."}],
-             timestamp="2026-08-01T00:00:00Z"),
-    ])
-    assert hf.scan_session(path, None)["hits"][0][1] == "interrupted"
+def test_同一ファイルへの書き込みの往復を拾う(db):
+    put(db, "tool_use", '{"file_path": "/repo/a.py"}', n=hf.EDIT_CHURN_MIN, tool="Edit")
+    assert harvest(db, threshold=1)[0]["hits"][0]["kind"].startswith("edit-churn")
 
 
-def test_同一エラーの連発はスコアになる(tmp_path):
-    err = user([{"type": "tool_result", "is_error": True, "content": "<tool_use_error>denied"}],
-               timestamp="2026-08-01T00:00:00Z")
-    path = write_session(tmp_path, [err] * hf.REPEATED_ERROR_MIN)
-    kinds = [h[1] for h in hf.scan_session(path, None)["hits"]]
-    assert any(k.startswith("repeated-error") for k in kinds)
+def test_壊れたツール入力でも落ちない(db):
+    put(db, "tool_use", "これはJSONではない", n=hf.EDIT_CHURN_MIN, tool="Edit")
+    assert harvest(db, threshold=1) == []
 
 
-def test_エラーが閾値未満なら数えない(tmp_path):
-    err = user([{"type": "tool_result", "is_error": True, "content": "<tool_use_error>denied"}],
-               timestamp="2026-08-01T00:00:00Z")
-    path = write_session(tmp_path, [err] * (hf.REPEATED_ERROR_MIN - 1))
-    assert hf.scan_session(path, None)["score"] == 0
+# ---------------------------------------------------------------- 2. 閾値
 
 
-def test_sinceより前のレコードは見ない(tmp_path):
-    path = write_session(tmp_path, [user("違う", timestamp="2026-08-01T00:00:00Z")])
-    assert hf.scan_session(path, "2026-08-02T00:00:00Z") is None
+def test_閾値に届かないセッションは報告しない(db):
+    put(db, "human_prompt", "なんでこうなってるの？")     # why(2) のみ
+    assert harvest(db, threshold=8) == []
+    assert harvest(db, threshold=1) != []
 
 
-def test_壊れた行があっても走査は続く(tmp_path):
-    path = tmp_path / "session.jsonl"
-    path.write_text('{"broken\n' + json.dumps(user("違う", timestamp="2026-08-01T00:00:00Z"),
-                                              ensure_ascii=False), encoding="utf-8")
-    assert hf.scan_session(str(path), None)["score"] > 0
+def test_sinceより前は見ない(db):
+    put(db, "human_prompt", "違う", ts="2026-08-01T00:00:00Z")
+    assert hf.harvest(db, "2026-08-02T00:00:00Z", 1)[0] == []
 
 
-# ---------------------------------------------------------------- ログの置き場
+def test_摩擦が無ければ空を返す(db):
+    assert harvest(db) == []
 
 
-def test_リポジトリのパスからログのディレクトリ名を導ける(monkeypatch, tmp_path):
-    base = tmp_path / ".claude" / "projects"
-    slug = "E--AWS-Claude-Workspace-ai-driven-dev-template"
-    (base / slug).mkdir(parents=True)
-    (base / (slug + "--claude-worktrees-abc123")).mkdir()
-    (base / "E--AWS-Claude-Workspace-other-project").mkdir()
-    monkeypatch.setattr(os.path, "expanduser", lambda _: str(tmp_path))
-
-    found = [os.path.basename(d) for d in hf.transcript_dirs(r"E:\AWS\Claude_Workspace\ai-driven-dev-template")]
-    assert found == [slug, slug + "--claude-worktrees-abc123"]
-
-
-# ---------------------------------------------------------------- トリガの検証
+# ---------------------------------------------------------------- 3. hookの誤発火
 #
-# hook の `if` フィルタは、バッククォートで囲まれた文字列をコマンド置換として
-# 解析して一致させる（クォート付き heredoc の中でも同じ。実測）。誤発火で
-# 収穫位置が進むと蓄積が黙って消えるので、呼ばれた側でも確かめる。
+# `if` フィルタはバッククォートで囲まれた文字列をコマンド置換として解析して一致させる
+# （クォート付き heredoc の中でも同じ。実測）。誤発火で収穫位置が進むと蓄積が消える。
 
 
 def test_本物のマージコマンドを認める():
     assert hf.is_merge_command("gh pr merge 121 --squash")
-    assert hf.is_merge_command('cd "/repo" && gh pr merge 121 --squash --delete-branch')
+    assert hf.is_merge_command('cd "/repo" && gh pr merge 121 --delete-branch')
 
 
 def test_コミットメッセージ内のバッククォートでは発火しない():
-    command = "git commit -F- <<'MSG'\n- PostToolUse hook（`gh pr merge` 時）で自動実行\nMSG"
-    assert not hf.is_merge_command(command)
+    assert not hf.is_merge_command(
+        "git commit -F- <<'MSG'\n- hook（`gh pr merge` 時）で自動実行\nMSG")
 
 
 def test_無関係なコマンドでは発火しない():
@@ -165,18 +171,3 @@ def test_無関係なコマンドでは発火しない():
 def test_コマンドが空でも落ちない():
     assert not hf.is_merge_command("")
     assert not hf.is_merge_command(None)
-
-
-def test_worktreeから呼んでも主リポジトリのルートを返す():
-    """ログの置き場はチェックアウト先ごとに分かれる。worktree内でそのまま走らせると
-    自分の分しか見えず、本体のログを丸ごと取りこぼす（実測で踏んだ）。
-    """
-    here = os.path.dirname(os.path.abspath(__file__))
-    resolved = hf.main_worktree(here)
-    # .git がディレクトリとして実在する側＝主リポジトリ
-    assert os.path.isdir(os.path.join(resolved, ".git"))
-
-
-def test_gitの外では渡された場所をそのまま返す(tmp_path):
-    # git が失敗しても落とさない（ログが見つからないだけで済ませる）
-    assert hf.main_worktree(str(tmp_path)) == str(tmp_path)

@@ -141,7 +141,14 @@ python meta/loop/index_sessions.py     # ~/.claude/session-index/<repo>.db を�
 
 摩擦かどうかも良し悪しも決めない。形を揃えるだけである。判定は上の層（収穫・測定）が行う。
 
-### まだ載せ替えていない
+### 載せ替え済み
 
-`harvest_friction.py` と `friction_trend.py` は生のログを直接読んでいる。つまり
-**収穫の対象はいまもメインのトランスクリプトだけ**で、役割agentの層は拾っていない。
+`harvest_friction.py` も `friction_trend.py` もこのインデックスを読む。生のログは
+もう直接読まない。全再構築は約2秒なので、両方とも実行のたびに作り直してから走る。
+
+載せ替えで初めて見えたもの:
+
+- `repeated-error x23` **(architect)** — 「作業ディレクトリが違う」で23回続けて詰まっていた
+- `agent-rework` **(tester)** — orchestrator が「**前回の私の指示が間違っていました**」と差し戻していた
+
+どちらもメインのトランスクリプトだけを見ていたときは拾えていない。

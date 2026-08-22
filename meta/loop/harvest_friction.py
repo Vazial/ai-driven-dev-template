@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""harvest_friction — セッションログ(jsonl)からfriction候補を走査する（meta/adr/0049）。
+"""harvest_friction — 摩擦の候補をセッションログから拾い直す（meta/adr/0049）。
 
-friction-log は「その場で書く」ことを前提に設計されている（P-05）。だが実際には
-書き損ねる。このツールは書き損ねた分を**セッションログから拾い直す**。
+開発中に起きた引っかかりは friction と呼び、各プロジェクトの `friction-log.md` に1件ずつ
+記録する運用になっている。書くのはその場で、が原則だが、実際には書き損ねる。この道具は
+書き損ねた分をログから拾い直す。
 
-**このツールはゲートではない**（meta/adr/0046 の施錠対象ではない）。何も失敗させず、
-何も判定しない。閾値を超えた「読むべき瞬間」を候補として並べるだけで、FR を起票するか
-どうかは人間が決める（meta/adr/0049 決定3）。
+読むのは生のログではなく、`index_sessions.py` が正規化したインデックスである（決定8）。
+生のログは重複し、役割agentの記録が別ファイルに分かれ、`role: user` が人間とは限らない。
+畳むのは正規化の層の仕事で、ここでは畳み終わったものだけを見る。
+
+**この道具は合否を判定しない。** 何も失敗させず、閾値を超えた「読むべき瞬間」を候補として
+並べるだけである。台帳に1件書くかどうかは人間が決める（決定3）。したがって検証ツールの
+施錠（ADR-0046）の対象ではない。
 
 使い方:
-  python meta/loop/harvest_friction.py                 # 前回の収穫以降を走査して報告
-  python meta/loop/harvest_friction.py --all           # 溜まっている全期間を走査
+  python meta/loop/harvest_friction.py                 # 前回の収穫以降を拾う
+  python meta/loop/harvest_friction.py --all           # 溜まっている全期間
   python meta/loop/harvest_friction.py --hook          # PostToolUse hook から呼ばれる形
 """
 from __future__ import annotations
@@ -20,21 +25,24 @@ import argparse
 import json
 import os
 import re
-import subprocess
+import sqlite3
 import sys
 from collections import defaultdict
 from datetime import datetime, timezone
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import index_sessions as ix  # noqa: E402
+
 HERE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 STATE_PATH = os.path.join(HERE, ".claude", "harvest-state.json")
 
-# ---------------------------------------------------------------- シグナル定義
+# ---------------------------------------------------------------- シグナル
 #
-# 「AIが迷った・誤った・曖昧な指示で事故った瞬間」（friction-log の定義）に機械的に
-# 対応づけられるものだけを置く。意味の判定はしない——重みは「人間が読む価値の見込み」で
-# あって、frictionの重さではない。
+# 「AIが迷った・誤った・曖昧な指示で事故った瞬間」に機械的に対応づけられるものだけを置く。
+# 重みが表すのは「人間が読む価値がありそうか」であって、摩擦の重さではない（決定2）。
 
-# S1: 人間が打ち直した否定・訂正。最も強い（人間が手で止めた＝AIが外れた証拠）
+# 人間が打ち直した否定・訂正。人間が手で止めた＝AIが外れた、という最も強い証拠
 HUMAN_CORRECTION = [
     (r"違う|ちがう|そうじゃな|そうではな", "denial", 5),
     (r"勝手に|聞いてな|言ってな|指示してな|頼んでな", "unauthorized", 5),
@@ -48,194 +56,169 @@ HUMAN_CORRECTION = [
     (r"確認して|検証して|本当に|ほんとに", "unverified", 2),
 ]
 
-# S2: AI自身の自己訂正。直前に何かを誤っている
-SELF_CORRECTION = re.compile(
-    r"失礼しました|間違えました|訂正します|誤りでした|見落として|勘違い"
-)
+# AI自身の自己訂正。直前に何かを誤っている
+SELF_CORRECTION = re.compile(r"失礼しました|間違えました|訂正します|誤りでした|見落として|勘違い")
 
-# S3: ツール実行の拒否・割り込み。人間が手で止めた瞬間
+# ツール実行の拒否・割り込み。人間が手で止めた瞬間
 INTERRUPT = re.compile(
     r"user doesn't want to (proceed|take)|Request interrupted|user denied|"
     r"rejected the tool|\[Request interrupted by user"
 )
 
-REPEATED_ERROR_MIN = 4  # 同一エラーが何回出たら「詰まっていた」とみなすか
-EDIT_CHURN_MIN = 8      # 同一ファイルへの書き込みが何回で「往復していた」とみなすか
+# orchestrator が実行中のagentに「あなたの成果物が落ちている」と差し戻したもの。
+# **狭く取る。** 途中連絡の多くは正常な調整であって摩擦ではない——人間の判断の伝達、
+# 前セッションからの再開、reviewerの差し戻し（設計どおりに機能している流れ）。
+# ゲートやテストが落ちたことを告げているものだけを拾う。
+AGENT_REWORK = re.compile(r"落ちて|失敗しました|件失敗|緑にならな|通らな|欠陥が1件|不具合")
 
-# ---------------------------------------------------------------- 人間の発話の判別
-#
-# `role: user` のレコードには、人間がタイプしていないものが大量に混ざる
-# （task-notification・slashコマンド展開・引き継ぎサマリ・画像添付）。ここを外さないと
-# 候補の中身がほぼ全部それになる（meta/adr/0049 決定2の根拠）。
-#
-# `promptSource` フィールドは task-notification にも付くため判別に使えない（実測）。
-
-NOT_TYPED_PREFIX = ("<", "[Image:", "Caveat:", "This session is being continued")
-EMBEDDED_BLOCK = re.compile(r"<(system-reminder|local-command\w*)>.*?</\1>", re.S)
-MAX_PROMPT_CHARS = 3000  # 引き継ぎサマリ級の長文は人間の発話ではない
+REPEATED_ERROR_MIN = 4   # 同一エラーが何回出たら「詰まっていた」とみなすか
+EDIT_CHURN_MIN = 8       # 同一ファイルへの書き込みが何回で「往復していた」とみなすか
+MAX_EXCERPT = 400
 
 
-def human_prompt(rec: dict) -> str | None:
-    """人間が実際にタイプした本文だけを返す。それ以外は None。"""
-    if rec.get("type") != "user" or rec.get("isSidechain"):
-        return None
-    message = rec.get("message")
-    if not isinstance(message, dict):
-        return None
-    content = message.get("content")
-    if not isinstance(content, str):
-        return None
-    text = EMBEDDED_BLOCK.sub("", content).strip()
-    if not text or text.startswith(NOT_TYPED_PREFIX):
-        return None
-    if len(text) > MAX_PROMPT_CHARS:
-        return None
-    return text
-
-
-def assistant_text(rec: dict) -> str:
-    message = rec.get("message")
-    if not isinstance(message, dict):
-        return ""
-    content = message.get("content")
-    if isinstance(content, str):
-        return content
-    if not isinstance(content, list):
-        return ""
-    return "\n".join(
-        b.get("text") or "" for b in content if isinstance(b, dict) and b.get("type") == "text"
-    )
-
-
-def _blocks(rec: dict, kind: str):
-    message = rec.get("message")
-    if not isinstance(message, dict):
-        return
-    content = message.get("content")
-    if not isinstance(content, list):
-        return
-    for b in content:
-        if isinstance(b, dict) and b.get("type") == kind:
-            yield b
+def ensure_index(repo_root: str, db_path: str | None, rebuild: bool = True) -> str:
+    """インデックスを最新にして、そのパスを返す。全再構築で約2秒なので増分は持たない。"""
+    db = db_path or ix.default_db(repo_root)
+    if rebuild or not os.path.exists(db):
+        ix.build(repo_root, db, verbose=False)
+    return db
 
 
 # ---------------------------------------------------------------- 走査
 
-
-def scan_session(path: str, since: str | None) -> dict | None:
-    records = []
-    with open(path, "r", encoding="utf-8", errors="replace") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                records.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue  # 書きかけの行。落とさず飛ばす
-
-    if since:
-        records = [r for r in records if (r.get("timestamp") or "") >= since]
-    if not records:
-        return None
-
-    hits: list[tuple[int, str, str, str, str]] = []
-    errors_by_signature: dict[str, int] = defaultdict(int)
-    writes_by_file: dict[str, int] = defaultdict(int)
-    last_assistant = ""
-
-    for rec in records:
-        typed = human_prompt(rec)
-        if typed:
-            matched = [(key, w) for pattern, key, w in HUMAN_CORRECTION if re.search(pattern, typed)]
-            if matched:
-                hits.append((
-                    min(sum(w for _, w in matched), 10),
-                    "human:" + "+".join(k for k, _ in matched),
-                    rec.get("timestamp", ""),
-                    typed[:400],
-                    last_assistant[:300],
-                ))
-
-        if rec.get("type") == "assistant":
-            text = assistant_text(rec)
-            if text.strip():
-                last_assistant = text
-            if SELF_CORRECTION.search(text):
-                hits.append((2, "self-correction", rec.get("timestamp", ""), text[:400], ""))
-            for use in _blocks(rec, "tool_use"):
-                if use.get("name") in ("Edit", "Write", "NotebookEdit"):
-                    target = (use.get("input") or {}).get("file_path")
-                    if target:
-                        writes_by_file[target] += 1
-
-        for result in _blocks(rec, "tool_result"):
-            if not result.get("is_error"):
-                continue
-            body = str(result.get("content"))
-            if INTERRUPT.search(body):
-                hits.append((4, "interrupted", rec.get("timestamp", ""), body[:300], last_assistant[:300]))
-            else:
-                errors_by_signature[body.split("\n")[0][:60]] += 1
-
-    for signature, count in errors_by_signature.items():
-        if count >= REPEATED_ERROR_MIN:
-            hits.append((min(count // 2, 4), f"repeated-error x{count}", "", signature, ""))
-    for target, count in writes_by_file.items():
-        if count >= EDIT_CHURN_MIN:
-            hits.append((2, f"edit-churn x{count}", "", target, ""))
-
-    stamps = [r["timestamp"] for r in records if r.get("timestamp")]
-    return {
-        "session": os.path.basename(path)[:8],
-        "start": min(stamps) if stamps else "",
-        "end": max(stamps) if stamps else "",
-        "branches": sorted({r["gitBranch"] for r in records if r.get("gitBranch")}),
-        "turns": sum(1 for r in records if r.get("type") == "assistant"),
-        "score": sum(h[0] for h in hits),
-        "hits": sorted(hits, key=lambda h: -h[0]),
-    }
+_JOIN = ("FROM event e LEFT JOIN agent_run a ON e.agent_run_id = a.agent_run_id")
 
 
-# ---------------------------------------------------------------- ログの置き場
+def collect_hits(con: sqlite3.Connection, since: str | None) -> list[dict]:
+    """インデックスを舐めて、シグナルに当たった行を集める。"""
+    con.row_factory = sqlite3.Row
+    clause = " AND e.ts >= ?" if since else ""
+    args = (since,) if since else ()
+    hits: list[dict] = []
+
+    def add(score, kind, row, excerpt, agent=None):
+        hits.append({"score": score, "kind": kind, "session": row["session_id"],
+                     "ts": row["ts"] or "", "agent": agent,
+                     "excerpt": " ".join((excerpt or "").split())[:MAX_EXCERPT]})
+
+    def rows(where):
+        return con.execute(
+            f"SELECT e.session_id, e.ts, e.text, e.tool_name, a.agent_type {_JOIN} "
+            f"WHERE {where}{clause}", args)
+
+    # --- 人間の訂正。メインスレッドのみ（役割agentのログに人間は登場しない）
+    for row in rows("e.kind='human_prompt' AND e.agent_run_id IS NULL"):
+        matched = [(k, w) for pat, k, w in HUMAN_CORRECTION if re.search(pat, row["text"] or "")]
+        if matched:
+            add(min(sum(w for _, w in matched), 10),
+                "human:" + "+".join(k for k, _ in matched), row, row["text"])
+
+    # --- AI自身の自己訂正。両方の層で見る
+    for row in rows("e.kind='assistant_text'"):
+        if SELF_CORRECTION.search(row["text"] or ""):
+            add(2, "self-correction", row, row["text"], row["agent_type"])
+
+    # --- orchestrator が agent に差し戻した
+    for row in rows("e.kind='coordinator_message'"):
+        if AGENT_REWORK.search(row["text"] or ""):
+            add(3, "agent-rework", row, row["text"], row["agent_type"])
+
+    # --- 割り込み・拒否 と 同一エラーの連発
+    errs: dict[tuple, int] = defaultdict(int)
+    sample: dict[tuple, sqlite3.Row] = {}
+    for row in rows("e.kind='tool_result' AND e.is_error=1"):
+        text = row["text"] or ""
+        if INTERRUPT.search(text):
+            add(4, "interrupted", row, text, row["agent_type"])
+            continue
+        key = (row["session_id"], text.split("\n")[0][:60])
+        errs[key] += 1
+        sample.setdefault(key, row)
+    for key, n in errs.items():
+        if n >= REPEATED_ERROR_MIN:
+            row = sample[key]
+            add(min(n // 2, 4), f"repeated-error x{n}", row, key[1], row["agent_type"])
+
+    # --- 同一ファイルへの書き込みの往復
+    writes: dict[tuple, int] = defaultdict(int)
+    wsample: dict[tuple, sqlite3.Row] = {}
+    for row in rows("e.kind='tool_use' AND e.tool_name IN ('Edit','Write','NotebookEdit')"):
+        try:
+            target = json.loads(row["text"] or "{}").get("file_path")
+        except json.JSONDecodeError:
+            target = None
+        if not target:
+            continue
+        key = (row["session_id"], target)
+        writes[key] += 1
+        wsample.setdefault(key, row)
+    for key, n in writes.items():
+        if n >= EDIT_CHURN_MIN:
+            row = wsample[key]
+            add(2, f"edit-churn x{n}", row, key[1], row["agent_type"])
+
+    return hits
 
 
-def main_worktree(start: str) -> str:
-    """worktreeから呼ばれても**主リポジトリのルート**を返す。
+def harvest(db: str, since: str | None, threshold: int):
+    con = sqlite3.connect(db)
+    hits = collect_hits(con, since)
+    meta = {k: v for k, v in con.execute("SELECT key, value FROM meta")}
 
-    ログの置き場はチェックアウト先ごとに分かれる。worktree内でそのまま走らせると
-    自分の分しか見えず、本体のログを丸ごと取りこぼす。
-    """
-    try:
-        common = subprocess.run(
-            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
-            cwd=start, capture_output=True, text=True, check=True,
-        ).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return start
-    return os.path.dirname(common) if os.path.basename(common) == ".git" else start
+    by_session: dict[str, list] = defaultdict(list)
+    for h in hits:
+        by_session[h["session"]].append(h)
+
+    sessions = []
+    for sid, group in by_session.items():
+        score = sum(h["score"] for h in group)
+        if score < threshold:
+            continue
+        row = con.execute(
+            "SELECT started_at, ended_at, branches FROM session WHERE session_id=?", (sid,)
+        ).fetchone()
+        sessions.append({
+            "session": sid[:8], "score": score,
+            "start": (row["started_at"] if row else "") or "",
+            "end": (row["ended_at"] if row else "") or "",
+            "branches": json.loads(row["branches"]) if row and row["branches"] else [],
+            "hits": sorted(group, key=lambda h: -h["score"]),
+        })
+    sessions.sort(key=lambda s: -s["score"])
+    con.close()
+    return sessions, meta
 
 
-def transcript_dirs(repo_root: str) -> list[str]:
-    """このリポジトリのセッションログが置かれたディレクトリ（worktree分を含む）。"""
-    slug = re.sub(r"[^A-Za-z0-9-]", "-", os.path.abspath(repo_root))
-    base = os.path.join(os.path.expanduser("~"), ".claude", "projects")
-    if not os.path.isdir(base):
-        return []
-    return [
-        os.path.join(base, name)
-        for name in sorted(os.listdir(base))
-        if name == slug or name.startswith(slug + "--claude-worktrees-")
+def render(sessions: list[dict], meta: dict, threshold: int, top: int) -> str:
+    lines = [
+        "# friction収穫候補", "",
+        f"インデックス: {meta.get('n_events','?')}イベント / "
+        f"{meta.get('n_sessions','?')}セッション / "
+        f"{meta.get('n_agent_runs','?')}件の役割agent実行"
+        f"（重複{meta.get('n_duplicate_records_dropped','?')}件を排除済み）",
+        f"閾値 {threshold} を超えたセッション: {len(sessions)}", "",
+        "> 候補であって台帳の1件ではない。読んで、摩擦だと判断したものだけを "
+        "`projects/<p>/friction-log.md` に起票する（cause_key は既存を先に見る）。", "",
     ]
+    for s in sessions:
+        lines.append(f"## [{s['score']}] {s['session']}  {s['start'][:16]} → {s['end'][:16]}")
+        if s["branches"]:
+            lines.append(f"branch: {', '.join(s['branches'][:5])}")
+        lines.append("")
+        for h in s["hits"][:top]:
+            who = f" ({h['agent']})" if h["agent"] else ""
+            lines.append(f"- **[{h['score']}] {h['kind']}**{who} {h['ts'][:16]}")
+            lines.append(f"  - {h['excerpt'][:260]}")
+        lines.append("")
+    return "\n".join(lines)
 
 
-# ---------------------------------------------------------------- トリガの検証
+# ---------------------------------------------------------------- hookの検証
 #
-# hook の `if` フィルタ（`Bash(gh pr merge*)`）だけに頼れない。**バッククォートで
-# 囲まれた文字列はコマンド置換として解析され、`if` に一致する**——クォート付き
-# heredoc の中でも同じである（実測: コミットメッセージに `gh pr merge` と書いたら
-# hook が発火した）。誤発火そのものは無害だが、**収穫位置が黙って進んで蓄積を食う**。
-# したがって呼ばれた側でもう一度確かめる。
+# hook の `if` フィルタだけに頼れない。バッククォートで囲まれた文字列はコマンド置換として
+# 解析され `if` に一致する——クォート付き heredoc の中でも同じである（実測: コミット
+# メッセージに gh pr merge と書いたら発火した）。誤発火そのものは無害だが、収穫位置が
+# 黙って進んで未収穫の蓄積を食う。呼ばれた側でもう一度確かめる。
 
 SEGMENT_SEPARATOR = re.compile(r"&&|\|\||[;\n|]")
 
@@ -262,55 +245,15 @@ def save_since(stamp: str) -> None:
         json.dump({"harvested_through": stamp}, fh, indent=2)
 
 
-# ---------------------------------------------------------------- 出力
-
-
-def render(hot: list[dict], scanned: int, threshold: int, top: int) -> str:
-    lines = [
-        "# friction収穫候補",
-        "",
-        f"走査 {scanned} セッション / 閾値 {threshold} / 該当 {len(hot)}",
-        "",
-        "> 候補であって FR ではない。読んで、friction であるものだけを "
-        "`projects/<p>/friction-log.md` に起票する（cause_key は既存を先に見る）。",
-        "",
-    ]
-    for r in hot:
-        lines.append(
-            f"## [{r['score']}] {r['session']}  {r['start'][:16]} → {r['end'][:16]}  turns={r['turns']}"
-        )
-        if r["branches"]:
-            lines.append(f"branch: {', '.join(r['branches'][:5])}")
-        lines.append("")
-        for score, kind, stamp, excerpt, context in r["hits"][:top]:
-            lines.append(f"- **[{score}] {kind}** {stamp[:16]}")
-            lines.append(f"  - 人間/事象: {' '.join(excerpt.split())[:260]}")
-            if context:
-                lines.append(f"  - 直前のAI: {' '.join(context.split())[:180]}")
-        lines.append("")
-    return "\n".join(lines)
-
-
-def harvest(repo_root: str, since: str | None, threshold: int, top: int):
-    results = []
-    for directory in transcript_dirs(repo_root):
-        for name in sorted(os.listdir(directory)):
-            if not name.endswith(".jsonl"):
-                continue
-            found = scan_session(os.path.join(directory, name), since)
-            if found:
-                results.append(found)
-    hot = sorted((r for r in results if r["score"] >= threshold), key=lambda r: -r["score"])
-    return results, hot, render(hot, len(results), threshold, top)
-
-
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--all", action="store_true", help="前回の収穫位置を無視して全期間を走査する")
-    ap.add_argument("--since", default=None, help="ISO timestamp。これ以降のレコードだけ見る")
+    ap.add_argument("--all", action="store_true", help="前回の収穫位置を無視して全期間を見る")
+    ap.add_argument("--since", default=None, help="ISO timestamp。これ以降だけ見る")
     ap.add_argument("--threshold", type=int, default=8, help="このスコア未満のセッションは報告しない")
     ap.add_argument("--top", type=int, default=4, help="1セッションあたりに出す抜粋の数")
-    ap.add_argument("--hook", action="store_true", help="PostToolUse hook として動く（stdinはhookのJSON）")
+    ap.add_argument("--db", default=None, help="インデックスの場所（既定は index_sessions と同じ）")
+    ap.add_argument("--no-rebuild", action="store_true", help="インデックスを作り直さない")
+    ap.add_argument("--hook", action="store_true", help="PostToolUse hook として動く")
     ap.add_argument("--no-advance", action="store_true", help="収穫位置を進めない（試し撃ち用）")
     args = ap.parse_args(argv)
 
@@ -319,32 +262,32 @@ def main(argv: list[str] | None = None) -> int:
             payload = json.loads(sys.stdin.read() or "{}")
         except json.JSONDecodeError:
             payload = {}
-        command = (payload.get("tool_input") or {}).get("command", "")
-        if not is_merge_command(command):
+        if not is_merge_command((payload.get("tool_input") or {}).get("command", "")):
             return 0  # `if` フィルタの誤発火。収穫位置も進めない
 
+    repo = ix.main_worktree(HERE)
+    db = ensure_index(repo, args.db, rebuild=not args.no_rebuild)
     since = None if args.all else (args.since or load_since())
-    _, hot, report = harvest(main_worktree(HERE), since, args.threshold, args.top)
+    sessions, meta = harvest(db, since, args.threshold)
+    report = render(sessions, meta, args.threshold, args.top)
     now = datetime.now(timezone.utc).isoformat()
 
     if args.hook:
-        if hot:
+        if sessions:
             print(json.dumps({
-                "systemMessage": f"friction収穫候補 {len(hot)} 件（前回の収穫以降）",
+                "systemMessage": f"friction収穫候補 {len(sessions)} 件（前回の収穫以降）",
                 "hookSpecificOutput": {
                     "hookEventName": "PostToolUse",
                     "additionalContext": report
-                        + "\n\n上の候補を読み、friction であるものだけを起票の候補として"
-                          "人間に提示すること。friction-log への追記は人間の GO のあとで行う"
-                          "（meta/adr/0049 決定3）。",
+                        + "\n\n上の候補を読み、摩擦であるものだけを起票の候補として人間に"
+                          "提示すること。台帳への追記は人間のGOのあとで行う（ADR-0049 決定3）。",
                 },
             }, ensure_ascii=False))
-        # 候補が無ければ何も言わない。軽量な修正はここで黙って落ちる
         if not args.no_advance:
             save_since(now)
         return 0
 
-    print(report if hot else f"収穫候補なし（閾値 {args.threshold}）")
+    print(report if sessions else f"収穫候補なし（閾値 {args.threshold}）")
     if not args.no_advance:
         save_since(now)
     return 0
