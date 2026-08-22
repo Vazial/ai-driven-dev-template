@@ -34,13 +34,14 @@ export function normalizeEvents(events, conditions, now = new Date()) {
 
     const remainingSeatsKnown = event.event_type === 'participation' && event.limit != null;
     const remainingSeats = remainingSeatsKnown ? Math.max(0, event.limit - event.accepted) : null;
+    const isOnlineOnlyProfile = profile.prefectures?.length === 1 && profile.prefectures[0] === 'online';
     const normalized = {
       title: event.title,
       url: event.url,
       startedAt: event.started_at ?? null,
       place: event.place ?? null,
       address: event.address ?? null,
-      isOnline: event.prefecture === 'online',
+      isOnline: event.prefecture === 'online' || isOnlineOnlyProfile,
       groupTitle: event.group?.title ?? null,
       eventType: event.event_type,
       remainingSeatsKnown,
