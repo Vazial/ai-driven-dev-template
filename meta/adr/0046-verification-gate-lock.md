@@ -1,11 +1,11 @@
 ---
 id: 0046
 scope: meta
-status: 承認済み
+status: superseded
 date: 2026-08-03
 approved_by: "本PRのマージをもって承認（人間裁定 2026-08-03: 実測結果を受けて案1で進めることに合意した。meta/adr/0035 方式(i)）"
 supersedes: []
-superseded_by: null
+superseded_by: 0054
 relates_to: [P-01, P-03, P-04, P-05, P-10, FR-022]
 ---
 
