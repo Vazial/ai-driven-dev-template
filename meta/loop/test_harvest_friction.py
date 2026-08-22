@@ -6,7 +6,8 @@
 
 1. シグナルが当たること、当たらないものに当たらないこと
 2. 閾値に届かないセッションを報告しないこと（軽い修正はここで黙って落ちる）
-3. hook の誤発火で収穫位置が進まないこと
+3. スコープ——セッション内（急性）と横断（慢性）で見えるものが違うこと
+4. hook が `gh pr create` 以外で誤発火しないこと
 """
 import os
 import sqlite3
@@ -153,21 +154,100 @@ def test_摩擦が無ければ空を返す(db):
 # （クォート付き heredoc の中でも同じ。実測）。誤発火で収穫位置が進むと蓄積が消える。
 
 
-def test_本物のマージコマンドを認める():
-    assert hf.is_merge_command("gh pr merge 121 --squash")
-    assert hf.is_merge_command('cd "/repo" && gh pr merge 121 --delete-branch')
+def test_本物のPR作成コマンドを認める():
+    assert hf.is_pr_create_command("gh pr create --base main --title x")
+    assert hf.is_pr_create_command('cd "/repo" && gh pr create --body-file -')
 
 
 def test_コミットメッセージ内のバッククォートでは発火しない():
-    assert not hf.is_merge_command(
-        "git commit -F- <<'MSG'\n- hook（`gh pr merge` 時）で自動実行\nMSG")
+    assert not hf.is_pr_create_command(
+        "git commit -F- <<'MSG'\n- hook（`gh pr create` 時）で自動実行\nMSG")
+
+
+def test_コミットメッセージの行頭にコマンド名があっても発火しない():
+    """実際に踏んだ形。行を区切り文字として扱うので、heredoc本文の行がコマンドに見えた。
+
+    ADR-0055 を書いたコミット自身が、この形で旧hookを誤発火させた。
+    """
+    assert not hf.is_pr_create_command(
+        "git add -A && git commit -q -F- <<'MSG'\n"
+        "meta: 収穫をPR作成の直前に移す\n"
+        "\n"
+        "  gh pr create   98回 / 30日\n"
+        "  gh pr merge    12回 /  1日\n"
+        "MSG")
+
+
+def test_heredocの後ろに本物のコマンドが続けば発火する():
+    """heredocを落とすのは本文だけで、その後のコマンドは見落とさない。"""
+    assert hf.is_pr_create_command(
+        "git commit -F- <<'MSG'\nメッセージ\nMSG\ngh pr create --base main")
+
+
+def test_クォート無しのheredocでも本文を落とす():
+    assert not hf.is_pr_create_command(
+        "cat <<EOF\ngh pr create --base main\nEOF")
+
+
+def test_マージでは発火しない():
+    """トリガはマージではなくPR作成である（meta/adr/0055）。
+
+    マージ後だとPRが閉じているので、起票に2本目のPRが要る——それは台帳で最多の
+    摩擦 `record-update-needs-second-pr` そのものになる。
+    """
+    assert not hf.is_pr_create_command("gh pr merge 124 --squash")
 
 
 def test_無関係なコマンドでは発火しない():
-    assert not hf.is_merge_command("git status --short")
-    assert not hf.is_merge_command("echo 'gh pr merge と書いただけ'")
+    assert not hf.is_pr_create_command("git status --short")
+    assert not hf.is_pr_create_command("echo 'gh pr create と書いただけ'")
 
 
 def test_コマンドが空でも落ちない():
-    assert not hf.is_merge_command("")
-    assert not hf.is_merge_command(None)
+    assert not hf.is_pr_create_command("")
+    assert not hf.is_pr_create_command(None)
+
+
+# ---------------------------------------------------------------- スコープ
+#
+# セッション内（急性）と横断（慢性）では見えるものが違う。前者だけだと、
+# 別々のセッションに1回ずつ現れる構造的欠陥を原理的に取りこぼす。
+
+
+def test_セッションを指定すると他のセッションは見ない(db):
+    put(db, "human_prompt", "違う")
+    con = sqlite3.connect(db)
+    con.execute("INSERT INTO session VALUES ('s2','','','','[]','[]',0)")
+    con.execute("INSERT INTO event VALUES ('x','ux','s2',NULL,NULL,'2026-08-01T00:00:00Z',"
+                "'human_prompt','user','main',NULL,NULL,2,'違う')")
+    con.commit(); con.close()
+    assert len(hf.harvest(db, None, 1)[0]) == 2                    # 指定なし＝両方
+    assert len(hf.harvest(db, None, 1, session="s1")[0]) == 1      # 指定あり＝片方
+
+
+def test_横断モードは複数セッションに跨る原因だけを出す(db):
+    con = sqlite3.connect(db)
+    for i, sess in enumerate(("s1", "s2", "s3")):
+        con.execute("INSERT OR IGNORE INTO session VALUES (?,'','','','[]','[]',0)", (sess,))
+        con.execute("INSERT INTO event VALUES (?,?,?,NULL,NULL,'2026-08-01T00:00:00Z',"
+                    "'tool_result','user','main',NULL,1,10,'File does not exist')",
+                    (f"cross{i}", f"u{i}", sess))
+    # 1セッションにしか出ないものは構造的欠陥ではない
+    con.execute("INSERT INTO event VALUES ('lone','ul','s1',NULL,NULL,'2026-08-01T00:00:00Z',"
+                "'tool_result','user','main',NULL,1,10,'一度きりのエラー')")
+    con.commit(); con.close()
+    out = hf.recurring(db, min_sessions=2)
+    assert "File does not exist" in out
+    assert "一度きりのエラー" not in out
+
+
+def test_横断モードは人間の割り込みを原因として数えない(db):
+    con = sqlite3.connect(db)
+    for i, sess in enumerate(("s1", "s2")):
+        con.execute("INSERT OR IGNORE INTO session VALUES (?,'','','','[]','[]',0)", (sess,))
+        con.execute("INSERT INTO event VALUES (?,?,?,NULL,NULL,'2026-08-01T00:00:00Z',"
+                    "'tool_result','user','main',NULL,1,10,"
+                    "'The user doesn''t want to proceed with this tool use.')",
+                    (f"int{i}", f"i{i}", sess))
+    con.commit(); con.close()
+    assert "want to proceed" not in hf.recurring(db, min_sessions=2)

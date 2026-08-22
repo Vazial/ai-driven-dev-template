@@ -10,14 +10,26 @@
 生のログは重複し、役割agentの記録が別ファイルに分かれ、`role: user` が人間とは限らない。
 畳むのは正規化の層の仕事で、ここでは畳み終わったものだけを見る。
 
+**二段構えである**（`meta/adr/0055`）。急性と慢性で、見えるものが違う。
+
+- **セッション内**（`--hook`。PR作成の直前に自動で走る）——「今回何が起きたか」。
+  振り返りは終わるときにやるものなので、スライスを閉じる瞬間に置く。**PRはまだ開いている**ので、
+  ここでFRを書けば同じPRに乗る（マージ後に走らせると2本目のPRが要り、それは台帳で最多の
+  摩擦 `record-update-needs-second-pr` そのものになる）
+- **横断**（`--recurring`。手動・週次）——「同じ原因が繰り返していないか」。
+  1セッションの中では「エラーが何回か出た」にしか見えないものが、跨いで数えると構造的欠陥に
+  見える。実測では `File does not exist…working directory` が**14セッション・124回**あり、
+  台帳51件に1件も起票されていなかった。**セッション内スコープでは原理的に見つからない**
+
 **この道具は合否を判定しない。** 何も失敗させず、閾値を超えた「読むべき瞬間」を候補として
 並べるだけである。台帳に1件書くかどうかは人間が決める（決定3）。したがって検証ツールの
 施錠（ADR-0046）の対象ではない。
 
 使い方:
-  python meta/loop/harvest_friction.py                 # 前回の収穫以降を拾う
-  python meta/loop/harvest_friction.py --all           # 溜まっている全期間
-  python meta/loop/harvest_friction.py --hook          # PostToolUse hook から呼ばれる形
+  python meta/loop/harvest_friction.py --session <id>  # そのセッションだけ
+  python meta/loop/harvest_friction.py --all           # 全期間（手動の総ざらい）
+  python meta/loop/harvest_friction.py --recurring     # 横断。同じ原因の繰り返しを数える
+  python meta/loop/harvest_friction.py --hook          # PreToolUse hook から呼ばれる形
 """
 from __future__ import annotations
 
@@ -35,7 +47,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import index_sessions as ix  # noqa: E402
 
 HERE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-STATE_PATH = os.path.join(HERE, ".claude", "harvest-state.json")
 
 # ---------------------------------------------------------------- シグナル
 #
@@ -89,11 +100,15 @@ def ensure_index(repo_root: str, db_path: str | None, rebuild: bool = True) -> s
 _JOIN = ("FROM event e LEFT JOIN agent_run a ON e.agent_run_id = a.agent_run_id")
 
 
-def collect_hits(con: sqlite3.Connection, since: str | None) -> list[dict]:
+def collect_hits(con: sqlite3.Connection, since: str | None,
+                 session: str | None = None) -> list[dict]:
     """インデックスを舐めて、シグナルに当たった行を集める。"""
     con.row_factory = sqlite3.Row
-    clause = " AND e.ts >= ?" if since else ""
-    args = (since,) if since else ()
+    clause, args = "", ()
+    if since:
+        clause += " AND e.ts >= ?"; args += (since,)
+    if session:
+        clause += " AND e.session_id = ?"; args += (session,)
     hits: list[dict] = []
 
     def add(score, kind, row, excerpt, agent=None):
@@ -160,9 +175,9 @@ def collect_hits(con: sqlite3.Connection, since: str | None) -> list[dict]:
     return hits
 
 
-def harvest(db: str, since: str | None, threshold: int):
+def harvest(db: str, since: str | None, threshold: int, session: str | None = None):
     con = sqlite3.connect(db)
-    hits = collect_hits(con, since)
+    hits = collect_hits(con, since, session)
     meta = {k: v for k, v in con.execute("SELECT key, value FROM meta")}
 
     by_session: dict[str, list] = defaultdict(list)
@@ -213,83 +228,131 @@ def render(sessions: list[dict], meta: dict, threshold: int, top: int) -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------- 横断（慢性）
+
+
+def recurring(db: str, min_sessions: int = 2, top: int = 12) -> str:
+    """同じ原因が何セッションに跨って出ているかを数える。
+
+    1セッションの中では「エラーが何回か出た」にしか見えないものが、跨いで数えると
+    構造的欠陥に見える。**セッション内スコープでは原理的に見つからない層**である。
+    実測では `File does not exist…working directory` が14セッション・124回あり、
+    台帳51件に1件も起票されていなかった。
+    """
+    con = sqlite3.connect(db)
+    con.row_factory = sqlite3.Row
+    agg: dict[str, dict] = defaultdict(lambda: {"n": 0, "sessions": set(), "agents": set()})
+    for row in con.execute(
+        "SELECT e.session_id, e.text, a.agent_type FROM event e "
+        "LEFT JOIN agent_run a ON e.agent_run_id = a.agent_run_id "
+        "WHERE e.kind='tool_result' AND e.is_error=1"
+    ):
+        text = row["text"] or ""
+        if INTERRUPT.search(text):
+            continue  # 人間が手で止めたものは「繰り返す原因」ではない
+        entry = agg[text.split("\n")[0][:56]]
+        entry["n"] += 1
+        entry["sessions"].add(row["session_id"])
+        if row["agent_type"]:
+            entry["agents"].add(row["agent_type"])
+    con.close()
+
+    rows = [kv for kv in sorted(agg.items(), key=lambda kv: (-len(kv[1]["sessions"]), -kv[1]["n"]))
+            if len(kv[1]["sessions"]) >= min_sessions][:top]
+    out = ["# 繰り返している原因（横断）", "",
+           f"{min_sessions}セッション以上に跨って出たものだけを並べる。1セッションの中では見えない層である。",
+           "", "| セッション数 | 回数 | 出た役割 | エラー |", "|---:|---:|---|---|"]
+    for sig, d in rows:
+        who = ", ".join(sorted(d["agents"])) or "メイン"
+        out.append(f"| {len(d['sessions'])} | {d['n']} | {who} | `{sig}` |")
+    out += ["", "> 回数ではなく**セッション数**が構造的欠陥の指標である（`meta/adr/0012` の考え方）。",
+            "> 同じ原因が別の日・別の作業で再発しているなら、個別対処ではなく一般ルール化を検討する。"]
+    return "\n".join(out)
+
+
 # ---------------------------------------------------------------- hookの検証
 #
 # hook の `if` フィルタだけに頼れない。バッククォートで囲まれた文字列はコマンド置換として
 # 解析され `if` に一致する——クォート付き heredoc の中でも同じである（実測: コミット
-# メッセージに gh pr merge と書いたら発火した）。誤発火そのものは無害だが、収穫位置が
-# 黙って進んで未収穫の蓄積を食う。呼ばれた側でもう一度確かめる。
+# メッセージに `gh pr merge` と書いたら発火した）。呼ばれた側でもう一度確かめる。
+#
+# **その再検査も、一度は不十分だった。** 行を区切り文字として扱うので、heredoc で渡した
+# コミットメッセージの中の「`  gh pr merge    12回 / 1日`」という行が、そのままコマンドに
+# 見えていた（このADRを書いたコミット自身が発火させた）。heredoc の本文は人間が書いた
+# 文章であってコマンドではないので、判定の前に落とす。
 
+HEREDOC_BODY = re.compile(r"<<-?\s*(['\"]?)(\w+)\1.*?^\s*\2\s*$", re.S | re.M)
 SEGMENT_SEPARATOR = re.compile(r"&&|\|\||[;\n|]")
 
 
-def is_merge_command(command: str) -> bool:
-    """コマンド文字列に、本当に `gh pr merge` の実行が含まれるか。"""
+def strip_heredocs(command: str) -> str:
+    """heredoc の本文を落とす。中身はコマンドではなく、人間が書いた文章である。"""
+    return HEREDOC_BODY.sub("<<HEREDOC", command or "")
+
+
+def is_pr_create_command(command: str) -> bool:
+    """コマンド文字列に、本当に `gh pr create` の実行が含まれるか。"""
     return any(
-        seg.strip().lstrip("(").strip().startswith("gh pr merge")
-        for seg in SEGMENT_SEPARATOR.split(command or "")
+        seg.strip().lstrip("(").strip().startswith("gh pr create")
+        for seg in SEGMENT_SEPARATOR.split(strip_heredocs(command))
     )
-
-
-def load_since() -> str | None:
-    try:
-        with open(STATE_PATH, "r", encoding="utf-8") as fh:
-            return json.load(fh).get("harvested_through")
-    except (OSError, json.JSONDecodeError):
-        return None
-
-
-def save_since(stamp: str) -> None:
-    os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
-    with open(STATE_PATH, "w", encoding="utf-8") as fh:
-        json.dump({"harvested_through": stamp}, fh, indent=2)
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--all", action="store_true", help="前回の収穫位置を無視して全期間を見る")
+    ap.add_argument("--session", default=None, help="このセッションだけを見る")
+    ap.add_argument("--all", action="store_true", help="全期間を見る（手動の総ざらい）")
     ap.add_argument("--since", default=None, help="ISO timestamp。これ以降だけ見る")
+    ap.add_argument("--recurring", action="store_true",
+                    help="横断モード。同じ原因が何セッションに跨るかを数える")
+    ap.add_argument("--min-sessions", type=int, default=2,
+                    help="横断モードで、何セッション以上に跨ったものを出すか")
     ap.add_argument("--threshold", type=int, default=8, help="このスコア未満のセッションは報告しない")
     ap.add_argument("--top", type=int, default=4, help="1セッションあたりに出す抜粋の数")
     ap.add_argument("--db", default=None, help="インデックスの場所（既定は index_sessions と同じ）")
     ap.add_argument("--no-rebuild", action="store_true", help="インデックスを作り直さない")
-    ap.add_argument("--hook", action="store_true", help="PostToolUse hook として動く")
-    ap.add_argument("--no-advance", action="store_true", help="収穫位置を進めない（試し撃ち用）")
+    ap.add_argument("--hook", action="store_true", help="PreToolUse hook として動く")
     args = ap.parse_args(argv)
 
+    session = args.session
     if args.hook:
         try:
             payload = json.loads(sys.stdin.read() or "{}")
         except json.JSONDecodeError:
             payload = {}
-        if not is_merge_command((payload.get("tool_input") or {}).get("command", "")):
-            return 0  # `if` フィルタの誤発火。収穫位置も進めない
+        if not is_pr_create_command((payload.get("tool_input") or {}).get("command", "")):
+            return 0  # `if` フィルタの誤発火
+        session = payload.get("session_id")
+        if not session:
+            return 0  # スコープを決められないなら黙る（全期間を出すと締めの邪魔になる）
 
     repo = ix.main_worktree(HERE)
     db = ensure_index(repo, args.db, rebuild=not args.no_rebuild)
-    since = None if args.all else (args.since or load_since())
-    sessions, meta = harvest(db, since, args.threshold)
+
+    if args.recurring:
+        print(recurring(db, args.min_sessions))
+        return 0
+
+    sessions, meta = harvest(db, args.since, args.threshold,
+                             None if args.all else session)
     report = render(sessions, meta, args.threshold, args.top)
-    now = datetime.now(timezone.utc).isoformat()
 
     if args.hook:
         if sessions:
             print(json.dumps({
-                "systemMessage": f"friction収穫候補 {len(sessions)} 件（前回の収穫以降）",
+                "systemMessage": "このセッションの friction 候補が閾値を超えている",
                 "hookSpecificOutput": {
-                    "hookEventName": "PostToolUse",
+                    "hookEventName": "PreToolUse",
                     "additionalContext": report
-                        + "\n\n上の候補を読み、摩擦であるものだけを起票の候補として人間に"
-                          "提示すること。台帳への追記は人間のGOのあとで行う（ADR-0049 決定3）。",
+                        + "\n\nこれはPRを作る直前の、今のセッションの振り返りである。"
+                          "候補を読み、摩擦であるものだけを人間に提示すること（ADR-0049 決定3）。"
+                          "**PRはこれから作られる＝まだ開いている**ので、起票が決まれば同じ"
+                          "ブランチにコミットすればよい。2本目のPRは要らない。",
                 },
             }, ensure_ascii=False))
-        if not args.no_advance:
-            save_since(now)
         return 0
 
     print(report if sessions else f"収穫候補なし（閾値 {args.threshold}）")
-    if not args.no_advance:
-        save_since(now)
     return 0
 
 

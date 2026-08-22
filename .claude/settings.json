@@ -48,16 +48,15 @@
     ]
   },
   "hooks": {
-    "PostToolUse": [
+    "PreToolUse": [
       {
         "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
-            "if": "Bash(gh pr merge*)",
+            "if": "Bash(gh pr create*)",
             "command": "python \"$CLAUDE_PROJECT_DIR/meta/loop/harvest_friction.py\" --hook",
-            "timeout": 120,
-            "statusMessage": "friction収穫候補を走査中"
+            "timeout": 120
           }
         ]
       }
