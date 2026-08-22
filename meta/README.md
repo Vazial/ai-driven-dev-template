@@ -16,6 +16,7 @@
 | 規程 | guardrails.md | 運用ルールの索引（実体は設定） | リポジトリ初期設定時 |
 | 決定 | adr/ | A層自身の決定履歴（1決定1枚・編集禁止。meta/adr/0001。メタデータはfrontmatter＝機械検証対象。meta/adr/0012） | 規程変更の提案・監査時 |
 | 道具 | tools/govlint.py | 統治文書（ADR・friction-log・契約ID）の機械検証。CIのL0で実行（meta/adr/0012） | CI・統治文書を書く時 |
+| 道具 | loop/ | 改善ループの道具。セッションログからfriction候補を収穫する（meta/adr/0049）。**判定しない＝ゲートではない**ので meta/adr/0046 の施錠の外 | mainへのマージ後（hookが自動実行） |
 | 状態 | activeContext.md | 進捗の「今」。常に現在だけを映す。**2階層（meta/adr/0033）**: ルート `activeContext.md`＝テンプレ管理・全プロジェクト・跨り状態（跨りの唯一の所有者）／`projects/<p>/activeContext.md`＝そのプロジェクト内部の状態 | 全agent起動時 |
 | 状態 | design.md | 設計の「今」。境界・責務の地図（各プロジェクトのC層に置く。architectが維持） | architect / developer |
 

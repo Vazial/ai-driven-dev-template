@@ -1,0 +1,63 @@
+# meta/loop — 改善ループの道具
+
+> friction-log は「その場で書く」ことを前提にしている（P-05・`meta/adr/0012`）。
+> ここに置くのは、**書き損ねた分をセッションログから拾い直す**ための道具である。
+> 根拠と決定は `meta/adr/0049`。
+
+## `meta/tools/` ではなく `meta/loop/` である理由
+
+`meta/adr/0046` が施錠したのは「**何を正しいと判定するか**」——ゲートである。
+ここの道具は何も失敗させず、何も判定しない。したがってゲートではなく、施錠の対象ではない
+（`meta/adr/0049` 決定5）。閾値の調整に人間の開錠は要らない。
+
+**新しい道具をここに置く前に確認すること**: それは何かを不合格にするか。するなら
+`meta/tools/` であり、施錠の内側である。
+
+## harvest_friction.py
+
+セッションログ（`~/.claude/projects/<slug>/*.jsonl`。worktree分を含む）を走査し、
+「読むべき摩擦の瞬間」を候補として並べる。
+
+```bash
+python meta/loop/harvest_friction.py              # 前回の収穫以降
+python meta/loop/harvest_friction.py --all        # 全期間
+python meta/loop/harvest_friction.py --all --no-advance   # 収穫位置を進めずに試す
+```
+
+- **候補であってFRではない**。`friction-log.md` への追記は人間のGOのあと（`0049` 決定3）
+- 閾値（既定8）未満のセッションは**報告しない**。軽量な修正はここで黙って落ちる
+- 収穫位置は `.claude/harvest-state.json`（gitに入れない。各自の環境の事実）
+
+### いつ走るか
+
+`gh pr merge` の後に PostToolUse hook が自動で走る（`.claude/settings.json`）。
+候補があればコンテキストに注入され、無ければ何も起きない。
+
+**hook の `if` フィルタだけに頼っていない**。バッククォートで囲まれた文字列はコマンド置換
+として解析され `if` に一致する——クォート付き heredoc の中でも同じ（実測: コミットメッセージに
+`gh pr merge` と書いたら発火した）。誤発火は無害だが**収穫位置が黙って進んで蓄積を食う**ので、
+スクリプト側でコマンド文字列を再検査し、一致しなければ収穫位置も進めない。
+
+**Codexには届かない**——hook は Claude Code の機構である（`0049` 帰結）。
+
+### シグナル
+
+| 種別 | 何を見ているか | 重み |
+|---|---|---|
+| `human:*` | 人間が打ち直した否定・訂正（`違う`・`勝手に`・`戻して`・`規程` 等） | 2〜5 |
+| `interrupted` | ツール実行を人間が拒否・割り込みした | 4 |
+| `repeated-error xN` | 同一エラーが4回以上 | 2〜4 |
+| `self-correction` | AI自身の自己訂正 | 2 |
+| `edit-churn xN` | 同一ファイルへの書き込みが8回以上 | 2 |
+
+重みは「人間が読む価値の見込み」であって、frictionの重さではない（`0049` 決定2）。
+
+### テスト
+
+```bash
+python -m pytest meta/loop/test_harvest_friction.py -q
+```
+
+守っているのは主に**人間の発話の判別**。`role: user` には人間がタイプしていないものが
+大量に混ざり（実測: task-notification 231件 / 人間の発話 522件）、ここを外すと候補は
+無意味になる。

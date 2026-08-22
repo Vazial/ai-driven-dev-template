@@ -24,3 +24,6 @@ __pycache__/
 secrets/
 credentials.json
 *credentials*.json
+
+# friction収穫の位置（meta/adr/0049）。各自の環境の走査済み位置であり共有しない
+.claude/harvest-state.json
