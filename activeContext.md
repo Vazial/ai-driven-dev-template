@@ -23,6 +23,11 @@ AI駆動開発のメタテンプレート。正しさを機械検証（L0〜L5�
 - **RFE-A・RFE-B の契約が未承認のまま実装が載っている**。RFE-B は契約と実装が同一コミット（`f1dac2a`）だが、これは規律違反ではなく**当時は機械的に契約先行が不可能だった**（ADR-0045で解消）。ADR-0043 は遡って承認せず govlint のREPORTで可視化し続ける方針。**未承認の契約に対する実装を止める機械的な仕組みは無い**（PRテンプレのチェックは自己申告）
 - **RSV-L の監査が未実施**（`reviews/audit-rsv-l.md` が存在しない）。RSV-Tの監査でreviewerが独立に再発見した。`activeContext` に記録済みの規程違反（4承認点の1つを飛ばした）と一致
 - ~~提案中ADRの滞留~~ **解消（2026-08-03）**。meta 7本（0022〜0027・0030）を個別判断のうえ承認した。承認の根拠は「読んで納得した」ではなく**6スライスの実運用で決定どおりに回りきったこと**（ADR-0035決定3が禁じる「読まずに一括承認」との違いはここ）。残る提案中は `reservation-frontend/adr/0004`・`0005`・`dining-radar/adr/0018`（cache・永続provider IDの採用可否。provider規約の再確認と人間の意思決定が要る）の3本のみで、**いずれも意図した保留**——つまり `提案中` という状態が「まだ決めていない」の意味を取り戻した（ADR-0035が狙った状態）
+- **designer の役割契約を変える `meta/adr/0048` が提案中**（2026-08-20）。`/design` スキルの登場で
+  「designerは発案しない統合役」という前提（`meta/adr/0018`〜`0021`）が成立しなくなったため、designer を
+  `/design` の実行者へ再定義し、外部設計AI（Gemini）経路を廃止する。**UIを持つ全プロジェクトの画面作業に
+  波及する**。承認までは画面作業を止める（`dining-radar` の `ADR-0025` 画面側が該当）。`meta/tools/
+  commission_design_api.py` は死蔵コードになるが `meta/adr/0046` が施錠しており、削除は人間の開錠を要する
 - **`toyama-dining-radar` の改名（2026-08-20、`projects/dining-radar/adr/0026`）は、公開リポジトリから地域の露出を消しきっていない**。改名時に人間が「TDR側の地名だけ落とす」と範囲を選んだため、残っているのは次の3つ——(a) `toyama-weekend-radar`（Codex担当・休止。名前が `activeContext`・`meta/adr/0033`・`meta/guardrails.md` に、`meta/scenario-id-prefixes.md` の `TWR` 行には「**富山市近郊**の週末イベント提案」と平文で残る）、(b) `projects/connpass-session-radar/contracts/daily-digest-contract.yaml` の例示「富山県内の勉強会」（契約なので変更は人間の承認点）、(c) 過去コミットと、据え置いたブランチ名 `project/toyama-dining-radar`・ruleset名 `protect project/toyama-dining-radar`（いずれもADR-0026で意図的に残した）。**(a)は別プロジェクトの改名、(b)は別プロジェクトの契約変更**であり、どちらも人間の判断が要る
 
 *機械で塞げていない穴*

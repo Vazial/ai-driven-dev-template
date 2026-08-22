@@ -1,11 +1,11 @@
 ---
 id: 0018
 scope: meta
-status: 承認済み
+status: superseded
 date: 2026-07-19
 approved_by: "本PRのマージをもって承認"
 supersedes: [0017]
-superseded_by: null
+superseded_by: 0048
 relates_to: [P-01, P-02, P-07, P-10, FR-001]
 ---
 # ADR-0018: designer役を「発案者」から「design integrator（外部設計の統合役）」へ再定義する

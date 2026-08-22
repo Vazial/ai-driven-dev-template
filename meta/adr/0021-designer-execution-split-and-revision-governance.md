@@ -1,11 +1,11 @@
 ---
 id: 0021
 scope: meta
-status: 承認済み
+status: superseded
 date: 2026-07-20
 approved_by: "本PRのマージをもって承認"
 supersedes: []
-superseded_by: null
+superseded_by: 0048
 relates_to: [P-01, P-02, P-04, P-06, P-07, P-10]
 ---
 # ADR-0021: (b)外部AI実行の実行主体を明確化し、外部AI成果物の改修ガバナンス（骨格凍結による劣化検知）を定める
