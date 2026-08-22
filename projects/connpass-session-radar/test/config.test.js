@@ -23,3 +23,18 @@ test('loads committed YAML profiles and supplies the seven-day default', () => {
 test('rejects profiles without a positive window', () => {
   assert.throws(() => parseInterestConditions('profiles:\n  - windowDays: 0\n'), /positive integer/);
 });
+
+test('refuses a misspelled field instead of silently dropping every filter', () => {
+  assert.throws(() => parseInterestConditions('profiles:\n  - keywordAny:\n      - AWS\n'),
+    /Unknown interest-conditions field 'keywordAny'/);
+  assert.throws(() => parseInterestConditions('profiles:\n  - keywords:\n      - AWS\n    windowDayz: 3\n'),
+    /Unknown interest-conditions field 'windowDayz'/);
+});
+
+test('refuses a bare scalar where the contract declares a list', () => {
+  assert.throws(() => parseInterestConditions('profiles:\n  - keywords: AWS\n'), /keywords must be a list/);
+});
+
+test('keeps numeric-looking keywords as text', () => {
+  assert.deepEqual(parseInterestConditions('profiles:\n  - keywords:\n      - 2026\n').profiles[0].keywords, ['2026']);
+});

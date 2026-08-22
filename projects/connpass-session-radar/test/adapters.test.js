@@ -115,3 +115,19 @@ test('Discord adapter keeps an over-limit digest complete in one message attachm
   const unavailable = createDiscordNotifier({ webhookUrl, fetchImpl: async () => { throw new Error('network unavailable'); } });
   assert.deepEqual(await unavailable.send({}, 'body'), { delivered: false, errorSummary: 'Discord delivery request failed' });
 });
+
+test('Discord embed splitting never cuts an astral character in half', async () => {
+  let call;
+  const notifier = createDiscordNotifier({
+    webhookUrl: 'https://discord.com/api/webhooks/123/test-secret',
+    fetchImpl: async (url, options) => { call = { url, options }; return { ok: true, status: 200 }; }
+  });
+  const text = `${'a'.repeat(4_095)}${'\u{1F600}'.repeat(500)}`;
+  await notifier.send({}, text);
+  const { embeds } = JSON.parse(call.options.body);
+  assert.equal(embeds.map(({ description }) => description).join(''), text);
+  for (const { description } of embeds) {
+    assert.ok(description.length <= 4_096);
+    assert.doesNotMatch(description, /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
+  }
+});

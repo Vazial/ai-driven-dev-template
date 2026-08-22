@@ -81,15 +81,24 @@ export function formatDigest(digest) {
   })].join('\n');
 }
 
-export async function runDailyDigest({ conditions, eventSource, notifier, now = new Date() }) {
+// The recipient-visible digest stays free of internal detail, so the cause is
+// reported through an injected sink instead. Acceptance runs leave it silent;
+// the scheduled run sends it to the workflow log, which only the repository
+// owner reads, so a failed morning is diagnosable afterwards.
+export async function deliver(notifier, digest) {
+  const result = await notifier.send(digest, formatDigest(digest));
+  if (!result.delivered) throw new Error(result.errorSummary ?? 'Notification delivery failed');
+  return digest;
+}
+
+export async function runDailyDigest({ conditions, eventSource, notifier, now = new Date(), onFailure = () => {} }) {
   let digest;
   try {
     const events = await eventSource.fetch(conditions, now);
     digest = createDigest(normalizeEvents(events, conditions, now));
-  } catch {
+  } catch (error) {
+    onFailure(error);
     digest = failedDigest();
   }
-  const result = await notifier.send(digest, formatDigest(digest));
-  if (!result.delivered) throw new Error(result.errorSummary ?? 'Notification delivery failed');
-  return digest;
+  return deliver(notifier, digest);
 }
