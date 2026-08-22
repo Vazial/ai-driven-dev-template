@@ -1,9 +1,9 @@
 ---
 id: 0049
 scope: meta
-status: 提案中
+status: 承認済み
 date: 2026-08-22
-approved_by: null
+approved_by: "本PRのマージをもって承認（meta/adr/0035 方式(i)。人間裁定 2026-08-22 chat: 「仕組み自体はPRとかでいれてOK」——収穫の仕組みと、回帰検知に限る効果測定の両方を指す。承認しない場合はマージしないこと）"
 supersedes: null
 superseded_by: null
 relates_to: [P-04, P-05, P-10, P-11, 0012, 0035, 0046, 0047]
