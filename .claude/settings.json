@@ -1,5 +1,11 @@
 {
   "permissions": {
+    "ask": [
+      "Edit(./meta/tools/**)",
+      "Write(./meta/tools/**)",
+      "Edit(./**/build.gradle*)",
+      "Write(./**/build.gradle*)"
+    ],
     "deny": [
       "Read(./**/.env*)",
       "Read(./**/*.pem)",
@@ -25,10 +31,6 @@
       "Write(./**/secrets/**)",
       "Write(./**/credentials.json)",
       "Write(./**/*credentials*.json)",
-      "Edit(./meta/tools/**)",
-      "Write(./meta/tools/**)",
-      "Edit(./**/build.gradle*)",
-      "Write(./**/build.gradle*)",
       "Bash(git push --force*)",
       "Bash(git push -f*)",
       "Bash(git push * --force*)",

@@ -152,9 +152,9 @@ agentを起動し成果物を束ねる役（orchestrator）は、4agentのよう
 
 **実質的成果物を自ら作らない（meta/adr/0014）**: orchestratorは発見・routing・機械検証での確認だけを行う。実装コード・steps/dsl・契約はagentが作る。検証インフラのうち、ロジックを持つもの（build.gradle・govlint等）はdeveloperの領分（テスト付き）、薄い宣言的なCIワークフロー（.github/workflows/）のみorchestratorが直接編集してよい（PRのCIで自己検証されるため。ゲート変更は人間承認）。検証インフラの問題は発見即修正（自己採点）せず、修正をdeveloper/testerに委譲してフローに載せる。
 
-**この禁止は明文で4回破られたため、構造で止める側に移した（meta/adr/0046）**: `meta/tools/**` と `build.gradle*` は `.claude/settings.json` の deny で施錠されており、orchestrator も developer も編集できない。変更が要るときは**人間が開錠のコミットを打つ**。施錠されていることは govlint が ERROR で検証するため、**開錠したままではマージできない**。開錠後の実装は従来どおりdeveloperの領分である（本節の帰属は変わらない。変わったのは「書き始める前に人間が一度ゲートを開ける」段が挟まったことだけ）。
+**この禁止は明文で4回破られたため、構造で止める側に移した（meta/adr/0046。方式は meta/adr/0054 で変更）**: `meta/tools/**` と `build.gradle*` は `.claude/settings.json` の `permissions.ask` に載っており、orchestrator も developer も、書き込もうとすると**人間に確認プロンプトが出る**。当初は deny で完全に止めていたが、19日間で正当な開錠が一度も起きず、検査の置き場が govlint の外へ逃げる圧力まで生んだため ask に緩めた（meta/adr/0054）。保護が ask に載っていることは govlint が ERROR で検証するため、**外したままではマージできない**。実装は従来どおりdeveloperの領分である（本節の帰属は変わらない。変わったのは「書き始めるときに人間が一度承認する」段が挟まることだけ）。
 
-**（廃止）meta/adr/0021 の例外**: designerの外部AI実行をorchestratorが代行するという例外は、外部設計AI経路の廃止（meta/adr/0050）により無くなった。designerは`/design`スキルを自分で実行する（`Bash`・`Skill`・`Artifact`を持つ）。`meta/tools/commission_design_api.py` は死蔵コードであり、`meta/tools/**` は施錠されているためAIは削除しない（meta/adr/0046・0050決定7）。
+**（廃止）meta/adr/0021 の例外**: designerの外部AI実行をorchestratorが代行するという例外は、外部設計AI経路の廃止（meta/adr/0050）により無くなった。designerは`/design`スキルを自分で実行する（`Bash`・`Skill`・`Artifact`を持つ）。`meta/tools/commission_design_api.py` は死蔵コードであり、削除は人間の承認を要する（meta/adr/0050決定7・0054）。
 
 **例外（meta/adr/0024）**: UIを持つプロジェクトの断面②検証における「ユースケース走破」（実機でユース
 ケースの目的を通しで達成できるかを試す手順）も、orchestratorが実施する。これはブラウザ操作ツール

@@ -14,11 +14,12 @@ AI駆動開発のメタテンプレート。正しさを機械検証（L0〜L5�
 - 0031 結合CIの置き場 `ci-integration.yml` ／ 0032 配線・結合は機械検証し走破は探索と意味理解に限る ／ 0033 activeContext 2階層 ／ 0034 activeContext更新をマージゲートに載せaccretionを禁じる
 - 0035 ADRの承認記録をPR1本で閉じる（方式(i)/(ii)＋提案中の棚卸しREPORT） ／ 0036 `.claude/agents` を役割定義のSSoT（Codex） ／ 0037 CodexのホストCLI確認手順（Codex） ／ 0038 シナリオID検査の3欠陥（ASCII境界・定義形式・全体名前空間）
 - 0039 orchestratorと役割の境界（検証の申告／技法を指定しない／reviewerは緑後） ／ 0040 機密ガードレールの守備範囲（Write対称化・gitignore・`env.example`） ／ 0041 PR種別ごとの承認事項 ／ 0042 デプロイは当面着手しない
-- 0043 契約の承認記録もPR1本で閉じる ／ 0044 Codexの検証を弱めず冗長作業を減らす（Codex） ／ 0045 契約だけを先にmainへ載せられるようにする（`@pending-implementation`） ／ 0046 検証ツール（govlint・build.gradle）をゲートとして施錠し、開錠は人間・施錠の確認は機械 ／ 0047 メタADRの起草はorchestratorの領分（architectはプロジェクトscopeのADR）
+- 0043 契約の承認記録もPR1本で閉じる ／ 0044 Codexの検証を弱めず冗長作業を減らす（Codex） ／ 0045 契約だけを先にmainへ載せられるようにする（`@pending-implementation`） ／ ~~0046 検証ツール（govlint・build.gradle）をゲートとして施錠し、開錠は人間・施錠の確認は機械~~（**0054でsuperseded**） ／ 0047 メタADRの起草はorchestratorの領分（architectはプロジェクトscopeのADR）
 - 0048 Codexはdeveloper/testerをLunaへ割り当て、architect/reviewerはTerra、designerはSolを維持する
 - 0049 セッションログからfriction候補を収穫する（走査の前に正規化の層を1枚挟む。効果測定は回帰検知に限る） ／ 0050 designerを`/design`スキルの実行者へ再定義し外部設計AI経路を廃止する
 - 0051 人間に判断を仰ぐときは「決めること・選択肢・トレードオフ・推奨」を揃えて出す（`meta/permissions.md` §2。エスカレーション§3はその特殊例。意図の聞き取り・事実の確認・AIが決めてよいことは適用外）
 - 0052 ADR採番の衝突をCIで検出する（`.github/workflows/adr-number.yml`。ツリー内の重複＋他のオープンPRとの衝突。落ちるのは後発側）。確認範囲は「オープンPR」から**未マージのリモートブランチ全部**へ拡張、番号を取ったら即Draft PR化が検出の前提
+- 0054 検証ツールの保護を `deny` から `ask` に変える（0046をsupersede）。書き込み時に人間へ確認プロンプトが出る形にし、開錠コミット・実装・施錠コミットの3手を承認1回に縮めた。`ask` への登録有無は govlint が ERROR で検証する
 
 **未対応の宿題（open のものだけ。完了した判断は上に畳んだ）**:
 
@@ -30,17 +31,17 @@ AI駆動開発のメタテンプレート。正しさを機械検証（L0〜L5�
   中で」同じ手落ちを犯しており、FR-018は「特定した書き方が目の前にあったのに使わなかった」**
   ——つまり**規約として文書に書いても守られない**ことの実証になっている。
   機械化の案は既に特定されている（**ADR本文の承認宣言とfrontmatterの`status`を govlint で照合する**。
-  `FR-017` の押し込み先に記載）が、`meta/tools/**` が施錠されているため**人間の開錠を要する**。
-  開錠して機械化するか、検出で足りると割り切るかの判断が残っている
-- ~~FR-022: orchestratorが検証インフラを自分で直す違反が4回目~~ **対応済み（2026-08-03、ADR-0046）**。`meta/tools/**`・`build.gradle*` を deny で施錠し、開錠は人間のコミット、**施錠されていることを govlint が ERROR で検証**する（開錠したままマージできない）。あわせて `meta/permissions.md` の段差（検証ツール本体をゲートでなく実装として扱っていた行）を正した。**再発可能性は消えていない**——決定5の限界（`Bash` の抜け道／deny は Claude Code のみで Codex には届かない）を承知のうえで「うっかりだけ止まれば足りる」と判断している
+  `FR-017` の押し込み先に記載）。**着手を止めていた開錠の手続きは ADR-0054 で消えた**（`meta/tools/**`
+  は `ask` になり、書き込み時の確認プロンプト1回で developer が実装できる）。機械化するか、検出で
+  足りると割り切るかの判断だけが残っている
+- ~~FR-022: orchestratorが検証インフラを自分で直す違反が4回目~~ **対応済み（2026-08-03 ADR-0046、2026-08-22 ADR-0054で方式変更）**。`meta/tools/**`・`build.gradle*` を保護し、**保護が載っていることを govlint が ERROR で検証**する（外したままマージできない）。あわせて `meta/permissions.md` の段差（検証ツール本体をゲートでなく実装として扱っていた行）を正した。**当初の deny は強すぎた**——19日間で開錠0回、塞がれた変更6件、うえに検査の置き場が govlint の外へ逃げる圧力まで生んだため、ADR-0054 で `ask`（書き込み時に人間へ確認プロンプト）に緩めた。**再発可能性は消えていない**（`Bash` の抜け道／Codex には届かない）が、「うっかりだけ止まれば足りる」という判断は変えていない
 - **RFE-A・RFE-B の契約が未承認のまま実装が載っている**。RFE-B は契約と実装が同一コミット（`f1dac2a`）だが、これは規律違反ではなく**当時は機械的に契約先行が不可能だった**（ADR-0045で解消）。ADR-0043 は遡って承認せず govlint のREPORTで可視化し続ける方針。**未承認の契約に対する実装を止める機械的な仕組みは無い**（PRテンプレのチェックは自己申告）
 - **RSV-L の監査が未実施**（`reviews/audit-rsv-l.md` が存在しない）。RSV-Tの監査でreviewerが独立に再発見した。`activeContext` に記録済みの規程違反（4承認点の1つを飛ばした）と一致
 - ~~提案中ADRの滞留~~ **解消（2026-08-03）**。meta 7本（0022〜0027・0030）を個別判断のうえ承認した。承認の根拠は「読んで納得した」ではなく**6スライスの実運用で決定どおりに回りきったこと**（ADR-0035決定3が禁じる「読まずに一括承認」との違いはここ）。残る提案中は `reservation-frontend/adr/0004`・`0005`・`dining-radar/adr/0018`（cache・永続provider IDの採用可否。provider規約の再確認と人間の意思決定が要る）の3本のみで、**いずれも意図した保留**——つまり `提案中` という状態が「まだ決めていない」の意味を取り戻した（ADR-0035が狙った状態）
-- **designer の役割契約を変える `meta/adr/0050` が承認待ち**（[PR #127](https://github.com/Vazial/ai-driven-dev-template/pull/127)。`meta/adr/0035` 方式(i) で起草しているのでマージが承認行為）。`/design` スキルの登場で
-  「designerは発案しない統合役」という前提（`meta/adr/0018`〜`0021`）が成立しなくなったため、designer を
-  `/design` の実行者へ再定義し、外部設計AI（Gemini）経路を廃止する。**UIを持つ全プロジェクトの画面作業に
-  波及する**。承認までは画面作業を止める（`dining-radar` の `ADR-0025` 画面側が該当）。`meta/tools/
-  commission_design_api.py` は死蔵コードになるが `meta/adr/0046` が施錠しており、削除は人間の開錠を要する
+- **`meta/tools/commission_design_api.py` が死蔵コードのまま残っている**。外部設計AI（Gemini）経路の廃止
+  （`meta/adr/0050`、[PR #127](https://github.com/Vazial/ai-driven-dev-template/pull/127) でマージ済み＝承認済み）で
+  呼び出し元が消えた。削除は人間の承認を要する（`meta/adr/0050` 決定7）が、**ADR-0054 で `ask` になったため
+  開錠コミットは不要**——確認プロンプト1回で developer が消せる。テスト（`test_commission_design_api.py`）も同時に落とすこと
 - **`toyama-dining-radar` の改名（2026-08-20、`projects/dining-radar/adr/0026`）は、公開リポジトリから地域の露出を消しきっていない**。改名時に人間が「TDR側の地名だけ落とす」と範囲を選んだため、残っているのは次の3つ——(a) `toyama-weekend-radar`（Codex担当・休止。名前が `activeContext`・`meta/adr/0033`・`meta/guardrails.md` に、`meta/scenario-id-prefixes.md` の `TWR` 行には「**富山市近郊**の週末イベント提案」と平文で残る）、(b) `projects/connpass-session-radar/contracts/daily-digest-contract.yaml` の例示「富山県内の勉強会」（契約なので変更は人間の承認点）、(c) 過去コミットと、据え置いたブランチ名 `project/toyama-dining-radar`・ruleset名 `protect project/toyama-dining-radar`（いずれもADR-0026で意図的に残した）。**(a)は別プロジェクトの改名、(b)は別プロジェクトの契約変更**であり、どちらも人間の判断が要る
 
 *機械で塞げていない穴*
@@ -55,7 +56,8 @@ AI駆動開発のメタテンプレート。正しさを機械検証（L0〜L5�
 
 *留意事項（宿題ではないが忘れると事故る）*
 - **シナリオIDのプレフィックスはリポジトリ全体で一意**（ADR-0038決定3）。新プロジェクト追加時に重複を避ける。台帳のSSoTは `meta/scenario-id-prefixes.md`。使用中: RFE-A/B/C・RSV-A/C/K/L/R/T・TDR-AUTH/TDR-CS・TWR・**CSR**（connpass-session-radar、PR #100で予約済み）
-- **権限機構の性質（ADR-0040・0046で実測・確定）**: deny は allow で上書きできず、除外構文（`!`）も無い。設定変更はセッション中に反映される。**deny はサブエージェントにも継承される**——つまりパスベースの deny で orchestrator と役割agentを区別することはできない（ADR-0046の設計はこの実測結果で組み替わった）。`Read` は deny の対象外。**再検証は不要**
+- **権限機構の性質（ADR-0040・0046・0054で実測・確定）**: deny は allow で上書きできず、除外構文（`!`）も無い。設定変更はセッション中に反映される。**deny はサブエージェントにも継承される**——つまりパスベースの deny で orchestrator と役割agentを区別することはできない（ADR-0046の設計はこの実測結果で組み替わった）。`Read` は deny の対象外。**`ask` もサブエージェントに継承され、確認プロンプトは親セッションの人間に届く**（ADR-0054の実測。これが deny→ask への移行を成立させた）。**再検証は不要**
+- **auto mode の分類器が、権限設定に対する第2の層として働いている**（2026-08-22実測、ADR-0054）: `deny` を弱める編集は `Bash`（python）からも `Edit` からも拒否され、`ask` の**追加**は通った。つまり守りを弱める方向だけを選択的に止めている。`.claude/settings.json` を保護対象に入れない判断（ADR-0054決定3）はこれを根拠にしているが、**これはリポジトリの設定ではなくモードの挙動であり、モードが変われば消える**。守りとして数えない
 - **`.claude/settings.json` は Claude Code の機構であり、Codex には効かない**。両runtimeに効くのは共有の必須ゲート（L0 govlint）だけである。runtime横断で効かせたい規律は、権限設定ではなく govlint に置くこと
 
 ## 全プロジェクトの一覧・状態
