@@ -1,5 +1,5 @@
 ---
-id: 0048
+id: 0050
 scope: meta
 status: 提案中
 date: 2026-08-20
@@ -9,7 +9,7 @@ superseded_by: null
 relates_to: [P-01, P-04, P-05, P-06, P-08, P-10, 0003, 0017, 0019, 0036, 0046, 0047]
 ---
 
-# ADR-0048: designerを`/design`スキルの実行者へ再定義し、外部設計AI（Gemini）経路を廃止する
+# ADR-0050: designerを`/design`スキルの実行者へ再定義し、外部設計AI（Gemini）経路を廃止する
 
 > **承認者向けサマリ**: `meta/adr/0018` は designer を「発案しない統合役（design integrator）」と定め、
 > `0019`〜`0021` がその外部AI（Gemini）連携の運用・伝送・実行分担を積み上げてきた（`0019` は `0020` に
