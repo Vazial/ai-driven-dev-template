@@ -15,17 +15,23 @@ connpassの条件に合うイベントを毎朝1通届ける、画面・永続�
 NotifierPortとCSR-D-01〜10の振る舞いは変わらない。
 
 CSR-D-01〜10実装とL4 translationは完了している。Discord置換後のorchestrator確認はL0 green、
-通常・UTC環境のNode tests 18/18、syntax green、L4 CSR-D-01〜10 greenである。既存のreviewer監査対象だった
+通常・UTC環境のNode tests 19/19、syntax green、L4 CSR-D-01〜10 greenである。既存のreviewer監査対象だった
 steps/DSLと受け入れbridgeは変更していない。
 すべてのCSR-Dシナリオから`@pending-implementation`を外している。
 
 ## 保留・外部事実
 
-- APIキーは発行済みだが、値は読まず、保存・使用もしていない。
-- `ymd`の複数値がOR結合するかは、まだ実測していない。
+- APIキーはローカル専用設定から値を表示せずに使用し、2026-08-22に実connpass API v2への取得を確認した。
+  値はGit・ログ・成果物へ保存していない。
+- `ymd`の複数値はOR結合であることを実測した。2026-08-22の114件と2026-08-28の60件は重複0件で、
+  反復指定とカンマ指定はいずれも和集合と同じ174件だった。現在の反復指定実装を維持する。
+- commit済み条件（AWS・オンライン・7日間）で実データ11件を取得し、1,672文字のEmbed用一覧を生成した。
+  API v2はイベントへ`prefecture`を返さないためオンライン表示を誤る事実を実測で発見し、オンライン限定
+  profileから取得したイベントをオンラインとして正規化する修正と回帰テストを追加した。全11件がオンライン
+  表示になり、重複した「オンライン / オンライン」は0件である。
 - プロジェクト専用CIはL1→L4を直列実行する。scheduled workflowは毎日08:00
   `Asia/Tokyo`に設定し、手動実行も許す。scheduleはGitHubの仕様上、mainへの昇格後に既定ブランチの
   最新版として動く。GitHub Secretsへの`CONNPASS_API_KEY`・`DISCORD_WEBHOOK_URL`登録状態は未確認であり、
   実プロバイダへの接続もまだ行っていない。
-- 次はテスト用Discordチャンネルへ実送信して人間が受信内容を確認する。確認が終わるまで実装PRもmain昇格も
-  マージしない。`ymd`複数値のOR結合も、実connpass API確認時に実測する。
+- 次は上記の実一覧をテスト用Discordチャンネルへ1通送信して人間が受信内容を確認する。Discord実送信は
+  まだ行っていない。確認が終わるまで実装PRもmain昇格もマージしない。

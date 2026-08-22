@@ -27,6 +27,15 @@ test('CSR-D-03: no matches yield an explicit zero digest', () => {
   assert.match(formatDigest(digest), /該当するイベントはありません/);
 });
 
+test('connpass API v2 events from an online-only profile remain visibly online without a prefecture field', () => {
+  const onlineProfile = { keywordsAny: ['aws'], prefectures: ['online'], windowDays: 7 };
+  const event = { ...baseEvent, prefecture: undefined, place: 'YouTube Live', address: 'オンライン', matchedProfile: onlineProfile };
+  const events = normalizeEvents([event], { profiles: [onlineProfile] }, now);
+  assert.equal(events[0].isOnline, true);
+  assert.match(formatDigest(createDigest(events)), /場所: オンライン/);
+  assert.doesNotMatch(formatDigest(createDigest(events)), /YouTube Live \/ オンライン/);
+});
+
 test('CSR-D-05, CSR-D-06, CSR-D-08 and CSR-D-09 preserve their capacity rules', () => {
   const events = normalizeEvents([
     { ...baseEvent, title: 'AWS external registration', url: 'https://connpass.com/event/3/', event_type: 'advertisement' },
