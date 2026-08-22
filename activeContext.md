@@ -16,6 +16,7 @@ AI駆動開発のメタテンプレート。正しさを機械検証（L0〜L5�
 - 0039 orchestratorと役割の境界（検証の申告／技法を指定しない／reviewerは緑後） ／ 0040 機密ガードレールの守備範囲（Write対称化・gitignore・`env.example`） ／ 0041 PR種別ごとの承認事項 ／ 0042 デプロイは当面着手しない
 - 0043 契約の承認記録もPR1本で閉じる ／ 0044 Codexの検証を弱めず冗長作業を減らす（Codex） ／ 0045 契約だけを先にmainへ載せられるようにする（`@pending-implementation`） ／ 0046 検証ツール（govlint・build.gradle）をゲートとして施錠し、開錠は人間・施錠の確認は機械 ／ 0047 メタADRの起草はorchestratorの領分（architectはプロジェクトscopeのADR）
 - 0048 Codexはdeveloper/testerをLunaへ割り当て、architect/reviewerはTerra、designerはSolを維持する
+- 0050 人間に判断を仰ぐときは「決めること・選択肢・トレードオフ・推奨」を揃えて出す（`meta/permissions.md` §2。エスカレーション§3はその特殊例。意図の聞き取り・事実の確認・AIが決めてよいことは適用外）
 
 **未対応の宿題（open のものだけ。完了した判断は上に畳んだ）**:
 
@@ -28,6 +29,7 @@ AI駆動開発のメタテンプレート。正しさを機械検証（L0〜L5�
 
 *機械で塞げていない穴*
 - **`Bash` の deny が prefix 一致で回避できる**: `Bash(git reset --hard*)` は `git reset -q --hard` を止められない（実測）。ADR-0040 は `Read`/`Edit`/`Write` のみ扱い、`Bash` は引数の組み合わせが爆発するため別途設計が要る
+- **meta層のfrictionを書く場所が無い**（2026-08-22、ADR-0050で再確認）: `friction-log.md` は `projects/<p>/` にしか存在せず、テンプレート自身の運用のブレ（今回は「人間に判断を仰ぐときの形がブレる」）はどのプロジェクトにも属さない。行き場のない摩擦はADR本文が肩代わりしている。P-05に従い、実際に困るまで置き場を作らない
 - **govlint の cause_key 再出現検出が friction-log ファイル単位**: プロジェクトを跨いだ再出現を検出できない。`orchestrator-as-substantive-source` は実質4回だが機械はファイルごとにしか数えない
 - **採番衝突が2回**（FR-023）: 1回目（ADR-0037）は規程を守っても防げない競合、2回目（ADR-0044）は**ADR-0026を守らなかった**（0045へ振り直して解消）。FRの採番にはADR-0026相当の規定がそもそも無い。**ただしgovlintは2回とも昇格前に捕まえており main は汚れていない**——強制する仕組みを足すか検出で足りると割り切るかは費用対効果の判断
 
