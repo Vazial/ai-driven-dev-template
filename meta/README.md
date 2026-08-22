@@ -9,7 +9,7 @@
 | 信条 | PRINCIPLES.md | 不変（変更はADR必須）。1ページ | **全agentが常時ロード** |
 | 規程 | permissions.md | 権限とエスカレーション | 全agent（成果物に触れる前） |
 | 規程 | verification.md | 多段保証モデル | developer / reviewer、CI設計 |
-| 規程 | architecture-selection.md | 設計パック選定 | architect（プロジェクト開始時） |
+| 規程 | architecture-selection.md | アーキテクチャ選定（設計軸ごとに決める。meta/adr/0056） | architect（プロジェクト開始時） |
 | 規程 | agents.md | agent役割分担と標準フロー | 全agent |
 | 役割定義 | ../.claude/agents/ | Claude Code / Codex共通のsubagent個別定義 | role agent起動時 |
 | 規程 | agent-runtime-mapping.md | Claude Code / Codex間の役割agent起動先・モデル対応表 | orchestrator / role agent起動時 |
@@ -35,4 +35,4 @@ agents.md を参照（architect / designer / developer / tester / reviewer の�
 - [x] templates/ — adr / pull-request / audit-report / friction-log / active-context / architecture / acceptance-scenario の7雛形
 - [x] guardrails/ — branch protection・deny設定・CI設定の実体ファイル（.claude/settings.json、.github/workflows/ci.yml、guardrails/。CIの実コマンドはスライスRSV-Cで実装済み。step定義lintツールは未確定）
 - [x] 検証: 予約システムプロジェクトへの初適用（スライスRSV-C完了・friction log運用中: FR-001〜005）
-- [ ] B層: 設計パックの実体。予防的に作らない。同スタック・同型の2本目のプロジェクトが現れた時に昇格で作る（meta/architecture-selection.md 6節）
+- [ ] B層: あるスタックでの具体配線の実体。予防的に作らない。同スタック・同型の2本目のプロジェクトが現れた時に昇格で作る（meta/architecture-selection.md 7節）
