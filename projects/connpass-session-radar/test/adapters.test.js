@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createConnpassEventSource, createLineNotifier } from '../src/adapters.js';
+import { createConnpassEventSource, createDiscordNotifier } from '../src/adapters.js';
 
 test('connpass adapter uses an API-key header, query filters, paging, and profile association', async () => {
   const calls = [];
@@ -53,17 +53,65 @@ test('connpass adapter emits Tokyo calendar dates independent of host timezone',
   assert.deepEqual(requestUrl.searchParams.getAll('ymd'), ['20260820', '20260821']);
 });
 
-test('LINE adapter sends one broadcast request and keeps provider errors safe', async () => {
+test('Discord adapter sends a confirmed embed with mentions disabled', async () => {
+  assert.throws(() => createDiscordNotifier({ webhookUrl: '' }), /DISCORD_WEBHOOK_URL is required/);
+  assert.throws(() => createDiscordNotifier({ webhookUrl: 'not-a-url' }), /must be a valid URL/);
+
   let call;
-  const notifier = createLineNotifier({ channelAccessToken: 'test-token', fetchImpl: async (url, options) => {
+  const webhookUrl = 'https://discord.com/api/webhooks/123/test-secret?thread_id=456';
+  const notifier = createDiscordNotifier({ webhookUrl, fetchImpl: async (url, options) => {
     call = { url, options };
     return { ok: true, status: 200 };
   } });
   assert.deepEqual(await notifier.send({}, 'digest body'), { delivered: true, errorSummary: null });
-  assert.equal(call.url, 'https://api.line.me/v2/bot/message/broadcast');
-  assert.equal(call.options.headers.Authorization, 'Bearer test-token');
-  assert.deepEqual(JSON.parse(call.options.body), { messages: [{ type: 'text', text: 'digest body' }] });
+  const deliveryUrl = new URL(call.url);
+  assert.equal(deliveryUrl.searchParams.get('thread_id'), '456');
+  assert.equal(deliveryUrl.searchParams.get('wait'), 'true');
+  assert.deepEqual(call.options.headers, { 'Content-Type': 'application/json' });
+  assert.deepEqual(JSON.parse(call.options.body), {
+    embeds: [{ description: 'digest body' }],
+    allowed_mentions: { parse: [] }
+  });
 
-  const failed = createLineNotifier({ channelAccessToken: 'test-token', fetchImpl: async () => ({ ok: false, status: 401 }) });
-  assert.deepEqual(await failed.send({}, 'body'), { delivered: false, errorSummary: 'LINE delivery failed (401)' });
+  const boundaryText = `${'a'.repeat(4_000)}\n${'b'.repeat(1_999)}`;
+  await notifier.send({}, boundaryText);
+  const boundaryPayload = JSON.parse(call.options.body);
+  assert.deepEqual(boundaryPayload.embeds.map(({ description }) => description).join(''), boundaryText);
+  assert.ok(boundaryPayload.embeds.every(({ description }) => description.length <= 4_096));
+  assert.equal(boundaryPayload.embeds.reduce((sum, { description }) => sum + description.length, 0), 6_000);
+
+  const newlineAfterLimit = `${'c'.repeat(4_096)}\nrest`;
+  await notifier.send({}, newlineAfterLimit);
+  const newlineAfterLimitPayload = JSON.parse(call.options.body);
+  assert.deepEqual(newlineAfterLimitPayload.embeds.map(({ description }) => description).join(''), newlineAfterLimit);
+  assert.ok(newlineAfterLimitPayload.embeds.every(({ description }) => description.length <= 4_096));
+});
+
+test('Discord adapter keeps an over-limit digest complete in one message attachment', async () => {
+  let call;
+  const webhookUrl = 'https://discord.com/api/webhooks/123/test-secret';
+  const notifier = createDiscordNotifier({ webhookUrl, fetchImpl: async (url, options) => {
+    call = { url, options };
+    return { ok: true, status: 200 };
+  } });
+  const longText = `Connpass Session Radar\n${'イベント情報\n'.repeat(1_001)}`;
+  assert.ok(longText.length > 6_000);
+  assert.deepEqual(await notifier.send({}, longText), { delivered: true, errorSummary: null });
+  assert.equal(call.options.headers, undefined);
+  assert.ok(call.options.body instanceof FormData);
+  const payload = JSON.parse(call.options.body.get('payload_json'));
+  assert.deepEqual(payload.allowed_mentions, { parse: [] });
+  assert.match(payload.content, /添付ファイル/);
+  const attachment = call.options.body.get('files[0]');
+  assert.equal(attachment.name, 'connpass-session-radar.txt');
+  assert.equal(attachment.type, 'text/plain;charset=utf-8');
+  assert.equal(await attachment.text(), longText);
+
+  const failed = createDiscordNotifier({ webhookUrl, fetchImpl: async () => ({ ok: false, status: 403 }) });
+  const failure = await failed.send({}, 'body');
+  assert.deepEqual(failure, { delivered: false, errorSummary: 'Discord delivery failed (403)' });
+  assert.equal(failure.errorSummary.includes('test-secret'), false);
+
+  const unavailable = createDiscordNotifier({ webhookUrl, fetchImpl: async () => { throw new Error('network unavailable'); } });
+  assert.deepEqual(await unavailable.send({}, 'body'), { delivered: false, errorSummary: 'Discord delivery request failed' });
 });

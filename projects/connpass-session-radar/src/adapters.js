@@ -1,9 +1,10 @@
 import { addTokyoDays, tokyoYmd } from './calendar.js';
 
 const CONNPASS_EVENTS_URL = 'https://connpass.com/api/v2/events/';
-const LINE_BROADCAST_URL = 'https://api.line.me/v2/bot/message/broadcast';
-
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+const DISCORD_EMBED_TOTAL_LIMIT = 6_000;
+const DISCORD_EMBED_DESCRIPTION_LIMIT = 4_096;
+const DISCORD_ATTACHMENT_NAME = 'connpass-session-radar.txt';
 
 function datesFor(profile, now) {
   return Array.from({ length: profile.windowDays }, (_, index) => tokyoYmd(addTokyoDays(now, index)));
@@ -52,22 +53,66 @@ export function createConnpassEventSource({ apiKey, fetchImpl = fetch, sleepImpl
   };
 }
 
-export function createLineNotifier({ channelAccessToken, fetchImpl = fetch }) {
-  if (!channelAccessToken) throw new Error('LINE_CHANNEL_ACCESS_TOKEN is required');
+function discordDeliveryUrl(webhookUrl) {
+  if (!webhookUrl) throw new Error('DISCORD_WEBHOOK_URL is required');
+  try {
+    const url = new URL(webhookUrl);
+    url.searchParams.set('wait', 'true');
+    return url.toString();
+  } catch {
+    throw new Error('DISCORD_WEBHOOK_URL must be a valid URL');
+  }
+}
+
+function splitAtNewline(text, limit) {
+  const chunks = [];
+  let rest = text;
+  while (rest.length > limit) {
+    const candidate = rest.slice(0, limit);
+    const newline = candidate.lastIndexOf('\n');
+    const cut = newline >= 0 ? newline + 1 : limit;
+    chunks.push(rest.slice(0, cut));
+    rest = rest.slice(cut);
+  }
+  if (rest) chunks.push(rest);
+  return chunks;
+}
+
+function discordRequest(text) {
+  const allowedMentions = { parse: [] };
+  if (text.length <= DISCORD_EMBED_TOTAL_LIMIT) {
+    return {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        embeds: splitAtNewline(text, DISCORD_EMBED_DESCRIPTION_LIMIT).map((description) => ({ description })),
+        allowed_mentions: allowedMentions
+      })
+    };
+  }
+
+  const body = new FormData();
+  body.append('payload_json', JSON.stringify({
+    content: 'Connpass Session Radar: 一覧が長いため、完全な内容を添付ファイルに収めました。',
+    allowed_mentions: allowedMentions
+  }));
+  body.append('files[0]', new Blob([text], { type: 'text/plain;charset=utf-8' }), DISCORD_ATTACHMENT_NAME);
+  return { headers: undefined, body };
+}
+
+export function createDiscordNotifier({ webhookUrl, fetchImpl = fetch }) {
+  const deliveryUrl = discordDeliveryUrl(webhookUrl);
   return {
     async send(_digest, text) {
       try {
-        const response = await fetchImpl(LINE_BROADCAST_URL, {
+        const request = discordRequest(text);
+        const response = await fetchImpl(deliveryUrl, {
           method: 'POST',
-          headers: {
-            Authorization: `Bearer ${channelAccessToken}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ messages: [{ type: 'text', text }] })
+          ...(request.headers ? { headers: request.headers } : {}),
+          body: request.body
         });
-        return response.ok ? { delivered: true, errorSummary: null } : { delivered: false, errorSummary: `LINE delivery failed (${response.status})` };
+        return response.ok ? { delivered: true, errorSummary: null } : { delivered: false, errorSummary: `Discord delivery failed (${response.status})` };
       } catch {
-        return { delivered: false, errorSummary: 'LINE delivery request failed' };
+        return { delivered: false, errorSummary: 'Discord delivery request failed' };
       }
     }
   };
