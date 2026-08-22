@@ -121,8 +121,9 @@ Then照合に加え、利用者の操作自由度（control surface。シナリ�
 **複数プロジェクトの並行開発（meta/adr/0026）**: 複数のエージェントが同じリポジトリで別プロジェクトを
 並行開発する場合、`projects/<proj>/**` とそのプロジェクト専用CI（`.github/workflows/ci-<project>.yml`）は
 各エージェントの領分として自由に変更してよいが、`meta/**`（共有ガバナンス）と共有 `govlint.yml` の変更は
-調整点（人間 または orchestrator）を経て1つずつ行う（直列化）。メタADRの採番は、mainだけでなくオープン中の
-PRも確認してから番号を取る。CIはL0（govlint、常時必須）と各プロジェクトの `ci-<project>.yml`（自配下変更時
+調整点（人間 または orchestrator）を経て1つずつ行う（直列化）。メタADRの採番は、mainだけでなく**未マージの
+リモートブランチ全部**を確認してから番号を取り、取ったら即Draft PRを開く（meta/adr/0052。確認コマンドと
+CI側の検査は meta/guardrails.md §2）。CIはL0（govlint、常時必須）と各プロジェクトの `ci-<project>.yml`（自配下変更時
 のみ）に分割され、新プロジェクトはワークフローを1本足すだけで参入する。詳細はmeta/adr/0026参照。
 
 ## 5. エスカレーション
