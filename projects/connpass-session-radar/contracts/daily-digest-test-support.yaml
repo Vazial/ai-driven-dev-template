@@ -18,7 +18,7 @@
 #
 # 可用性: ここで定める差し替えは受け入れテスト実行時にだけ有効であり、本番の定期実行（adr/0001決定3の
 # GitHub Actionsスケジュール実行）では常に本物の取得・配信を使う。差し替えは合成データだけを扱い、
-# 実connpass APIキー・実Slack Webhook URL・実利用者の興味の条件には一切触れない。
+# 実connpass APIキー・実Discord Webhook URL・実利用者の興味の条件には一切触れない。
 #
 # 2026-08-21 改訂: tester-escalation-csr-d.mdが報告したL4翻訳の三つの不足（CSR-D-07のcommit済み
 # 条件入力、受信者に伝わる通知の観測、fixtureイベントの安定ID）をこのcanonical contractへ直接追加する。
@@ -91,7 +91,7 @@ components:
       required: [attempted]
       description: >-
         配信段（NotifierPort、daily-digest-contract.yaml）の差し替え実装が記録する観測値。本番の
-        Slack送信は行わず、渡された値をそのまま記録するだけの二重（テストダブル）を使う。
+        Discord送信は行わず、渡された値をそのまま記録するだけの二重（テストダブル）を使う。
       properties:
         attempted:
           type: boolean
@@ -157,7 +157,7 @@ components:
       required: [attempted, notificationCount, notification]
       description: >-
         NotifierPortによる配信先固有の変換の後、受信者に伝わる事実を捕捉するacceptance-only観測。
-        SlackのHTTPペイロードや文面の構文は定めない。notificationが表す各事実は受信者に分かる形で
+        DiscordのHTTPペイロードや文面の構文は定めない。notificationが表す各事実は受信者に分かる形で
         伝えられ、captureはその結果を観測する。
       properties:
         attempted:
