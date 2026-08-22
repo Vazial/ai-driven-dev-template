@@ -87,8 +87,13 @@ B層のカタログは予防的に作らない。同スタック・同型のプ�
 
 現状: カタログは空。reservation-system（java-spring × ドメインモデル）が最初の昇格候補。
 
-## 8. 旧形式について
+## 8. 「設計パック」は廃語
 
-meta/adr/0056 以前のADR-0001（reservation-system・reservation-frontend・connpass-session-radar・dining-radar の4本）は、
-「5行の表からパックを1個選ぶ」旧形式で書かれている。遡って書き直さない（P-06）。
+meta/adr/0056 以前、この規程は5節の表を「設計パック」と呼び、その中から1個選ぶ形をとっていた。
+**この語は廃止する。A層はもうこの語を使わない**——名前が構成の供給元として振る舞うのを止めるのが
+本改訂の目的であり、名前を残せば同じことが起きる。
+
+既存4本のADR-0001（reservation-system・reservation-frontend・connpass-session-radar・dining-radar）は
+旧形式のまま「〜パック」を名乗っている。遡って書き直さない（P-06）。C層（`projects/**`）に残る
+「〜パック」の記述は、その当時の決定を指す**歴史的な名前**として読むこと。
 そのプロジェクトが次に構成を変える決定を出す時、新しいADRが4節の形式で書かれる。
