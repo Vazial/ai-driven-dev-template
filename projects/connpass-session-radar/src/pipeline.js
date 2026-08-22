@@ -1,4 +1,4 @@
-import { tokyoMidnight } from './calendar.js';
+import { tokyoDayLabel, tokyoMidnight, tokyoTimeLabel } from './calendar.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -62,23 +62,56 @@ export function failedDigest() {
   return { status: 'failed', events: [], failureReason: 'イベントの取得または一覧作りに失敗しました。' };
 }
 
+const HEADING = 'Connpass Session Radar';
+
+function placeOf(event) {
+  if (event.isOnline) return 'オンライン';
+  return [event.place, event.address].filter(Boolean)[0] ?? '開催場所未定';
+}
+
+function capacityOf(event) {
+  if (event.eventType === 'advertisement') return null;
+  if (!event.remainingSeatsKnown) return '定員なし';
+  return event.isFull ? '**満席**' : `残り${event.remainingSeats}`;
+}
+
+function spanOf(events) {
+  const days = events.filter((event) => event.startedAt).map((event) => tokyoDayLabel(event.startedAt));
+  if (days.length === 0) return null;
+  const [first, last] = [days[0], days[days.length - 1]];
+  return first === last ? first : `${first}〜${last}`;
+}
+
+// Markdown, because the digest is read inside a Discord embed: the title
+// carries the link so the event line stays one line, and the day heading
+// gives a week's worth of events something to hang on.
 export function formatDigest(digest) {
-  if (digest.status === 'failed') return `Connpass Session Radar\n${digest.failureReason}`;
-  if (digest.status === 'zero') return 'Connpass Session Radar\n今日は該当するイベントはありません。';
-  return ['Connpass Session Radar', ...digest.events.flatMap((event) => {
-    const place = event.isOnline ? 'オンライン' : [event.place, event.address].filter(Boolean).join(' / ') || '開催場所未定';
-    const capacity = !event.remainingSeatsKnown
-      ? (event.eventType === 'advertisement' ? null : '定員なし')
-      : (event.isFull ? '満席' : `残席目安: ${event.remainingSeats}`);
-    return [
-      `\n${event.title}`,
-      `日時: ${event.startedAt ?? '日時未定'}`,
-      `場所: ${place}`,
-      event.groupTitle ? `主催: ${event.groupTitle}` : null,
-      capacity,
-      event.url
-    ].filter(Boolean);
-  })].join('\n');
+  if (digest.status === 'failed') return { title: `${HEADING} — 取得に失敗しました`, body: digest.failureReason };
+  if (digest.status === 'zero') return { title: `${HEADING} — 今日は0件`, body: '条件に合うイベントはありません。' };
+
+  const lines = [];
+  let heading;
+  for (const event of digest.events) {
+    const day = event.startedAt ? tokyoDayLabel(event.startedAt) : '日時未定';
+    if (day !== heading) {
+      if (heading) lines.push('');
+      lines.push(`**${day}**`);
+      heading = day;
+    }
+    const meta = [
+      event.startedAt ? tokyoTimeLabel(event.startedAt) : '時刻未定',
+      placeOf(event),
+      event.groupTitle,
+      capacityOf(event)
+    ].filter(Boolean).join(' ・ ');
+    lines.push(`[${event.title}](${event.url})`);
+    lines.push(`　${meta}`);
+  }
+  const span = spanOf(digest.events);
+  return {
+    title: `${HEADING} — ${span ? `${span} ` : ''}${digest.events.length}件`,
+    body: lines.join('\n')
+  };
 }
 
 // The recipient-visible digest stays free of internal detail, so the cause is

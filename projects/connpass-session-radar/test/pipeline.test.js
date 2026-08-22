@@ -18,13 +18,21 @@ test('CSR-D-01 and CSR-D-02: only matching events become a complete daily digest
     place: 'Tokyo', address: 'Tokyo', isOnline: false, groupTitle: 'Cloud group', eventType: 'participation',
     remainingSeatsKnown: true, remainingSeats: 10, isFull: false
   });
-  assert.match(formatDigest(createDigest(events)), /AWS study session[\s\S]*日時:[\s\S]*場所:[\s\S]*主催:[\s\S]*残席目安:[\s\S]*https:\/\/connpass/);
+  const { title, body } = formatDigest(createDigest(events));
+  assert.equal(title, 'Connpass Session Radar — 8/22(土) 1件');
+  assert.equal(body, [
+    '**8/22(土)**',
+    '[AWS study session](https://connpass.com/event/1/)',
+    '　19:00 ・ Tokyo ・ Cloud group ・ 残り10'
+  ].join('\n'));
 });
 
 test('CSR-D-03: no matches yield an explicit zero digest', () => {
   const digest = createDigest(normalizeEvents([{ ...baseEvent, title: 'Python meetup' }], conditions, now));
   assert.deepEqual(digest, { status: 'zero', events: [] });
-  assert.match(formatDigest(digest), /該当するイベントはありません/);
+  assert.deepEqual(formatDigest(digest), {
+    title: 'Connpass Session Radar — 今日は0件', body: '条件に合うイベントはありません。'
+  });
 });
 
 test('connpass API v2 events from an online-only profile remain visibly online without a prefecture field', () => {
@@ -32,8 +40,8 @@ test('connpass API v2 events from an online-only profile remain visibly online w
   const event = { ...baseEvent, prefecture: undefined, place: 'YouTube Live', address: 'オンライン', matchedProfile: onlineProfile };
   const events = normalizeEvents([event], { profiles: [onlineProfile] }, now);
   assert.equal(events[0].isOnline, true);
-  assert.match(formatDigest(createDigest(events)), /場所: オンライン/);
-  assert.doesNotMatch(formatDigest(createDigest(events)), /YouTube Live \/ オンライン/);
+  assert.match(formatDigest(createDigest(events)).body, /・ オンライン ・/);
+  assert.doesNotMatch(formatDigest(createDigest(events)).body, /YouTube Live/);
 });
 
 test('CSR-D-05, CSR-D-06, CSR-D-08 and CSR-D-09 preserve their capacity rules', () => {
@@ -48,8 +56,8 @@ test('CSR-D-05, CSR-D-06, CSR-D-08 and CSR-D-09 preserve their capacity rules', 
     { title: 'AWS unlimited', remainingSeatsKnown: false, remainingSeats: null, isFull: false },
     { title: 'AWS waitlist', remainingSeatsKnown: true, remainingSeats: 0, isFull: true }
   ]);
-  const text = formatDigest(createDigest(events));
-  assert.doesNotMatch(text.match(/AWS external registration[\s\S]*?(?=\n\n|$)/)[0], /残席|定員/);
+  const text = formatDigest(createDigest(events)).body;
+  assert.doesNotMatch(text.match(/AWS external registration[\s\S]*?(?=\n\[|$)/)[0], /残り|定員|満席/);
   assert.match(text, /AWS unlimited[\s\S]*定員なし/);
   assert.match(text, /AWS waitlist[\s\S]*満席/);
 });
@@ -78,7 +86,7 @@ test('CSR-D-04: a fetch failure still makes one safe failed digest delivery atte
   });
   assert.deepEqual(digest, { status: 'failed', events: [], failureReason: 'イベントの取得または一覧作りに失敗しました。' });
   assert.equal(received.length, 1);
-  assert.doesNotMatch(formatDigest(received[0]), /api key|leaked/i);
+  assert.doesNotMatch(formatDigest(received[0]).body, /api key|leaked/i);
 });
 
 test('CSR-D-07: each run uses its supplied current conditions, without retained state', () => {
@@ -90,15 +98,15 @@ test('CSR-D-07: each run uses its supplied current conditions, without retained 
 
 test('a failed morning reports its cause to the injected sink and not to the recipient', async () => {
   const reported = [];
-  let text;
+  let message;
   const digest = await runDailyDigest({
     conditions,
     eventSource: { fetch: async () => { throw new Error('connpass request failed with status 503'); } },
-    notifier: { send: async (_digest, body) => { text = body; return { delivered: true }; } },
+    notifier: { send: async (_digest, sent) => { message = sent; return { delivered: true }; } },
     onFailure: (error) => reported.push(error.message),
     now
   });
   assert.equal(digest.status, 'failed');
   assert.deepEqual(reported, ['connpass request failed with status 503']);
-  assert.doesNotMatch(text, /503/);
+  assert.doesNotMatch(`${message.title}\n${message.body}`, /503/);
 });

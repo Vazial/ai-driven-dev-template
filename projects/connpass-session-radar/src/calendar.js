@@ -22,3 +22,18 @@ export function tokyoYmd(value) {
   const { year, month, day } = tokyoDateParts(value);
   return `${year}${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}`;
 }
+
+// Recipient-facing labels. The digest is read at breakfast, so it carries the
+// Tokyo wall clock the events are announced in, not the machine timestamp.
+export function tokyoDayLabel(value) {
+  const date = new Date(value);
+  return new Intl.DateTimeFormat('ja-JP', {
+    timeZone: TOKYO_TIME_ZONE, month: 'numeric', day: 'numeric', weekday: 'short'
+  }).format(date);
+}
+
+export function tokyoTimeLabel(value) {
+  return new Intl.DateTimeFormat('ja-JP', {
+    timeZone: TOKYO_TIME_ZONE, hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  }).format(new Date(value));
+}

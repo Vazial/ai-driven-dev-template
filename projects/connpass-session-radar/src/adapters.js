@@ -88,33 +88,34 @@ function splitAtNewline(text, limit) {
   return chunks;
 }
 
-function discordRequest(text) {
+// The title rides on the first embed, so Discord renders it as the message
+// heading. The 6,000 character budget covers every embed field, title included.
+function discordRequest({ title, body: text }) {
   const allowedMentions = { parse: [] };
-  if (text.length <= DISCORD_EMBED_TOTAL_LIMIT) {
+  if (title.length + text.length <= DISCORD_EMBED_TOTAL_LIMIT) {
+    const embeds = splitAtNewline(text, DISCORD_EMBED_DESCRIPTION_LIMIT).map((description) => ({ description }));
+    embeds[0] = { title, ...embeds[0] };
     return {
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        embeds: splitAtNewline(text, DISCORD_EMBED_DESCRIPTION_LIMIT).map((description) => ({ description })),
-        allowed_mentions: allowedMentions
-      })
+      body: JSON.stringify({ embeds, allowed_mentions: allowedMentions })
     };
   }
 
   const body = new FormData();
   body.append('payload_json', JSON.stringify({
-    content: 'Connpass Session Radar: 一覧が長いため、完全な内容を添付ファイルに収めました。',
+    content: `${title}\n一覧が長いため、完全な内容を添付ファイルに収めました。`,
     allowed_mentions: allowedMentions
   }));
-  body.append('files[0]', new Blob([text], { type: 'text/plain;charset=utf-8' }), DISCORD_ATTACHMENT_NAME);
+  body.append('files[0]', new Blob([`${title}\n\n${text}`], { type: 'text/plain;charset=utf-8' }), DISCORD_ATTACHMENT_NAME);
   return { headers: undefined, body };
 }
 
 export function createDiscordNotifier({ webhookUrl, fetchImpl = fetch }) {
   const deliveryUrl = discordDeliveryUrl(webhookUrl);
   return {
-    async send(_digest, text) {
+    async send(_digest, message) {
       try {
-        const request = discordRequest(text);
+        const request = discordRequest(message);
         const response = await fetchImpl(deliveryUrl, {
           method: 'POST',
           ...(request.headers ? { headers: request.headers } : {}),
