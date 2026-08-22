@@ -27,3 +27,9 @@ credentials.json
 
 # friction収穫の位置（meta/adr/0049）。各自の環境の走査済み位置であり共有しない
 .claude/harvest-state.json
+
+# セッションログの正規化インデックス（meta/adr/0049）。既定の出力先は作業ツリーの外
+# （`~/.claude/session-index/`）だが、`--db` でリポジトリ内を指した場合の保険として残す。
+# DBはログ本文をそのまま含む——閲覧したページ由来のメールアドレスや開発用の資格情報が写り込む
+*.db
+.claude/session-index.db
