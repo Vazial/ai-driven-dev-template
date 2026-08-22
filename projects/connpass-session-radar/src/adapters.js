@@ -64,13 +64,23 @@ function discordDeliveryUrl(webhookUrl) {
   }
 }
 
+// Discord counts characters, JavaScript slices UTF-16 code units. Cutting at the
+// limit can land between the halves of an astral character (an emoji in an event
+// title), which would send a lone surrogate.
+function safeCut(text, cut) {
+  const high = text.charCodeAt(cut - 1);
+  const low = text.charCodeAt(cut);
+  const splitsPair = high >= 0xd800 && high <= 0xdbff && low >= 0xdc00 && low <= 0xdfff;
+  return splitsPair ? cut - 1 : cut;
+}
+
 function splitAtNewline(text, limit) {
   const chunks = [];
   let rest = text;
   while (rest.length > limit) {
     const candidate = rest.slice(0, limit);
     const newline = candidate.lastIndexOf('\n');
-    const cut = newline >= 0 ? newline + 1 : limit;
+    const cut = newline >= 0 ? newline + 1 : safeCut(rest, limit);
     chunks.push(rest.slice(0, cut));
     rest = rest.slice(cut);
   }

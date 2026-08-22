@@ -87,3 +87,18 @@ test('CSR-D-07: each run uses its supplied current conditions, without retained 
   assert.equal(first.length, 1);
   assert.equal(second.length, 0);
 });
+
+test('a failed morning reports its cause to the injected sink and not to the recipient', async () => {
+  const reported = [];
+  let text;
+  const digest = await runDailyDigest({
+    conditions,
+    eventSource: { fetch: async () => { throw new Error('connpass request failed with status 503'); } },
+    notifier: { send: async (_digest, body) => { text = body; return { delivered: true }; } },
+    onFailure: (error) => reported.push(error.message),
+    now
+  });
+  assert.equal(digest.status, 'failed');
+  assert.deepEqual(reported, ['connpass request failed with status 503']);
+  assert.doesNotMatch(text, /503/);
+});

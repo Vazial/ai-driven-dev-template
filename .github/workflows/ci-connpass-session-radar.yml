@@ -33,7 +33,10 @@ jobs:
           node-version: "22"
       - name: JavaScript syntax
         run: |
+          node --check src/acceptance-bridge.js
+          node --check src/acceptance-support.js
           node --check src/adapters.js
+          node --check src/calendar.js
           node --check src/config.js
           node --check src/index.js
           node --check src/pipeline.js
@@ -62,7 +65,7 @@ jobs:
         with:
           node-version: "22"
       - name: Provider and test-support contracts
-        run: node --test test/adapters.test.js test/test-support.test.js
+        run: node --test test/adapters.test.js test/index.test.js test/test-support.test.js
 
   l4-acceptance:
     name: "L4: acceptance scenarios (CSR-D-01..10)"
