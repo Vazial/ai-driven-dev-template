@@ -29,9 +29,12 @@ steps/DSLと受け入れbridgeは変更していない。
   API v2はイベントへ`prefecture`を返さないためオンライン表示を誤る事実を実測で発見し、オンライン限定
   profileから取得したイベントをオンラインとして正規化する修正と回帰テストを追加した。全11件がオンライン
   表示になり、重複した「オンライン / オンライン」は0件である。
+- 通常テキストチャンネルのDiscord Incoming Webhookへ同じ実データ11件を1通のEmbedとして配信し、
+  2026-08-22に人間が受信内容を「とりあえずOK」と確認した。mentionは発生していない。フォーラムチャンネルの
+  Webhookは`thread_name`または`thread_id`が必須で現在の契約対象外であるため、通常テキストチャンネルを使う。
 - プロジェクト専用CIはL1→L4を直列実行する。scheduled workflowは毎日08:00
   `Asia/Tokyo`に設定し、手動実行も許す。scheduleはGitHubの仕様上、mainへの昇格後に既定ブランチの
-  最新版として動く。GitHub Secretsへの`CONNPASS_API_KEY`・`DISCORD_WEBHOOK_URL`登録状態は未確認であり、
-  実プロバイダへの接続もまだ行っていない。
-- 次は上記の実一覧をテスト用Discordチャンネルへ1通送信して人間が受信内容を確認する。Discord実送信は
-  まだ行っていない。確認が終わるまで実装PRもmain昇格もマージしない。
+  最新版として動く。ローカル経路で両実プロバイダへの接続は確認済みだが、GitHub Secretsへの
+  `CONNPASS_API_KEY`・`DISCORD_WEBHOOK_URL`登録状態は未確認である。
+- 実通信を含む人間確認まで完了した。次は実装PR #120の独立CIを再確認してReady for reviewへ変更し、人間が
+  `project/connpass-session-radar`へマージする。その後、承認済みコミットだけをmainへ載せる機械的な昇格PRを出す。
