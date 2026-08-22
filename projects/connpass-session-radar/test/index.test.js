@@ -5,7 +5,7 @@ import { main } from '../src/index.js';
 
 function captureNotifier() {
   const sent = [];
-  return { sent, async send(digest, text) { sent.push({ digest, text }); return { delivered: true, errorSummary: null }; } };
+  return { sent, async send(digest, message) { sent.push({ digest, message }); return { delivered: true, errorSummary: null }; } };
 }
 
 function withoutStderr(run) {
@@ -23,7 +23,8 @@ test('a missing connpass key still delivers one safe failure notification', asyn
     const lines = await withoutStderr(() => main({ notifier }));
     assert.equal(notifier.sent.length, 1);
     assert.equal(notifier.sent[0].digest.status, 'failed');
-    assert.match(notifier.sent[0].text, /失敗しました/);
+    assert.match(notifier.sent[0].message.title, /取得に失敗しました/);
+    assert.match(notifier.sent[0].message.body, /失敗しました/);
     assert.deepEqual(lines, ['daily digest failed: CONNPASS_API_KEY is required']);
   } finally {
     if (previous !== undefined) process.env.CONNPASS_API_KEY = previous;

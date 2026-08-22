@@ -27,7 +27,14 @@ CSR-D-01〜10実装とL4 translationは完了している。すべてのCSR-Dシ
 - 失敗の理由を注入されたsinkへ報告し、スケジュール実行ではworkflowログへ出す。受信者向けの要約は
   従来どおり内部事情を含まない。受け入れ実行では沈黙する（canaryをログへ出さない）
 
-検証は自分で実行した: L0 green、Node tests 28/28、syntax green、L4 CSR-D-01〜10 green。
+続けて、届く一覧の書式を読みやすさ側へ組み替えた（人間が2026-08-22に提案を採用）。開催日ごとの
+見出し、`Asia/Tokyo`の壁時計（`8/22(土) 19:00`。ISO-8601の生値をやめた）、タイトルをMarkdownリンクに
+してURL行を廃し、時刻・場所・主催・残席を1行にまとめた。Embedのtitleに期間と件数を載せる。
+`formatDigest`は`{ title, body }`を返すようになり、`NotifierPort`の第2引数もその形になった——
+`NotifierPort`の契約（`DailyDigest`と`NotifierResult`）は変えていない。CSR-D-01〜10の観測は
+`DailyDigest`を見るため、L4は無改変で緑のままである。同じ5件で本文は728文字から608文字へ短くなった。
+
+検証は自分で実行した: L0 green、Node tests 28/28（通常・`TZ=UTC`）、syntax green、L4 CSR-D-01〜10 green。
 
 ## 保留・外部事実
 
