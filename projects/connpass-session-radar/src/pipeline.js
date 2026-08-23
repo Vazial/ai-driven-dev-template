@@ -109,14 +109,19 @@ export function formatDigest(digest) {
   if (digest.status === 'failed') return { title: `${HEADING} — 取得に失敗しました`, body: digest.failureReason };
   if (digest.status === 'zero') return { title: `${HEADING} — 今日は0件`, body: '条件に合うイベントはありません。' };
 
+  // Every event is three lines now, so without a blank line between them the
+  // list reads as one block of notes. Discord embeds render bold, italic and
+  // masked links but not headings, so whitespace is what separates things here.
   const lines = [];
   let heading;
   for (const event of digest.events) {
     const day = event.startedAt ? tokyoDayLabel(event.startedAt) : '日時未定';
     if (day !== heading) {
       if (heading) lines.push('');
-      lines.push(`**${day}**`);
+      lines.push(`**${day}**`, '');
       heading = day;
+    } else {
+      lines.push('');
     }
     const meta = [
       event.startedAt ? tokyoTimeLabel(event.startedAt) : '時刻未定',
