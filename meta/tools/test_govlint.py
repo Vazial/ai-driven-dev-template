@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import sys
 import tempfile
 from datetime import date
@@ -427,6 +428,208 @@ class TestReportPendingAdrs(GovlintTestCase):
         write(self.root / "meta" / "adr" / "0001-sample.md", self._pending("0001", "2026/07/18"))
         govlint.report_pending_adrs(govlint.check_adrs(), today=self.TODAY)
         self.assertTrue(any("経過日数不明" in r for r in govlint.reports))
+
+
+# ---------------------------------------------------------------- ADRの文体（meta/adr/0053 決定3）
+class TestAdrStyleHelpers(unittest.TestCase):
+    """前処理・数え方そのものを、実ファイルに依存せず文字列入力で検証する。"""
+
+    # ---- 前処理: コードブロック・インラインコード・frontmatterを落とす ----
+
+    def test_frontmatter_is_stripped(self) -> None:
+        text = "---\nid: 0053\nscope: meta\n---\n\n本文だけが残る\n"
+        body = govlint.adr_style_body(text)
+        self.assertNotIn("id: 0053", body)
+        self.assertIn("本文だけが残る", body)
+
+    def test_fenced_code_block_bold_marker_is_not_counted(self) -> None:
+        text = (
+            "---\nid: 0053\nscope: meta\n---\n\n"
+            "前\n```\n**コードの中の太字もどき**\n```\n後\n"
+        )
+        body = govlint.adr_style_body(text)
+        self.assertNotIn("コードの中の太字もどき", body)
+        self.assertEqual(govlint.adr_style_bold_ratio(body), 0.0)
+
+    def test_inline_code_bold_marker_is_not_counted(self) -> None:
+        text = (
+            "---\nid: 0053\nscope: meta\n---\n\n"
+            "本文 `Write(./meta/tools/**)` の説明。**本物の強調**はここだけ。\n"
+        )
+        body = govlint.adr_style_body(text)
+        bolds = re.findall(r"\*\*([^\n]*?)\*\*", body)
+        self.assertEqual(bolds, ["本物の強調"])
+
+    # ---- 太字率: 閾値10%の境界 ----
+
+    def test_bold_ratio_boundary_exact_threshold_is_not_over(self) -> None:
+        body = "a" * 86 + "**" + "b" * 10 + "**"  # bold content 10字 / 全体100字 = ちょうど10.0%
+        self.assertEqual(len(body), 100)
+        self.assertEqual(govlint.adr_style_bold_ratio(body), 10.0)
+
+    def test_bold_ratio_boundary_just_over_threshold(self) -> None:
+        body = "a" * 85 + "**" + "b" * 11 + "**"  # bold content 11字 / 全体100字 = 11.0%
+        self.assertEqual(len(body), 100)
+        self.assertEqual(govlint.adr_style_bold_ratio(body), 11.0)
+
+    def test_bold_spanning_a_newline_is_not_counted(self) -> None:
+        """太字は改行をまたぐ組を数えない（表・箇条書きをまたいだ誤検出を避ける設計と対）。"""
+        body = "**a\nb**"
+        self.assertEqual(govlint.adr_style_bold_ratio(body), 0.0)
+
+    def test_empty_body_bold_ratio_is_zero(self) -> None:
+        self.assertEqual(govlint.adr_style_bold_ratio(""), 0.0)
+
+    # ---- 1文の長さ: 閾値120字の境界 ----
+
+    def test_sentence_exactly_at_threshold_is_not_reported(self) -> None:
+        body = "x" * 120
+        self.assertEqual(govlint.adr_style_long_sentences(body), [])
+
+    def test_sentence_just_over_threshold_is_reported(self) -> None:
+        body = "x" * 121
+        result = govlint.adr_style_long_sentences(body)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(len(result[0]), 121)
+
+    def test_table_row_is_excluded_from_sentence_length(self) -> None:
+        body = "| " + "a" * 130 + " |"
+        self.assertEqual(govlint.adr_style_long_sentences(body), [])
+
+    def test_list_item_is_excluded_from_sentence_length(self) -> None:
+        body = "- " + "a" * 130
+        self.assertEqual(govlint.adr_style_long_sentences(body), [])
+
+    def test_numbered_list_item_is_excluded_from_sentence_length(self) -> None:
+        body = "1. " + "a" * 130
+        self.assertEqual(govlint.adr_style_long_sentences(body), [])
+
+    def test_quote_line_is_excluded_from_sentence_length(self) -> None:
+        body = "> " + "a" * 130
+        self.assertEqual(govlint.adr_style_long_sentences(body), [])
+
+    def test_heading_line_is_excluded_from_sentence_length(self) -> None:
+        body = "## " + "a" * 130
+        self.assertEqual(govlint.adr_style_long_sentences(body), [])
+
+    def test_table_and_list_lines_do_not_merge_into_one_long_sentence(self) -> None:
+        """meta/adr/0053 決定3が実測で示した誤検出（表と箇条書きが連結され1文として
+        数えられた）が起きないこと。表・箇条書きの行を挟んでも地の文どうしは連結されない。
+        """
+        body = "\n".join(
+            [
+                "a" * 60,
+                "| id | note |",
+                "- ある箇条書きの行",
+                "b" * 60,
+            ]
+        )
+        self.assertEqual(govlint.adr_style_long_sentences(body), [])
+
+    def test_newline_is_treated_as_a_sentence_boundary(self) -> None:
+        body = ("a" * 70) + "\n" + ("b" * 70)
+        self.assertEqual(govlint.adr_style_long_sentences(body), [])
+
+    # ---- 挿入節（——）: 閾値3回の境界 ----
+
+    def test_insertion_clause_boundary_exact_threshold_is_not_over(self) -> None:
+        self.assertEqual(govlint.adr_style_insertion_count("——" * 3), 3)
+
+    def test_insertion_clause_boundary_just_over_threshold(self) -> None:
+        self.assertEqual(govlint.adr_style_insertion_count("——" * 4), 4)
+
+
+def _style_adr(adr_id: str, body: str, *, scope: str = "meta") -> str:
+    return (
+        "---\n"
+        f"id: {adr_id}\n"
+        f"scope: {scope}\n"
+        "status: 承認済み\n"
+        "date: 2026-01-01\n"
+        'approved_by: "test"\n'
+        "supersedes: []\n"
+        "superseded_by: null\n"
+        "relates_to: []\n"
+        "---\n"
+        f"\n# ADR-{adr_id}: サンプル\n\n"
+        f"{body}\n"
+    )
+
+
+class TestCheckAdrStyle(GovlintTestCase):
+    """check_adr_style() の結合的な振る舞い（対象範囲・REPORT文言・ERROR非増加）。"""
+
+    def _write_meta_adr(self, adr_id: str, body: str) -> None:
+        write(self.root / "meta" / "adr" / f"{adr_id}-sample.md", _style_adr(adr_id, body))
+
+    def test_bold_ratio_over_threshold_is_reported(self) -> None:
+        # 見出し等の周辺テキストで薄まっても閾値を超えるよう、太字の比率に大きく余裕を持たせる。
+        body = "a" * 50 + "**" + "b" * 50 + "**"
+        self._write_meta_adr("0053", body)
+        adrs = govlint.check_adrs()
+        govlint.check_adr_style(adrs)
+        self.assertTrue(
+            any("0053-sample.md" in r and "太字" in r for r in govlint.reports)
+        )
+
+    def test_insertion_over_threshold_is_reported(self) -> None:
+        self._write_meta_adr("0053", "——" * 4)
+        adrs = govlint.check_adrs()
+        govlint.check_adr_style(adrs)
+        self.assertTrue(
+            any("0053-sample.md" in r and "4回" in r for r in govlint.reports)
+        )
+
+    def test_long_sentence_over_threshold_is_reported(self) -> None:
+        self._write_meta_adr("0053", "x" * 130)
+        adrs = govlint.check_adrs()
+        govlint.check_adr_style(adrs)
+        joined = "\n".join(govlint.reports)
+        self.assertIn("0053-sample.md", joined)
+        self.assertIn("120字超の文が1件", joined)
+
+    def test_below_all_thresholds_is_not_reported(self) -> None:
+        self._write_meta_adr("0053", "ふつうの短い文。")
+        adrs = govlint.check_adrs()
+        govlint.check_adr_style(adrs)
+        self.assertEqual(govlint.reports, [])
+
+    def test_adr_id_below_0053_is_not_scanned_even_over_threshold(self) -> None:
+        """meta/adr/0053 決定4: 適用開始前のADRを報告しても直せず雑音になるため対象外。"""
+        self._write_meta_adr("0052", "——" * 5)
+        adrs = govlint.check_adrs()
+        govlint.check_adr_style(adrs)
+        self.assertEqual(govlint.reports, [])
+
+    def test_adr_id_0053_boundary_is_scanned(self) -> None:
+        self._write_meta_adr("0053", "——" * 5)
+        adrs = govlint.check_adrs()
+        govlint.check_adr_style(adrs)
+        self.assertTrue(any("0053-sample.md" in r for r in govlint.reports))
+
+    def test_project_scope_adr_is_not_scanned(self) -> None:
+        """meta/adr/0053 決定3の実測・閾値はmeta scopeを母数にしている。projects/**は対象外。"""
+        content = _style_adr("0053", "——" * 5, scope="reservation-system")
+        write(self.root / "projects" / "reservation-system" / "adr" / "0053-sample.md", content)
+        adrs = govlint.check_adrs()
+        govlint.check_adr_style(adrs)
+        self.assertEqual(govlint.reports, [])
+
+    def test_style_report_does_not_produce_errors(self) -> None:
+        """REPORTは終了コードを1にしない（meta/adr/0053 決定3が明示）。"""
+        body = "a" * 85 + "**" + "b" * 11 + "**" + ("——" * 5) + "\n" + ("x" * 130)
+        self._write_meta_adr("0053", body)
+        adrs = govlint.check_adrs()
+        govlint.check_adr_style(adrs)
+        self.assertEqual(govlint.errors, [])
+
+    def test_main_exit_code_unaffected_by_style_reports(self) -> None:
+        write_valid_role_layout(self.root)
+        write_locked_settings_json(self.root)
+        self._write_meta_adr("0053", "——" * 5)
+        rc = govlint.main()
+        self.assertEqual(rc, 0)
+        self.assertTrue(any("0053-sample.md" in r for r in govlint.reports))
 
 
 # ---------------------------------------------------------------- friction-log
