@@ -12,6 +12,8 @@
   [REPORT] 提案中ADRの棚卸し   … status: 提案中 のまま滞留しているADR（meta/adr/0035）
   [REPORT] 承認待ち契約の棚卸し … ステータス: 承認待ち のまま残っている契約（meta/adr/0043）
   [REPORT] 実装待ちシナリオの棚卸し … @pending-implementation が付いたままのシナリオ（FR-014）
+  [REPORT] ADRの文体            … 太字率・120字超の文・挿入節（——）の3項目。meta scopeかつid 0053以上の
+                            ADRのみ対象（meta/adr/0053 決定3・決定4）
 
 終了コード: ERRORが1件でもあれば1、なければ0（REPORTは0のまま）。
 
@@ -293,6 +295,117 @@ def report_pending_adrs(adrs: dict[str, dict], today: date | None = None) -> Non
     for age, rel, drafted in pending:
         age_text = f"{age}日経過" if age >= 0 else "経過日数不明（dateが不正）"
         reports.append(f"  提案中: {rel}（起草 {drafted} / {age_text}）")
+
+
+# ---------------------------------------------------------------- ADRの文体（meta/adr/0053 決定3）
+# 機械で数えられる3項目（太字率・1文の長さ・挿入節の数）を報告する。ERRORにはしない
+# （決定3が明示。終了コードは変えない）。対象は meta scope かつ id が 0053 以上のADRのみ
+# （決定4: 承認済みADRは書き直さないため、適用開始前のADRを報告しても直せず雑音になる）。
+ADR_STYLE_MIN_ID = 53
+ADR_STYLE_BOLD_RATIO_THRESHOLD = 10.0  # %超で報告
+ADR_STYLE_SENTENCE_LENGTH_THRESHOLD = 120  # 字超で報告
+ADR_STYLE_INSERTION_THRESHOLD = 3  # 回超で報告
+
+# 文長の対象から外す行（表・箇条書き・引用・見出し）。改行も文の区切りとして扱う
+# （meta/adr/0053 決定3が実測で示した誤検出——表と箇条書きが連結されて1文として数えられた——を防ぐ）。
+ADR_STYLE_EXCLUDED_LINE_RE = re.compile(r"^\s*(?:\||[-*+]\s|\d+[.)]\s|>|#)")
+ADR_STYLE_SENTENCE_SPLIT_RE = re.compile(r"(?<=[。！？])")
+
+
+def adr_style_body(text: str) -> str:
+    """frontmatterと、コードブロック・インラインコードを落とした本文を返す（数える前の前処理）。
+
+    コードブロック/インラインコードを落とすのは、`Write(./meta/tools/**)` のような表記に
+    含まれる `**` を太字と誤って数えないため（meta/adr/0053 決定3）。
+    """
+    body = text
+    if body.startswith("---\n"):
+        end = body.find("\n---", 4)
+        if end != -1:
+            rest = body[end + 4:]
+            nl = rest.find("\n")
+            body = rest[nl + 1:] if nl != -1 else ""
+    body = re.sub(r"```.*?```", "", body, flags=re.S)
+    body = re.sub(r"`[^`\n]*`", "", body)
+    return body
+
+
+def adr_style_bold_ratio(body: str) -> float:
+    """太字（`**...**`。改行をまたぐ組は数えない）が本文に占める割合(%)。"""
+    if not body:
+        return 0.0
+    bold_chars = sum(len(m) for m in re.findall(r"\*\*([^\n]*?)\*\*", body))
+    return bold_chars / len(body) * 100
+
+
+def adr_style_long_sentences(body: str) -> list[str]:
+    """表・箇条書き・引用・見出しの行を除いた本文から、閾値超の文を抽出する（改行も文の区切り）。"""
+    out: list[str] = []
+    for line in body.split("\n"):
+        if ADR_STYLE_EXCLUDED_LINE_RE.match(line):
+            continue
+        stripped = line.strip()
+        if not stripped:
+            continue
+        for seg in ADR_STYLE_SENTENCE_SPLIT_RE.split(stripped):
+            seg = seg.strip()
+            if seg and len(seg) > ADR_STYLE_SENTENCE_LENGTH_THRESHOLD:
+                out.append(seg)
+    return out
+
+
+def adr_style_insertion_count(body: str) -> int:
+    """挿入節（全角ダッシュ2つ `——`）の出現回数。"""
+    return body.count("——")
+
+
+def check_adr_style(adrs: dict[str, dict]) -> None:
+    """ADRの文体のうち機械で数えられる3項目（太字率・1文の長さ・挿入節の数）を報告する
+    （meta/adr/0053 決定3）。
+
+    ERRORにしない: 文体でマージを止めるのは過剰であり、不採用の理由は本ADRが明記している。
+    対象は meta scope かつ id が 0053 以上のADRのみ（決定4）。
+    """
+    for entry in sorted(adrs.values(), key=lambda e: e["path"]):
+        fm, rel = entry["fm"], entry["path"]
+        if fm.get("scope") != "meta":
+            continue
+        try:
+            adr_id = int(str(fm.get("id")))
+        except (TypeError, ValueError):
+            continue
+        if adr_id < ADR_STYLE_MIN_ID:
+            continue
+
+        path = ROOT / rel
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        body = adr_style_body(text)
+
+        ratio = adr_style_bold_ratio(body)
+        if ratio > ADR_STYLE_BOLD_RATIO_THRESHOLD:
+            reports.append(
+                f"{rel}: 太字が本文の{ratio:.1f}%を占める"
+                f"（閾値{ADR_STYLE_BOLD_RATIO_THRESHOLD:.0f}%超。meta/adr/0053 決定3）"
+            )
+
+        long_sentences = adr_style_long_sentences(body)
+        if long_sentences:
+            longest = max(long_sentences, key=len)
+            head = longest[:30]
+            reports.append(
+                f"{rel}: {ADR_STYLE_SENTENCE_LENGTH_THRESHOLD}字超の文が{len(long_sentences)}件"
+                f"（最長{len(longest)}字、冒頭: '{head}...'）（meta/adr/0053 決定3）"
+            )
+
+        insertions = adr_style_insertion_count(body)
+        if insertions > ADR_STYLE_INSERTION_THRESHOLD:
+            reports.append(
+                f"{rel}: 挿入節（全角ダッシュ2連）が{insertions}回"
+                f"（閾値{ADR_STYLE_INSERTION_THRESHOLD}回超。meta/adr/0053 決定3）"
+            )
 
 
 # ---------------------------------------------------------------- friction-log
@@ -578,6 +691,7 @@ def main() -> int:
     adrs = check_adrs()
     check_adr_links(adrs)
     report_pending_adrs(adrs)
+    check_adr_style(adrs)
     check_friction_logs()
     check_scenario_ids()
     check_contract_status()
