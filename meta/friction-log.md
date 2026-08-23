@@ -95,8 +95,8 @@ found_at: AI
 slice: テンプレート運用（A層）
 agents: [orchestrator, designer]
 cause_category: 規程の正と実際に走るものがずれる
-cause_key: role-definition-not-live-until-fresh-session
-pushed_to: [meta/adr/0059-role-definition-changes-need-a-fresh-session.md]
+cause_key: stale-working-tree-serves-old-definitions
+pushed_to: [meta/adr/0059-role-definition-changes-need-a-fresh-session.md, meta/adr/0062-role-definitions-are-read-from-the-working-tree.md]
 status: 対応済み
 principles: [P-01, P-05, P-10]
 ```
@@ -122,6 +122,17 @@ principles: [P-01, P-05, P-10]
   また、designerがこの食い違いに気づけたのは、依頼文にたまたま「役割定義は改定されたばかりなので
   読み直すこと」と書いてあったからである。**現状これを捕まえる仕組みは無く、今回は依頼文の書き方に
   依存して偶然捕まった**。この点が `meta/adr/0059` 決定2（起動時の自己検証）の根拠である。
+
+- **訂正（2026-08-23、`meta/adr/0062`）**: 上に書いた原因は**間違っていた**。翌日、**同じセッションの
+  まま** designer を起動したところ、7つの道具すべてが正しく渡り `/design` も実行できた。役割定義は
+  **起動のたびにディスクから読まれている**。本当の原因は**作業ツリーが別ブランチに乗っていて、
+  ディスク上のファイルが古かった**ことである。証拠: 同じ起動で designer が「`meta/adr/0059` が
+  見当たらない。最大番号は 0057 だ」と報告した——マージ済みのADRが2本見えていない。作業ツリーは
+  `meta/govlint-counts-adr-style` に乗っており、別のセッションが使っていた。
+  **間違えた理由は、ディスク上のファイルが実際に何であるかを確かめなかったこと**である。
+  `git branch --show-current` の1回で判明したはずだった。cause_key を
+  `role-definition-not-live-until-fresh-session` から `stale-working-tree-serves-old-definitions` へ
+  改めた。
 
 ## FR-004: 役割定義への注意書きを5役へ同文で入れ、developerでは役割契約の3分の1を占めた
 
