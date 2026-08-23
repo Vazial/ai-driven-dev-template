@@ -22,6 +22,7 @@ test('CSR-D-01 and CSR-D-02: only matching events become a complete daily digest
   assert.equal(title, 'Connpass Session Radar — 8/22(土) 1件');
   assert.equal(body, [
     '**8/22(土)**',
+    '',
     '[AWS study session](https://connpass.com/event/1/)',
     '　19:00 ・ Tokyo ・ Cloud group ・ 10人 ・ 残り10'
   ].join('\n'));
@@ -157,4 +158,18 @@ test("adr/0005: the organiser's own line is carried verbatim, and trimmed only w
   assert.ok(byUrl['https://connpass.com/event/31/'].endsWith('…'));
   assert.equal(byUrl['https://connpass.com/event/32/'], null);
   assert.match(formatDigest(createDigest(events)).body, /\n　\*実務で使える 設計の勘所を 90分で\*/);
+});
+
+test('each event stands apart, so a long list does not read as one block of notes', () => {
+  const day = (iso, url) => ({ ...baseEvent, url, started_at: iso });
+  const { body } = formatDigest(createDigest(normalizeEvents([
+    day('2026-08-22T10:00:00+09:00', 'https://connpass.com/event/40/'),
+    day('2026-08-22T14:00:00+09:00', 'https://connpass.com/event/41/'),
+    day('2026-08-23T10:00:00+09:00', 'https://connpass.com/event/42/')
+  ], conditions, now)));
+  const blocks = body.split('\n\n');
+  assert.equal(blocks.length, 5, '日付見出し2つとイベント3つが、それぞれ空行で分かれる');
+  assert.equal(blocks[0], '**8/22(土)**');
+  assert.ok(blocks[1].startsWith('[') && blocks[2].startsWith('['));
+  assert.equal(blocks[3], '**8/23(日)**');
 });
