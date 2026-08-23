@@ -53,5 +53,8 @@ test('the committed interest conditions parse under the strict field rules', asy
   const { loadInterestConditions } = await import('../src/config.js');
   const conditions = await loadInterestConditions(fileURLToPath(new URL('../interest-conditions.yaml', import.meta.url)));
   assert.ok(conditions.profiles.length > 0);
-  assert.ok(conditions.profiles.every((profile) => Number.isInteger(profile.windowDays)));
+  assert.ok(conditions.profiles.every((profile) => Number.isInteger(profile.windowDays)
+    || Number.isInteger(profile.publishedWithinDays)));
+  assert.ok(conditions.profiles.some((profile) => profile.publishedWithinDays), 'the newly-published axis is in use');
+  assert.ok(conditions.profiles.some((profile) => profile.startsInDays), 'the lead-time axis is in use');
 });

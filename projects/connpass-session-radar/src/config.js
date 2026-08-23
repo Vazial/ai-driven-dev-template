@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises';
 
 const LIST_KEYS = new Set(['keywords', 'keywordsAny', 'prefectures', 'groupIds']);
-const PROFILE_KEYS = new Set([...LIST_KEYS, 'windowDays']);
+const DAY_KEYS = ['windowDays', 'startsInDays', 'publishedWithinDays'];
+const PROFILE_KEYS = new Set([...LIST_KEYS, ...DAY_KEYS]);
 
 function scalar(value) {
   const trimmed = value.trim();
@@ -77,15 +78,28 @@ export function parseInterestConditions(yaml) {
         throw new Error(`${key} must be a list`);
       }
     }
-    if (item.windowDays !== undefined && (!Number.isInteger(item.windowDays) || item.windowDays < 1)) {
-      throw new Error('windowDays must be a positive integer');
+    for (const key of DAY_KEYS) {
+      const floor = key === 'startsInDays' ? 0 : 1;
+      if (item[key] !== undefined && (!Number.isInteger(item[key]) || item[key] < floor)) {
+        throw new Error(`${key} must be an integer of at least ${floor}`);
+      }
+    }
+    // The two axes ask connpass different questions (publish_ymd vs ymd) and the
+    // API does not say how they combine, so a profile may only use one of them.
+    if (item.publishedWithinDays !== undefined
+      && (item.windowDays !== undefined || item.startsInDays !== undefined)) {
+      throw new Error('publishedWithinDays cannot be combined with windowDays or startsInDays');
     }
     if (item.groupIds?.some((id) => !Number.isInteger(id))) throw new Error('groupIds must be integers');
     for (const key of ['keywords', 'keywordsAny', 'prefectures']) {
       if (item[key]) item[key] = item[key].map(String);
     }
   }
-  return { profiles: profiles.map((profile) => ({ ...profile, windowDays: profile.windowDays ?? 7 })) };
+  return {
+    profiles: profiles.map((profile) => (profile.publishedWithinDays
+      ? profile
+      : { ...profile, windowDays: profile.windowDays ?? 7 }))
+  };
 }
 
 export async function loadInterestConditions(path) {
