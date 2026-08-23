@@ -1240,5 +1240,86 @@ class TestMain(GovlintTestCase):
         )
 
 
+# ---------------------------------------------------------------- 規程文書の箇条書き（meta/adr/0063）
+class TestCheckPolicyDocBullets(GovlintTestCase):
+    """1つの箇条書きに決定が積み上がっていないかの報告。"""
+
+    THRESHOLD = govlint.POLICY_BULLET_LENGTH_THRESHOLD
+
+    def _write_guardrails(self, body: str) -> None:
+        write(self.root / "meta" / "guardrails.md", body)
+
+    def test_short_bullets_are_not_reported(self) -> None:
+        self._write_guardrails("- " + "あ" * 10 + "\n- " + "い" * 10 + "\n")
+        govlint.check_policy_doc_bullets()
+        self.assertEqual(govlint.reports, [])
+
+    def test_long_bullet_is_reported(self) -> None:
+        self._write_guardrails("- " + "あ" * (self.THRESHOLD + 1) + "\n")
+        govlint.check_policy_doc_bullets()
+        self.assertTrue(any("meta/guardrails.md" in r for r in govlint.reports))
+
+    def test_threshold_is_exclusive(self) -> None:
+        """ちょうど閾値の長さは報告しない（超えた分だけを見る）。"""
+        self._write_guardrails("- " + "あ" * self.THRESHOLD + "\n")
+        govlint.check_policy_doc_bullets()
+        self.assertEqual(govlint.reports, [])
+
+    def test_hard_wrapped_continuation_is_folded_into_the_same_bullet(self) -> None:
+        """折り返しただけで短く見せられない（読む単位は折り返しをまたぐ）。"""
+        half = "あ" * (self.THRESHOLD // 2 + 10)
+        self._write_guardrails("- " + half + "\n  " + half + "\n")
+        govlint.check_policy_doc_bullets()
+        self.assertTrue(any("meta/guardrails.md" in r for r in govlint.reports))
+
+    def test_child_bullets_are_counted_separately_from_the_parent(self) -> None:
+        """入れ子に割れば報告は消える（この検査が促したい形）。"""
+        piece = "あ" * (self.THRESHOLD // 2)
+        self._write_guardrails("- 見出し:\n  - " + piece + "\n  - " + piece + "\n")
+        govlint.check_policy_doc_bullets()
+        self.assertEqual(govlint.reports, [])
+
+    def test_code_block_contents_are_ignored(self) -> None:
+        """手順として貼ったコマンドは文章ではないので数えない。"""
+        self._write_guardrails(
+            "```bash\n- " + "a" * (self.THRESHOLD + 50) + "\n```\n"
+        )
+        govlint.check_policy_doc_bullets()
+        self.assertEqual(govlint.reports, [])
+
+    def test_table_rows_are_ignored(self) -> None:
+        """表のセルは対象外（直し方が違う。ADR-0063 帰結）。"""
+        self._write_guardrails("| 項目 | " + "あ" * (self.THRESHOLD + 50) + " |\n")
+        govlint.check_policy_doc_bullets()
+        self.assertEqual(govlint.reports, [])
+
+    def test_markup_does_not_inflate_the_count(self) -> None:
+        """太字とバッククォートの記号は字数に数えない。"""
+        body = "**" + "あ" * (self.THRESHOLD - 1) + "**"
+        self._write_guardrails("- " + body + "\n")
+        govlint.check_policy_doc_bullets()
+        self.assertEqual(govlint.reports, [])
+
+    def test_report_names_the_line_and_the_count(self) -> None:
+        long_one = "- " + "あ" * (self.THRESHOLD + 5)
+        self._write_guardrails("- 短い項目\n" + long_one + "\n")
+        govlint.check_policy_doc_bullets()
+        self.assertEqual(len(govlint.reports), 1)
+        report = govlint.reports[0]
+        self.assertIn("1件", report)
+        self.assertIn("L2", report)
+
+    def test_missing_policy_doc_is_not_an_error(self) -> None:
+        """規程文書が無いリポジトリでも落ちない（新規リポジトリの初期化途中）。"""
+        govlint.check_policy_doc_bullets()
+        self.assertEqual(govlint.reports, [])
+        self.assertEqual(govlint.errors, [])
+
+    def test_never_produces_errors(self) -> None:
+        """文体でマージを止めない（ADR-0053と同じ扱い）。"""
+        self._write_guardrails("- " + "あ" * (self.THRESHOLD * 4) + "\n")
+        govlint.check_policy_doc_bullets()
+        self.assertEqual(govlint.errors, [])
+
 if __name__ == "__main__":
     unittest.main()

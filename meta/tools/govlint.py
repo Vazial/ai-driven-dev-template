@@ -14,6 +14,8 @@
   [REPORT] 実装待ちシナリオの棚卸し … @pending-implementation が付いたままのシナリオ（FR-014）
   [REPORT] ADRの文体            … 太字率・120字超の文・挿入節（——）の3項目。meta scopeかつid 0053以上の
                             ADRのみ対象（meta/adr/0053 決定3・決定4）
+  [REPORT] 規程文書の箇条書き    … 1つの箇条書きが長すぎないか。「1項目に決定が4〜5個」の形を数える
+                            （meta/adr/0063）
 
 終了コード: ERRORが1件でもあれば1、なければ0（REPORTは0のまま）。
 
@@ -408,6 +410,88 @@ def check_adr_style(adrs: dict[str, dict]) -> None:
             )
 
 
+# ---------------------------------------------------------------- 規程文書の箇条書き（meta/adr/0063）
+# ADRの文体（meta/adr/0053）と同じ症状が、規程文書では別の形で出る——文が長いのではなく、
+# 1つの箇条書きに決定が4つも5つもぶら下がる。読む人はその1項目から全部を拾い切ることを
+# 求められ、取りこぼす。実測では meta/guardrails.md の1項目が966字・11文まで育っていた。
+#
+# 数えるのは「葉」＝1つの `- ` 項目のうち、より深い階層の子を含めないテキスト。読む人が
+# 一息で読む単位がこれだからである。ハードラップ（同じ項目の折り返し行）は葉に畳む。
+# 表のセルは数えない——長い表のセルは「表という形式が長文に向いていない」という別の問題で、
+# 直し方（項目を割るのではなく表ごと組み直す）が違う。
+#
+# ERRORにはしない（meta/adr/0053 と同じ扱い。文体でマージは止めない）。
+POLICY_DOCS = (
+    "HANDOFF.md",
+    "meta/PRINCIPLES.md",
+    "meta/agents.md",
+    "meta/guardrails.md",
+    "meta/permissions.md",
+    "meta/verification.md",
+)
+POLICY_BULLET_LENGTH_THRESHOLD = 250  # 字超で報告
+POLICY_BULLET_RE = re.compile(r"^\s*[-*+] (.*)$")
+POLICY_BULLET_MARKUP_RE = re.compile(r"\*\*|`")
+
+
+def policy_doc_leaf_bullets(text: str) -> list[tuple[int, str]]:
+    """規程文書から (開始行, 葉の本文) を拾う。コードブロックの中は数えない。"""
+    out: list[tuple[int, str]] = []
+    current: tuple[int, str] | None = None
+    in_fence = False
+    for lineno, line in enumerate(text.split("\n"), 1):
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        matched = POLICY_BULLET_RE.match(line)
+        if matched:
+            if current is not None:
+                out.append(current)
+            current = (lineno, matched.group(1))
+            continue
+        # 字下げされた継続行は、同じ葉の折り返しとして畳む
+        if current is not None and line.strip() and line[:1].isspace():
+            current = (current[0], current[1] + line.strip())
+            continue
+        if current is not None:
+            out.append(current)
+            current = None
+    if current is not None:
+        out.append(current)
+    return out
+
+
+def policy_bullet_length(body: str) -> int:
+    """記法（太字の `**` とバッククォート）を除いた字数。"""
+    return len(POLICY_BULLET_MARKUP_RE.sub("", body))
+
+
+def check_policy_doc_bullets() -> None:
+    """規程文書の箇条書きが長くなりすぎていないかを報告する（meta/adr/0063）。"""
+    for rel in POLICY_DOCS:
+        path = ROOT / rel
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        long_ones = [
+            (lineno, policy_bullet_length(body), body)
+            for lineno, body in policy_doc_leaf_bullets(text)
+            if policy_bullet_length(body) > POLICY_BULLET_LENGTH_THRESHOLD
+        ]
+        if not long_ones:
+            continue
+        lineno, length, body = max(long_ones, key=lambda item: item[1])
+        head = POLICY_BULLET_MARKUP_RE.sub("", body)[:30]
+        reports.append(
+            f"{rel}: {POLICY_BULLET_LENGTH_THRESHOLD}字超の箇条書きが{len(long_ones)}件"
+            f"（最長 L{lineno} の{length}字、冒頭: '{head}...'）。"
+            f"1つの項目に決定を積み増していないか見ること（meta/adr/0063）"
+        )
+
+
 # ---------------------------------------------------------------- friction-log
 FR_BLOCK_RE = re.compile(r"^## (FR-\d+):.*?\n+```yaml\n(.*?)\n```", re.S | re.M)
 
@@ -692,6 +776,7 @@ def main() -> int:
     check_adr_links(adrs)
     report_pending_adrs(adrs)
     check_adr_style(adrs)
+    check_policy_doc_bullets()
     check_friction_logs()
     check_scenario_ids()
     check_contract_status()
