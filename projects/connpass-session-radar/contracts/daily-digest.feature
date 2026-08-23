@@ -31,7 +31,6 @@ Feature: 利用者が毎朝、条件に合うconnpassイベントの一覧を受
     And 通知先が設定されている
 
   # CSR-D-01
-  @pending-implementation
   Scenario: 条件に合うイベントがある朝、一覧が1通届く
     Given 興味の条件に合う、開催前のイベントがconnpassに少なくとも1件ある
     When 毎朝の配信が実行される
@@ -41,14 +40,12 @@ Feature: 利用者が毎朝、条件に合うconnpassイベントの一覧を受
     And connpassで申し込めるイベントには残席の目安が示される
 
   # CSR-D-02
-  @pending-implementation
   Scenario: 興味の条件に合わないイベントは一覧に含まれない
     Given connpassに、興味の条件に合わないイベントがある
     When 毎朝の配信が実行される
     Then そのイベントは一覧に示されない
 
   # CSR-D-03
-  @pending-implementation
   Scenario: 条件に合うイベントが一つも無い朝、その旨が届く
     Given 興味の条件に合う、開催前のイベントがconnpassに一つも無い
     When 毎朝の配信が実行される
@@ -56,7 +53,6 @@ Feature: 利用者が毎朝、条件に合うconnpassイベントの一覧を受
     And この一覧は、一覧が届かなかった状態や取得に失敗した状態とは区別して分かる
 
   # CSR-D-04
-  @pending-implementation
   Scenario: イベントの取得または一覧作りに失敗した朝、その旨が届く
     Given connpassからイベントを取得できない、またはその日の一覧を作れない状態が起きている
     When 毎朝の配信が実行される
@@ -64,7 +60,6 @@ Feature: 利用者が毎朝、条件に合うconnpassイベントの一覧を受
     And この通知には、利用者の非公開の設定や内部の事情は含まれない
 
   # CSR-D-05
-  @pending-implementation
   Scenario: connpass外で申し込むイベントも一覧に載るが、残席の欄は無い
     Given 興味の条件に合う、connpass以外の場所で申し込むイベントがある
     When 毎朝の配信が実行される
@@ -72,14 +67,12 @@ Feature: 利用者が毎朝、条件に合うconnpassイベントの一覧を受
     And そのイベントには残席の目安が示されない
 
   # CSR-D-06
-  @pending-implementation
   Scenario: 中止されたイベントは一覧に載らない
     Given 興味の条件に合うイベントの中に、中止が決まったものがある
     When 毎朝の配信が実行される
     Then 中止が決まったイベントは一覧に示されない
 
   # CSR-D-07
-  @pending-implementation
   Scenario: 興味の条件をYAMLで変えると、翌朝の一覧に反映される
     Given 興味の条件がYAMLで変更され、commitされている
     When 翌朝の配信が実行される
@@ -87,21 +80,18 @@ Feature: 利用者が毎朝、条件に合うconnpassイベントの一覧を受
     And 変更前の条件にだけ合っていて変更後の条件には合わないイベントは、一覧に含まれない
 
   # CSR-D-08
-  @pending-implementation
   Scenario: 定員が無いイベントは、残席を数値にせずその旨が示される
     Given 興味の条件に合うイベントの中に、定員が設けられていないものがある
     When 毎朝の配信が実行される
     Then そのイベントには、具体的な残席の数の代わりに、定員が無い旨が示される
 
   # CSR-D-09
-  @pending-implementation
   Scenario: 残席が無い、または申し込みが補欠になっているイベントは満席として示される
     Given 興味の条件に合うイベントの中に、残席が無い、または新たな申し込みが補欠になっているものがある
     When 毎朝の配信が実行される
     Then そのイベントは満席であることが分かる形で一覧に示される
 
   # CSR-D-10
-  @pending-implementation
   Scenario: 配信の対象とする期間より後に開催されるイベントは一覧に含まれない
     Given 興味の条件に合うイベントの中に、配信の対象とする期間より後に開催されるものがある
     When 毎朝の配信が実行される

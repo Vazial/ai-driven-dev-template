@@ -33,7 +33,7 @@ agents.md を参照（architect / designer / developer / tester / reviewer の�
 ## 未整備（今後の作業）
 
 - [x] ../.claude/agents/ — Claude Code / Codex共通のsubagent個別定義（architect / designer / developer / tester / reviewer。設計はagents.md）
-- [x] templates/ — adr / pull-request / audit-report / friction-log / active-context / architecture / acceptance-scenario の7雛形
+- [x] templates/ — adr / pull-request / audit-report / friction-log / active-context / architecture / acceptance-scenario の7雛形。ただし **pull-request は雛形の実体を持たず `.github/pull_request_template.md` を指すポインタ**である（GitHubがPR作成時に自動で開くファイルを実体にする。meta/adr/0057 決定3）
 - [x] guardrails/ — branch protection・deny設定・CI設定の実体ファイル（.claude/settings.json、.github/workflows/ci.yml、guardrails/。CIの実コマンドはスライスRSV-Cで実装済み。step定義lintツールは未確定）
 - [x] 検証: 予約システムプロジェクトへの初適用（スライスRSV-C完了・friction log運用中: FR-001〜005）
 - [ ] B層: あるスタックでの具体配線の実体。予防的に作らない。同スタック・同型の2本目のプロジェクトが現れた時に昇格で作る（meta/architecture-selection.md 7節）

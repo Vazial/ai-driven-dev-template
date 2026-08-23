@@ -14,7 +14,7 @@ Follow the documents above rather than repeating their rules here. In particular
 Before creating, committing, pushing, or reporting a reviewable artifact or PR, also read:
 
 1. `meta/guardrails.md`
-2. `meta/templates/pull-request.md`
+2. `.github/pull_request_template.md` — the PR template itself. Write the sections above the horizontal rule so that a reader with no context on this repository can follow them: do not leave bare identifiers (`ADR-00xx`, `FR-0xx`, `P-0x`, `L0`, scenario IDs) unexplained, do not assume the contents of another PR, and start the "why" from what happened rather than from a citation (`meta/adr/0057`)
 
 Follow the integration branch and PR target declared by `meta/guardrails.md`. Treat chat authorization as permission to draft unless the user explicitly approves the artifact. Report approval state from the artifact metadata and PR review state; a pushed branch or open PR is not itself human approval.
 

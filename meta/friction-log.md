@@ -26,8 +26,8 @@ slice: テンプレート運用（A層）
 agents: [orchestrator]
 cause_category: 規程の欠落
 cause_key: approval-artifact-readability-convention-missing
-pushed_to: []
-status: 未対応
+pushed_to: [meta/adr/0053-write-adrs-to-stand-alone.md]
+status: 対応済み
 principles: [P-01, P-03, P-05]
 ```
 
@@ -47,9 +47,9 @@ principles: [P-01, P-03, P-05]
   存在せず、記録先が無かったためである。事象・原因は記憶ではなく `meta/adr/0053` 本文（一次記録）から
   書き起こした。この cause_key は `projects/reservation-system/friction-log.md` の FR-002・FR-003・
   FR-008 と同じであり、**本件は4回目にあたる**——`meta/adr/0016` の一般則が作られた**後**の再発である。
-  `pushed_to` を空にし `status` を `未対応` にしてあるのは、押し込み先の `meta/adr/0053` が
-  **まだマージされていない**（PR #133 として提出中）ためである。参照先の実在を govlint が検証するので、
-  マージされた時点でパスを入れて `対応済み` に変える。
+本エントリを書いた時点では押し込み先の `meta/adr/0053` が
+  未マージ（PR #133）だったため `pushed_to` を空・`status` を `未対応` にしていたが、**同 PR が 2026-08-23 に
+  マージされたので参照を入れ `対応済み` にした**。
 
 ---
 
@@ -63,8 +63,8 @@ slice: テンプレート運用（A層）
 agents: [orchestrator]
 cause_category: 規程の欠落
 cause_key: approval-artifact-readability-convention-missing
-pushed_to: []
-status: 未対応
+pushed_to: [meta/adr/0057-write-pr-bodies-for-cold-readers.md]
+status: 対応済み
 principles: [P-01, P-04, P-05]
 ```
 
@@ -83,8 +83,8 @@ principles: [P-01, P-04, P-05]
   `meta/adr/0057` 本文（一次記録）から書き起こした。FR-001 と同じ cause_key であり、**本件は5回目に
   あたる**。**4回目・5回目がいずれも `meta/adr/0016` の「充足済み」判定を破っている**という事実が、
   この2件を遡って起票した理由である——規約の書き足しでは足りない、という次の判断の材料になる。
-  `pushed_to` が空で `status` が `未対応` なのは FR-001 と同じ事情である（`meta/adr/0057` は PR #134 と
-  して提出中）。マージされた時点でパスを入れて `対応済み` に変える。
+押し込み先の `meta/adr/0057`（PR #134）も 2026-08-23 にマージされたので、
+  FR-001 と同じく参照を入れ `対応済み` にした。
 
 ---
 <!--
