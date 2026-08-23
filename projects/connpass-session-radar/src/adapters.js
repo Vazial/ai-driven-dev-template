@@ -6,13 +6,22 @@ const DISCORD_EMBED_TOTAL_LIMIT = 6_000;
 const DISCORD_EMBED_DESCRIPTION_LIMIT = 4_096;
 const DISCORD_ATTACHMENT_NAME = 'connpass-session-radar.txt';
 
-function datesFor(profile, now) {
-  return Array.from({ length: profile.windowDays }, (_, index) => tokyoYmd(addTokyoDays(now, index)));
+// A profile asks by start date or by publish date, never both: connpass does not
+// document how the two combine, and a wrong guess would silently narrow or widen
+// every morning (connpass-api-v2-facts.md).
+function dateParamFor(profile, now) {
+  if (profile.publishedWithinDays) {
+    return ['publish_ymd', Array.from({ length: profile.publishedWithinDays },
+      (_, index) => tokyoYmd(addTokyoDays(now, -1 - index)))];
+  }
+  return ['ymd', Array.from({ length: profile.windowDays },
+    (_, index) => tokyoYmd(addTokyoDays(now, (profile.startsInDays ?? 0) + index)))];
 }
 
 function queryFor(profile, now, start = 1) {
   const query = new URLSearchParams({ count: '100', order: '2', start: String(start) });
-  for (const date of datesFor(profile, now)) query.append('ymd', date);
+  const [dateParam, dates] = dateParamFor(profile, now);
+  for (const date of dates) query.append(dateParam, date);
   for (const value of profile.keywords ?? []) query.append('keyword', value);
   for (const value of profile.keywordsAny ?? []) query.append('keyword_or', value);
   for (const value of profile.prefectures ?? []) query.append('prefecture', value);

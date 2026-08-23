@@ -16,7 +16,7 @@ test('CSR-D-01 and CSR-D-02: only matching events become a complete daily digest
   assert.deepEqual(events[0], {
     title: 'AWS study session', url: 'https://connpass.com/event/1/', startedAt: '2026-08-22T19:00:00+09:00',
     place: 'Tokyo', address: 'Tokyo', isOnline: false, groupTitle: 'Cloud group', eventType: 'participation',
-    remainingSeatsKnown: true, remainingSeats: 10, isFull: false, attendeeCount: 10
+    remainingSeatsKnown: true, remainingSeats: 10, isFull: false, attendeeCount: 10, catchPhrase: null
   });
   const { title, body } = formatDigest(createDigest(events));
   assert.equal(title, 'Connpass Session Radar — 8/22(土) 1件');
@@ -123,4 +123,38 @@ test('the attendee count travels as the popularity hint, and stays absent off co
   const { body } = formatDigest(createDigest(events));
   assert.match(body, /AWS popular\]\(https:\/\/connpass.com\/event\/10\/\)\n　19:00 ・ Tokyo ・ Cloud group ・ 148人 ・ 残り52/);
   assert.doesNotMatch(body.split('AWS elsewhere')[1], /人 ・/);
+});
+
+test('adr/0005: the lead axis shows one day only, the publish axis ignores the start date', () => {
+  const lead = { keywordsAny: ['aws'], startsInDays: 7, windowDays: 1 };
+  const fresh = { keywordsAny: ['aws'], publishedWithinDays: 1 };
+  const on = (iso, profile, url) => ({ ...baseEvent, url, started_at: iso, matchedProfile: profile });
+  const leadEvents = normalizeEvents([
+    on('2026-08-27T10:00:00+09:00', lead, 'https://connpass.com/event/20/'),
+    on('2026-08-26T10:00:00+09:00', lead, 'https://connpass.com/event/21/'),
+    on('2026-08-28T10:00:00+09:00', lead, 'https://connpass.com/event/22/')
+  ], { profiles: [lead] }, now);
+  assert.deepEqual(leadEvents.map((event) => event.url), ['https://connpass.com/event/20/']);
+
+  const freshEvents = normalizeEvents([
+    on('2026-11-30T10:00:00+09:00', fresh, 'https://connpass.com/event/23/'),
+    on('2026-08-19T10:00:00+09:00', fresh, 'https://connpass.com/event/24/')
+  ], { profiles: [fresh] }, now);
+  assert.deepEqual(freshEvents.map((event) => event.url), ['https://connpass.com/event/23/'],
+    'a conference months out is kept, one that already happened is not');
+});
+
+test("adr/0005: the organiser's own line is carried verbatim, and trimmed only when long", () => {
+  const long = 'あ'.repeat(140);
+  const events = normalizeEvents([
+    { ...baseEvent, url: 'https://connpass.com/event/30/', catch: '  実務で使える  設計の勘所を  90分で ' },
+    { ...baseEvent, url: 'https://connpass.com/event/31/', catch: long },
+    { ...baseEvent, url: 'https://connpass.com/event/32/', catch: '' }
+  ], conditions, now);
+  const byUrl = Object.fromEntries(events.map((event) => [event.url, event.catchPhrase]));
+  assert.equal(byUrl['https://connpass.com/event/30/'], '実務で使える 設計の勘所を 90分で');
+  assert.equal([...byUrl['https://connpass.com/event/31/']].length, 101);
+  assert.ok(byUrl['https://connpass.com/event/31/'].endsWith('…'));
+  assert.equal(byUrl['https://connpass.com/event/32/'], null);
+  assert.match(formatDigest(createDigest(events)).body, /\n　\*実務で使える 設計の勘所を 90分で\*/);
 });

@@ -21,7 +21,20 @@ test('loads committed YAML profiles and supplies the seven-day default', () => {
 });
 
 test('rejects profiles without a positive window', () => {
-  assert.throws(() => parseInterestConditions('profiles:\n  - windowDays: 0\n'), /positive integer/);
+  assert.throws(() => parseInterestConditions('profiles:\n  - windowDays: 0\n'), /windowDays must be an integer of at least 1/);
+});
+
+test('a profile picks one axis: publish date or start date, never both', () => {
+  assert.deepEqual(parseInterestConditions('profiles:\n  - publishedWithinDays: 1\n'),
+    { profiles: [{ publishedWithinDays: 1 }] });
+  assert.deepEqual(parseInterestConditions('profiles:\n  - startsInDays: 7\n    windowDays: 1\n'),
+    { profiles: [{ startsInDays: 7, windowDays: 1 }] });
+  assert.throws(() => parseInterestConditions('profiles:\n  - publishedWithinDays: 1\n    windowDays: 3\n'),
+    /cannot be combined/);
+  assert.throws(() => parseInterestConditions('profiles:\n  - publishedWithinDays: 1\n    startsInDays: 7\n'),
+    /cannot be combined/);
+  assert.throws(() => parseInterestConditions('profiles:\n  - startsInDays: -1\n'),
+    /startsInDays must be an integer of at least 0/);
 });
 
 test('refuses a misspelled field instead of silently dropping every filter', () => {

@@ -2,11 +2,18 @@ import { tokyoDayLabel, tokyoMidnight, tokyoTimeLabel } from './calendar.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export function isInWindow(startedAt, windowDays, now = new Date()) {
+// A publish-date profile puts no ceiling on the start date — that is the point,
+// it catches a conference announced for three months out — but an event that has
+// already happened is never worth reading about, so today's midnight is a floor
+// for both kinds of profile.
+export function isInWindow(startedAt, profile, now = new Date()) {
   if (startedAt == null) return true;
   const start = new Date(startedAt).getTime();
   const dayStart = tokyoMidnight(now).getTime();
-  return start >= dayStart && start < dayStart + windowDays * DAY_MS;
+  if (start < dayStart) return false;
+  if (profile.publishedWithinDays) return true;
+  const from = dayStart + (profile.startsInDays ?? 0) * DAY_MS;
+  return start >= from && start < from + profile.windowDays * DAY_MS;
 }
 
 function includesAll(haystack, needles = []) {
@@ -25,12 +32,23 @@ export function matchesProfile(event, profile) {
     && (!profile.groupIds?.length || profile.groupIds.includes(event.group?.id));
 }
 
+const CATCH_PHRASE_LIMIT = 100;
+
+// The organiser's own one-liner, which is what tells a reader whether an event
+// titled "AIコンサル育成講座 第2回" is worth opening. Kept verbatim, only cut when
+// long enough to crowd out the rest of the list.
+function trimCatchPhrase(value) {
+  const text = value?.replace(/\s+/g, ' ').trim();
+  if (!text) return null;
+  return [...text].length <= CATCH_PHRASE_LIMIT ? text : `${[...text].slice(0, CATCH_PHRASE_LIMIT).join('')}…`;
+}
+
 export function normalizeEvents(events, conditions, now = new Date()) {
   const byUrl = new Map();
   for (const event of events) {
     if (event.open_status === 'cancelled') continue;
     const profile = event.matchedProfile ?? conditions.profiles.find((item) => matchesProfile(event, item));
-    if (!profile || !isInWindow(event.started_at, profile.windowDays, now)) continue;
+    if (!profile || !isInWindow(event.started_at, profile, now)) continue;
 
     const remainingSeatsKnown = event.event_type === 'participation' && event.limit != null;
     const remainingSeats = remainingSeatsKnown ? Math.max(0, event.limit - event.accepted) : null;
@@ -47,7 +65,8 @@ export function normalizeEvents(events, conditions, now = new Date()) {
       remainingSeatsKnown,
       remainingSeats,
       isFull: remainingSeatsKnown && (remainingSeats === 0 || event.waiting > 0),
-      attendeeCount: event.event_type === 'participation' ? event.accepted ?? null : null
+      attendeeCount: event.event_type === 'participation' ? event.accepted ?? null : null,
+      catchPhrase: trimCatchPhrase(event.catch)
     };
     if (event.fixtureEventRef !== undefined) normalized.fixtureEventRef = event.fixtureEventRef;
     byUrl.set(normalized.url, normalized);
@@ -108,6 +127,7 @@ export function formatDigest(digest) {
     ].filter(Boolean).join(' ・ ');
     lines.push(`[${event.title}](${event.url})`);
     lines.push(`　${meta}`);
+    if (event.catchPhrase) lines.push(`　*${event.catchPhrase}*`);
   }
   const span = spanOf(digest.events);
   return {

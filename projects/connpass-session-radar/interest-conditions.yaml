@@ -1,31 +1,36 @@
 # 興味の条件。ここを書き換えてcommitすると、翌朝の一覧に反映される（product-brief §2）。
 # このファイルは公開リポジトリに入る。何に興味があり、どの地域を見ているかは公開される（adr/0004）。
 #
-# プロファイルは複数書ける。結果はORで1通に合流し、同じイベントは1回だけ載る。
+# プロファイルは2種類ある（adr/0005）。
+#   publishedWithinDays: N  — 昨日から遡ってN日間に「公開された」もの。開催日は問わない。新着軸
+#   startsInDays / windowDays — 何日後から何日分の「開催」を見るか。リード軸
+# 1つのプロファイルで両方は使えない。結果はORで1通に合流し、同じイベントは1回だけ載る。
+#
 # keywordsAny は「どれかを含む」の部分一致。検索対象はタイトル・キャッチ・概要・住所なので、
-# 地名を語に書くと誤爆する——地域で絞るときは prefectures を使うこと。
-# windowDays は当日から何日先までを見るか。
+# 語が短いほど概要文で誤爆する（`設計` は「研修設計」「問いの設計」を拾ったため外した）。
+# 地名を語に書くと住所で誤爆する——地域で絞るときは prefectures を使うこと。
 
 profiles:
+  # ---- 新着軸: 昨日公開されたものを、開催がいつであろうと拾う ----
+
   # AI/LLM、開発の進め方そのもの
   - keywordsAny:
       - LLM
       - 生成AI
       - AIエージェント
-      - Claude
-      - ChatGPT
-      - Copilot
-      - プロンプト
       - AI駆動
       - 仕様駆動
+      - Claude
+      - Copilot
+      - コーディングエージェント
     prefectures:
       - online
-    windowDays: 7
+    publishedWithinDays: 1
 
   # アーキテクチャ・設計思想
   - keywordsAny:
       - アーキテクチャ
-      - 設計
+      - 設計思想
       - ドメイン駆動
       - DDD
       - マイクロサービス
@@ -33,7 +38,7 @@ profiles:
       - リファクタリング
     prefectures:
       - online
-    windowDays: 7
+    publishedWithinDays: 1
 
   # クラウド
   - keywordsAny:
@@ -44,7 +49,7 @@ profiles:
       - Cloudflare
     prefectures:
       - online
-    windowDays: 7
+    publishedWithinDays: 1
 
   # コンテナ・IaC
   - keywordsAny:
@@ -55,7 +60,7 @@ profiles:
       - IaC
     prefectures:
       - online
-    windowDays: 7
+    publishedWithinDays: 1
 
   # 言語・フレームワーク
   - keywordsAny:
@@ -69,9 +74,51 @@ profiles:
       - Python
     prefectures:
       - online
-    windowDays: 7
+    publishedWithinDays: 1
 
-  # 地元。件数が少ないので話題を絞らず全部見る。オンライン開催は上のプロファイルが拾う
+  # ---- リード軸: ちょうど7日後に開催されるものを思い出させる ----
+
+  - keywordsAny:
+      - LLM
+      - 生成AI
+      - AIエージェント
+      - AI駆動
+      - 仕様駆動
+      - Claude
+      - Copilot
+      - コーディングエージェント
+      - アーキテクチャ
+      - 設計思想
+      - ドメイン駆動
+      - DDD
+      - マイクロサービス
+      - 技術選定
+      - リファクタリング
+      - AWS
+      - GCP
+      - Google Cloud
+      - Azure
+      - Cloudflare
+      - Docker
+      - Kubernetes
+      - コンテナ
+      - Terraform
+      - IaC
+      - TypeScript
+      - React
+      - Vue
+      - C#
+      - .NET
+      - Java
+      - Go
+      - Python
+    prefectures:
+      - online
+    startsInDays: 7
+    windowDays: 1
+
+  # ---- 地元: 件数が少ないので話題を絞らず、2週間先まで全部見る ----
+
   - prefectures:
       - toyama
     windowDays: 14
