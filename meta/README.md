@@ -17,6 +17,7 @@
 | 決定 | adr/ | A層自身の決定履歴（1決定1枚・編集禁止。meta/adr/0001。メタデータはfrontmatter＝機械検証対象。meta/adr/0012） | 規程変更の提案・監査時 |
 | 道具 | tools/govlint.py | 統治文書（ADR・friction-log・契約ID）の機械検証。CIのL0で実行（meta/adr/0012）。cause_keyの再出現は台帳ごとに加え**台帳を跨いでも**報告する（meta/adr/0058） | CI・統治文書を書く時 |
 | 道具 | loop/ | 改善ループの道具。セッションログからfriction候補を収穫する（meta/adr/0049）。**判定しない＝ゲートではない**ので meta/adr/0046 の施錠の外 | **PR作成の直前**（hookが自動実行。meta/adr/0055） |
+| 道具 | ../.claude/skills/eli5/ | `/eli5`＝直前の説明・PR本文・ADRを、前提知識ゼロの人に通じる言葉で言い直す（meta/adr/0060 決定5）。**予防ではなく救済**であり、呼ばれた回数そのものが「会話を短く保つ規程が効いていない」目安になる | 人間が「わからない」と言った時 |
 | 記録 | friction-log.md | **A層の摩擦の台帳**（追記専用）。`meta/` 配下の規程・雛形・道具・ガバナンスと、それに沿った運用（ADR・PR本文・承認の置き方・役割の境界）で起きた摩擦を1件ずつ書く。プロジェクトの実装・契約・設計の摩擦は `projects/<p>/friction-log.md`（meta/adr/0058） | 摩擦が起きた瞬間・PR作成の直前 |
 | 状態 | activeContext.md | 進捗の「今」。常に現在だけを映す。**2階層（meta/adr/0033）**: ルート `activeContext.md`＝テンプレ管理・全プロジェクト・跨り状態（跨りの唯一の所有者）／`projects/<p>/activeContext.md`＝そのプロジェクト内部の状態 | 全agent起動時 |
 | 状態 | design.md | 設計の「今」。境界・責務の地図（各プロジェクトのC層に置く。architectが維持） | architect / developer |
