@@ -7,6 +7,7 @@
   [ERROR] シナリオIDの整合     … .feature内でIDが一意か、API仕様が参照するIDが実在するか
   [ERROR] 検証ゲートのask登録   … .claude/settings.json の permissions.ask に検証ツール保護4項目が揃っているか（ADR-0054）
   [REPORT] cause_keyの再出現   … 同一原因の2回目以降＝構造的欠陥のシグナル（人間が判断する。失敗させない）
+                                 台帳ごとの集計に加え、台帳を跨いだ集計も報告する（meta/adr/0058）
   [REPORT] 未対応FRの棚卸し
   [REPORT] 提案中ADRの棚卸し   … status: 提案中 のまま滞留しているADR（meta/adr/0035）
   [REPORT] 承認待ち契約の棚卸し … ステータス: 承認待ち のまま残っている契約（meta/adr/0043）
@@ -298,9 +299,27 @@ def report_pending_adrs(adrs: dict[str, dict], today: date | None = None) -> Non
 FR_BLOCK_RE = re.compile(r"^## (FR-\d+):.*?\n+```yaml\n(.*?)\n```", re.S | re.M)
 
 
+def friction_log_paths() -> list[Path]:
+    """走査対象の台帳。C層（projects/<p>/）に加えA層（meta/friction-log.md）を含む（meta/adr/0058）。
+
+    A層の台帳が無いあいだ、テンプレート本体の作業で起きた摩擦は行き場がなく、ADR本文が代役を
+    務めていた。実害として `approval-artifact-readability-convention-missing` の4回目・5回目が
+    どこにも記録されないまま通り過ぎている（meta/adr/0058 文脈3）。
+    """
+    paths = sorted((ROOT / "projects").glob("*/friction-log.md"))
+    meta_log = ROOT / "meta" / "friction-log.md"
+    if meta_log.exists():
+        paths.append(meta_log)
+    return paths
+
+
 def check_friction_logs() -> None:
     required = ["id", "date", "found_at", "cause_category", "cause_key", "status"]
-    for path in sorted((ROOT / "projects").glob("*/friction-log.md")):
+    # 台帳を跨いだ cause_key の集計（meta/adr/0058 決定・論点2＝案2-B）。ファイル単位の報告は
+    # 残したまま、横断の再出現を**追加で**報告する。FR番号は台帳ごとに1から振られていて重複する
+    # ため、横断側は必ずファイルパス付きで出す（同ADR 文脈6）。
+    across: dict[str, list[str]] = {}
+    for path in friction_log_paths():
         rel = path.relative_to(ROOT).as_posix()
         text = path.read_text(encoding="utf-8")
 
@@ -333,6 +352,7 @@ def check_friction_logs() -> None:
                     errors.append(f"{rel} {fr_id}: pushed_to '{target}' が存在しない")
             if fm.get("cause_key"):
                 by_cause.setdefault(fm["cause_key"], []).append(fr_id)
+                across.setdefault(fm["cause_key"], []).append(f"{rel} {fr_id}")
             if fm.get("status") == "未対応":
                 reports.append(f"{rel} {fr_id}: 未対応のまま（棚卸し対象）")
 
@@ -342,6 +362,18 @@ def check_friction_logs() -> None:
                     f"{rel}: cause_key '{cause_key}' が {len(ids)}回 出現 → 構造的欠陥のシグナル "
                     f"（{', '.join(ids)}）。個別対処でなく一般ルール化を検討すること"
                 )
+
+    # 横断（meta/adr/0058）。1冊の中では2回に届かないが台帳を跨ぐと届く原因を拾う。
+    # 1冊に収まっている原因は上のファイル単位の報告と重複するので、ここでは出さない。
+    for cause_key, refs in sorted(across.items()):
+        if len(refs) < 2:
+            continue
+        if len({ref.rsplit(" ", 1)[0] for ref in refs}) < 2:
+            continue
+        reports.append(
+            f"[横断] cause_key '{cause_key}' が {len(refs)}回 出現（{len({r.rsplit(' ', 1)[0] for r in refs})}冊の台帳に分散） "
+            f"→ 構造的欠陥のシグナル（{', '.join(refs)}）。個別対処でなく一般ルール化を検討すること"
+        )
 
 
 # ---------------------------------------------------------------- 契約

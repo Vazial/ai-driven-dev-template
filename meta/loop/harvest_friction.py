@@ -2,8 +2,9 @@
 # -*- coding: utf-8 -*-
 """harvest_friction — 摩擦の候補をセッションログから拾い直す（meta/adr/0049）。
 
-開発中に起きた引っかかりは friction と呼び、各プロジェクトの `friction-log.md` に1件ずつ
-記録する運用になっている。書くのはその場で、が原則だが、実際には書き損ねる。この道具は
+開発中に起きた引っかかりは friction と呼び、`friction-log.md` に1件ずつ記録する運用に
+なっている。台帳はプロジェクトごと（`projects/<p>/`）に加え、テンプレート本体の分が
+`meta/friction-log.md` にある（meta/adr/0058）。書くのはその場で、が原則だが、実際には書き損ねる。この道具は
 書き損ねた分をログから拾い直す。
 
 読むのは生のログではなく、`index_sessions.py` が正規化したインデックスである（決定8）。
@@ -212,8 +213,11 @@ def render(sessions: list[dict], meta: dict, threshold: int, top: int) -> str:
         f"{meta.get('n_agent_runs','?')}件の役割agent実行"
         f"（重複{meta.get('n_duplicate_records_dropped','?')}件を排除済み）",
         f"閾値 {threshold} を超えたセッション: {len(sessions)}", "",
-        "> 候補であって台帳の1件ではない。読んで、摩擦だと判断したものだけを "
-        "`projects/<p>/friction-log.md` に起票する（cause_key は既存を先に見る）。", "",
+        "> 候補であって台帳の1件ではない。読んで、摩擦だと判断したものだけを台帳へ起票する。"
+        "起票先は、プロジェクトの実装・契約・設計の話なら `projects/<p>/friction-log.md`、"
+        "テンプレート本体（規程・雛形・道具・ADR・PR本文）の話なら `meta/friction-log.md`"
+        "（meta/adr/0058）。**cause_key は4冊すべてを先に見る**——台帳を跨いだ再出現も "
+        "govlint が報告する。", "",
     ]
     for s in sessions:
         lines.append(f"## [{s['score']}] {s['session']}  {s['start'][:16]} → {s['end'][:16]}")
