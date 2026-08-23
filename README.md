@@ -66,7 +66,7 @@ guardrails/    強制の実体（branch protection手順・lint）
 .claude/       agent定義とdeny設定
 ```
 
-B層（技術スタック別・設計パック別の部品）は、実プロジェクトで実証された(スタック×役割)を
+B層（技術スタック別の具体配線）は、実プロジェクトで実証された(スタック×構成)を
 「昇格」して埋めていく任意のカタログ（A→Bの一方向依存。前提でなく選択肢）。まだ何も昇格していない。
 必要になったプロジェクトが現れた時に作る（P-02: 全体を先に設計しない）。
 
@@ -78,7 +78,7 @@ B層（技術スタック別・設計パック別の部品）は、実プロジ�
 1. [HANDOFF.md](HANDOFF.md) を読む（このリポジトリで作業を始めるAI・人間向けの導入）
 2. [meta/PRINCIPLES.md](meta/PRINCIPLES.md) の P-01〜P-11 を読む
 3. `git config core.hooksPath .githooks` で Conventional Commits を強制する
-4. architectに複雑度を評価させ、設計パックを選ばせる（ADR第1号として記録する。
+4. architectに複雑度を評価させ、そこから設計軸ごとの構成を導かせる（各軸の決定・根拠・禁じる依存をADR第1号として記録する。
    [meta/architecture-selection.md](meta/architecture-selection.md)）
 5. 最初の縦切り1スライスの契約を書かせ、**人間が承認する**
 6. （UIを持つプロジェクトなら）designerに画面モックを作らせ、**人間が承認する**

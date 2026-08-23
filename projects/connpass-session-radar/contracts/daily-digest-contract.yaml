@@ -15,14 +15,31 @@
 #   InterestConditions — 利用者がYAMLへcommitする興味の条件（adr/0001決定4の取得ウィンドウ設定を含む）
 #   NormalizedEvent    — 絞り込み・算出後、connpassの生の形式から独立したイベント1件の内部表現
 #   DailyDigest        — 整形段の出力であり、配信段（Notifier）への入力。1回の配信＝1つのDailyDigest
-#   NotifierPort        — 配信先を差し替え可能にする境界（adr/0001決定2）。LINE実装は本ADRで確定した
-#                        既定実装であり、この契約自体はLINE固有ではない
+#   NotifierPort        — 配信先を差し替え可能にする境界（adr/0001決定2、adr/0003）。Discord
+#                        Webhook実装が現在の既定であり、この契約自体はDiscord固有ではない
 #
 # connpass API v2自体のフィールド名・制約は `connpass-api-v2-facts.md` が一次情報として持つ。本契約は
 # それを再定義しない——NormalizedEventは、絞り込み・算出を終えたあとの内部表現だけを定める。
-# 同様にLINE Messaging APIの実際のリクエスト/レスポンス形式もLINE自身の外部契約であり、本契約は
-# NotifierPortの入出力（DailyDigestとNotifierResult）だけを定め、LINE固有のペイロード形式は
-# 定めない（adr/0001決定2の実装時に、DailyDigestからLINEのbroadcast形式へ変換するアダプタが持つ）。
+# 同様にDiscord Webhookの実際のリクエスト/レスポンス形式もDiscord自身の外部契約であり、本契約は
+# NotifierPortの入出力（DailyDigestとNotifierResult）だけを定め、Discord固有のペイロード形式は
+# 定めない（adr/0003の実装時に、DailyDigestからEmbedまたは添付形式へ変換するアダプタが持つ）。
+#
+# 2026-08-23 改訂4 (adr/0005): InterestProfileに`startsInDays`と`publishedWithinDays`を足し、
+# 「開催日で拾う窓」と「公開日で拾う窓」の2種類を表せるようにした。初日の実データ78件・約9,900文字
+# （Embed上限6,000超で添付に退避）と、7日窓が同じイベントを7回くり返す構造への対処である。
+# あわせて`NormalizedEvent.catchPhrase`を足した——タイトルだけでは開くかどうか判断できない、という
+# 利用者の指摘に対し、主催者が書いた1行をそのまま運ぶ。CSR-D-01〜10のThenは変わらない。
+# このPRのマージが本改訂の承認となる。
+#
+# 2026-08-23 改訂3: NormalizedEventに`attendeeCount`を足した。利用者が「話題性のあるもの（申込者が
+# 多いもの）」を知りたいと述べたのに対し、connpass APIには参加者数で絞る・並べる手段が無い——できるのは
+# 取得済みの`accepted`を示して読み手に判断を委ねることだけである。CSR-D-01〜10のThenは変わらない
+# （示す情報が1つ増えるだけで、含まれない・示されないと定めた事項は増えていない）。あわせて
+# `adr/0004`が興味条件に地域を書く判断を記録した。このPRのマージが本改訂の承認となる。
+#
+# 2026-08-22 改訂2: adr/0003により既定NotifierをDiscord Webhookへ置換した。通常はEmbed、容量超過時は
+# 同じ1メッセージへ完全一覧を添付し、mentionを無効化する。NotifierPortのスキーマとCSR-D-01〜10の
+# 振る舞いは変更しない。このPRのマージが注記の再承認となる。
 #
 # 2026-08-16 改訂: CSR-D-02・CSR-D-07は、daily-digest.feature・daily-digest-test-support.yamlの
 # どちらのpayload形状にも直接現れにくい性質のシナリオである——CSR-D-02は「一致しない」という
@@ -31,7 +48,7 @@
 # InterestConditionsの読み直し方針）——force-fitではなく、元から書かれるべきだった記述である。
 
 title: Connpass Session Radar — daily digest data contract
-version: 0.1.0-draft
+version: 0.3.0-draft
 description: >-
   毎朝1回のパイプライン実行が生成・消費するデータの形。CSR-D-* の受け入れシナリオ
   (daily-digest.feature) が観測する外部から見た振る舞いを、実装可能な形へ橋渡しする。
@@ -109,10 +126,30 @@ components:
           minimum: 1
           default: 7
           description: >-
-            当日から何日先までのイベントを対象にするか（adr/0001決定4）。既定値7はadr/0001が推奨する
-            値であり、固定値ではない——興味の条件に合う件数の実際の分量を見て利用者が調整してよい。
+            開催日で拾うとき、`startsInDays`から何日分を対象にするか（adr/0001決定4、adr/0005）。
             この値がそのまま取得段の内部実装（`ymd`列挙か`ym`取得のいずれか、adr/0001決定4）を
             決めるわけではなく、取得段はこの日数を満たす結果を返すという契約だけを守ればよい。
+        startsInDays:
+          type: integer
+          minimum: 0
+          default: 0
+          description: >-
+            開催日の窓を当日から何日後に始めるか（adr/0005決定1）。`startsInDays: 7`・
+            `windowDays: 1`は「ちょうど7日後に開催されるものだけ」を意味し、これが**リード軸**である
+            ——毎朝の一覧に同じイベントが`windowDays`回くり返し載るのを1回に畳むための指定である。
+        publishedWithinDays:
+          type: integer
+          minimum: 1
+          description: >-
+            **新着軸**（adr/0005決定1）。昨日を末尾とする直近N日間にconnpassへ公開されたイベントを
+            拾う。**開催日は問わない**——三か月先のカンファレンスが今日告知されたなら、今日の一覧に
+            載る。これが、リード軸だけでは「開催`startsInDays`日前より後に告知されたイベントを
+            永久に取り逃す」という穴を塞ぐ。
+            今日を含めないのは、実行が朝であり今日はまだ終わっていないためである——含めると、
+            早朝に公開されたイベントが今日と明日の2回載る。
+            **`windowDays`・`startsInDays`とは併用できない**。前者はconnpassの`publish_ymd`、
+            後者は`ymd`に対応し、**両者を同一リクエストへ渡したときの結合の意味は一次情報に無い**
+            （connpass-api-v2-facts.md）。推測で埋めない（P-08）。
 
     NormalizedEvent:
       type: object
@@ -172,6 +209,25 @@ components:
           description: >-
             残席が無い、または新たな申し込みが補欠（`waiting > 0`）になっている状態を表す
             （CSR-D-09）。remainingSeatsKnownがfalseのときも、`waiting`から独立に判定してよい。
+        attendeeCount:
+          type: integer
+          nullable: true
+          description: >-
+            connpassで参加を受け付けているイベントの参加者数（`accepted`）。**話題性の目安**であり、
+            残席とは別の情報である——定員が大きければ残席が多いまま参加者も多い、ということが起こる。
+            利用者は「申込者が多いイベント」を知りたいと述べており（2026-08-23の人間判断）、
+            connpass APIには参加者数で絞る・並べるパラメータが無いため、値を示して読み手に委ねる。
+            `eventType=advertisement`のときはconnpass側に受付が無く意味を持たないためnull
+            （product-brief §3の2026-08-16人間判断と同じ理由）。
+        catchPhrase:
+          type: string
+          nullable: true
+          description: >-
+            主催者が書いたイベントの1行説明（connpassの`catch`）。**開くかどうかを判断する材料**で
+            あり、タイトルだけでは中身が分からないイベントのために載せる（adr/0005決定2）。
+            **主催者の文章をそのまま運ぶ**——要約も言い換えも生成もしない（product-brief §3・§8）。
+            連続する空白は1つに畳み、100文字を超える場合だけ末尾を`…`で切る。これは一覧の分量を
+            守るための表示上の措置であり、事実の加工ではない。`catch`が空のイベントではnull。
 
     DailyDigest:
       type: object
@@ -206,7 +262,7 @@ components:
       type: object
       description: >-
         配信段の抽象境界（adr/0001決定2）。DailyDigestを受け取り、配信先固有の表現へ変換して送信し、
-        NotifierResultを返す。LINE実装（adr/0001で確定した既定）・将来のSlack実装のいずれも、この
+        NotifierResultを返す。Discord Webhook実装（adr/0003で確定した既定）・将来の実装も、この
         入出力契約だけを満たせばよく、パイプラインの他の段（取得・絞り込み・算出・整形）はどちらの
         実装が使われているかを意識しない。この境界自体はOpenAPIのHTTP操作ではなく、実装内の関数・
         インターフェース境界として実現する（言語非依存。architecture-selection.md 6節）。

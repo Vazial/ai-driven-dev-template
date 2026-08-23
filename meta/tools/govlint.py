@@ -5,12 +5,15 @@
   [ERROR] スキーマ妥当性       … 必須フィールドの有無・値の妥当性
   [ERROR] 参照整合             … supersedes/superseded_by/pushed_to の参照先が実在するか、supersede関係が対称か
   [ERROR] シナリオIDの整合     … .feature内でIDが一意か、API仕様が参照するIDが実在するか
-  [ERROR] 検証ゲートの施錠     … .claude/settings.json の permissions.deny に検証ツール保護4項目が揃っているか（ADR-0046）
+  [ERROR] 検証ゲートのask登録   … .claude/settings.json の permissions.ask に検証ツール保護4項目が揃っているか（ADR-0054）
   [REPORT] cause_keyの再出現   … 同一原因の2回目以降＝構造的欠陥のシグナル（人間が判断する。失敗させない）
+                                 台帳ごとの集計に加え、台帳を跨いだ集計も報告する（meta/adr/0058）
   [REPORT] 未対応FRの棚卸し
   [REPORT] 提案中ADRの棚卸し   … status: 提案中 のまま滞留しているADR（meta/adr/0035）
   [REPORT] 承認待ち契約の棚卸し … ステータス: 承認待ち のまま残っている契約（meta/adr/0043）
   [REPORT] 実装待ちシナリオの棚卸し … @pending-implementation が付いたままのシナリオ（FR-014）
+  [REPORT] ADRの文体            … 太字率・120字超の文・挿入節（——）の3項目。meta scopeかつid 0053以上の
+                            ADRのみ対象（meta/adr/0053 決定3・決定4）
 
 終了コード: ERRORが1件でもあれば1、なければ0（REPORTは0のまま）。
 
@@ -141,11 +144,12 @@ def check_role_agent_ssot() -> None:
             errors.append(f"meta/agent-runtime-mapping.md: {role} のCodex modelが無い")
 
 
-# ---------------------------------------------------------------- verification gate lock (ADR-0046)
-# ADR-0046 決定1が定めるdeny項目。決定3はこの4項目が `.claude/settings.json` の
-# permissions.deny に揃っていることをgovlintがERRORで確認すると定める（開錠は人間、
-# 施錠の確認は機械）。
-REQUIRED_DENY_ENTRIES = [
+# ---------------------------------------------------------------- verification gate ask-list (ADR-0054)
+# ADR-0054 決定1が、検証ツール保護4項目を permissions.deny から permissions.ask へ移した
+# （対象パス自体はADR-0046決定1から変えていない）。決定2はこの4項目が `.claude/settings.json` の
+# permissions.ask に揃っていることをgovlintがERRORで確認すると定める（承認するかどうかは
+# 人間の判断のまま、askへの登録有無の確認は機械が担う）。
+REQUIRED_ASK_ENTRIES = [
     "Edit(./meta/tools/**)",
     "Write(./meta/tools/**)",
     "Edit(./**/build.gradle*)",
@@ -154,26 +158,25 @@ REQUIRED_DENY_ENTRIES = [
 
 
 def check_verification_gate_lock() -> None:
-    """`.claude/settings.json` の permissions.deny に、検証ツール保護4項目
-    （ADR-0046決定1）が揃っていることを検証する。
+    """`.claude/settings.json` の permissions.ask に、検証ツール保護4項目
+    （ADR-0054決定1）が揃っていることを検証する。
 
-    ERRORにしてよい理由（ADR-0046決定3）: 「開錠すべきか」は人間の判断のまま残るが、
-    「deny項目が文字列として存在するか」は機械が確定できる事実判定であり、
+    ERRORにしてよい理由（ADR-0054決定2）: 「確認プロンプトを承認すべきか」は人間の判断の
+    まま残るが、「ask項目が文字列として存在するか」は機械が確定できる事実判定であり、
     意味判定をERROR化しないという原則（ADR-0035）には抵触しない。
 
-    ファイルが無い・JSONとして壊れている・permissions.denyが配列でない場合もERROR:
-    いずれの状態でも「施錠されている」ことを機械が確認できない。ここを黙って通す
-    （REPORTに留める・スキップする）と、施錠の未確認そのものが「気づかないまま
-    抜け穴が開く」というADR-0046が防ごうとしている失敗を、確認ツール自身の側で
-    再生産してしまう。ADR-0046が本ADR自身の実装対象として名指ししているのは
-    「施錠が外れている」状態の検出であり、ここに含めるのが最も筋が通る。
+    ファイルが無い・JSONとして壊れている・permissions.askが配列でない場合もERROR:
+    いずれの状態でも「書き込み時に人間の確認プロンプトが出る」ことを機械が確認できない。
+    ここを黙って通す（REPORTに留める・スキップする）と、保護未確認そのものが「気づかない
+    まま抜け穴が開く」というADR-0046由来の失敗（ADR-0054が引き継いだ問題意識）を、
+    確認ツール自身の側で再生産してしまう。
     """
     path = ROOT / ".claude" / "settings.json"
     rel = path.relative_to(ROOT).as_posix()
 
     if not path.is_file():
         errors.append(
-            f"{rel}: ファイルが無い（ADR-0046決定1の検証ツール保護denyの施錠状態を確認できない）"
+            f"{rel}: ファイルが無い（ADR-0054決定1の検証ツール保護askの登録状態を確認できない）"
         )
         return
 
@@ -184,16 +187,16 @@ def check_verification_gate_lock() -> None:
         return
 
     permissions = data.get("permissions") if isinstance(data, dict) else None
-    deny = permissions.get("deny") if isinstance(permissions, dict) else None
-    if not isinstance(deny, list):
-        errors.append(f"{rel}: permissions.deny が無いか配列でない（ADR-0046決定1）")
+    ask = permissions.get("ask") if isinstance(permissions, dict) else None
+    if not isinstance(ask, list):
+        errors.append(f"{rel}: permissions.ask が無いか配列でない（ADR-0054決定1）")
         return
 
-    missing = [entry for entry in REQUIRED_DENY_ENTRIES if entry not in deny]
+    missing = [entry for entry in REQUIRED_ASK_ENTRIES if entry not in ask]
     if missing:
         errors.append(
-            f"{rel}: permissions.deny に ADR-0046決定1 の検証ツール保護項目が欠けている "
-            f"（missing={missing}）。開錠されたまま（施錠忘れの状態で）マージしようとしている"
+            f"{rel}: permissions.ask に ADR-0054決定1 の検証ツール保護項目が欠けている "
+            f"（missing={missing}）。人間の確認プロンプトなしで書き込めてしまう状態のままマージしようとしている"
         )
 
 
@@ -294,13 +297,142 @@ def report_pending_adrs(adrs: dict[str, dict], today: date | None = None) -> Non
         reports.append(f"  提案中: {rel}（起草 {drafted} / {age_text}）")
 
 
+# ---------------------------------------------------------------- ADRの文体（meta/adr/0053 決定3）
+# 機械で数えられる3項目（太字率・1文の長さ・挿入節の数）を報告する。ERRORにはしない
+# （決定3が明示。終了コードは変えない）。対象は meta scope かつ id が 0053 以上のADRのみ
+# （決定4: 承認済みADRは書き直さないため、適用開始前のADRを報告しても直せず雑音になる）。
+ADR_STYLE_MIN_ID = 53
+ADR_STYLE_BOLD_RATIO_THRESHOLD = 10.0  # %超で報告
+ADR_STYLE_SENTENCE_LENGTH_THRESHOLD = 120  # 字超で報告
+ADR_STYLE_INSERTION_THRESHOLD = 3  # 回超で報告
+
+# 文長の対象から外す行（表・箇条書き・引用・見出し）。改行も文の区切りとして扱う
+# （meta/adr/0053 決定3が実測で示した誤検出——表と箇条書きが連結されて1文として数えられた——を防ぐ）。
+ADR_STYLE_EXCLUDED_LINE_RE = re.compile(r"^\s*(?:\||[-*+]\s|\d+[.)]\s|>|#)")
+ADR_STYLE_SENTENCE_SPLIT_RE = re.compile(r"(?<=[。！？])")
+
+
+def adr_style_body(text: str) -> str:
+    """frontmatterと、コードブロック・インラインコードを落とした本文を返す（数える前の前処理）。
+
+    コードブロック/インラインコードを落とすのは、`Write(./meta/tools/**)` のような表記に
+    含まれる `**` を太字と誤って数えないため（meta/adr/0053 決定3）。
+    """
+    body = text
+    if body.startswith("---\n"):
+        end = body.find("\n---", 4)
+        if end != -1:
+            rest = body[end + 4:]
+            nl = rest.find("\n")
+            body = rest[nl + 1:] if nl != -1 else ""
+    body = re.sub(r"```.*?```", "", body, flags=re.S)
+    body = re.sub(r"`[^`\n]*`", "", body)
+    return body
+
+
+def adr_style_bold_ratio(body: str) -> float:
+    """太字（`**...**`。改行をまたぐ組は数えない）が本文に占める割合(%)。"""
+    if not body:
+        return 0.0
+    bold_chars = sum(len(m) for m in re.findall(r"\*\*([^\n]*?)\*\*", body))
+    return bold_chars / len(body) * 100
+
+
+def adr_style_long_sentences(body: str) -> list[str]:
+    """表・箇条書き・引用・見出しの行を除いた本文から、閾値超の文を抽出する（改行も文の区切り）。"""
+    out: list[str] = []
+    for line in body.split("\n"):
+        if ADR_STYLE_EXCLUDED_LINE_RE.match(line):
+            continue
+        stripped = line.strip()
+        if not stripped:
+            continue
+        for seg in ADR_STYLE_SENTENCE_SPLIT_RE.split(stripped):
+            seg = seg.strip()
+            if seg and len(seg) > ADR_STYLE_SENTENCE_LENGTH_THRESHOLD:
+                out.append(seg)
+    return out
+
+
+def adr_style_insertion_count(body: str) -> int:
+    """挿入節（全角ダッシュ2つ `——`）の出現回数。"""
+    return body.count("——")
+
+
+def check_adr_style(adrs: dict[str, dict]) -> None:
+    """ADRの文体のうち機械で数えられる3項目（太字率・1文の長さ・挿入節の数）を報告する
+    （meta/adr/0053 決定3）。
+
+    ERRORにしない: 文体でマージを止めるのは過剰であり、不採用の理由は本ADRが明記している。
+    対象は meta scope かつ id が 0053 以上のADRのみ（決定4）。
+    """
+    for entry in sorted(adrs.values(), key=lambda e: e["path"]):
+        fm, rel = entry["fm"], entry["path"]
+        if fm.get("scope") != "meta":
+            continue
+        try:
+            adr_id = int(str(fm.get("id")))
+        except (TypeError, ValueError):
+            continue
+        if adr_id < ADR_STYLE_MIN_ID:
+            continue
+
+        path = ROOT / rel
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        body = adr_style_body(text)
+
+        ratio = adr_style_bold_ratio(body)
+        if ratio > ADR_STYLE_BOLD_RATIO_THRESHOLD:
+            reports.append(
+                f"{rel}: 太字が本文の{ratio:.1f}%を占める"
+                f"（閾値{ADR_STYLE_BOLD_RATIO_THRESHOLD:.0f}%超。meta/adr/0053 決定3）"
+            )
+
+        long_sentences = adr_style_long_sentences(body)
+        if long_sentences:
+            longest = max(long_sentences, key=len)
+            head = longest[:30]
+            reports.append(
+                f"{rel}: {ADR_STYLE_SENTENCE_LENGTH_THRESHOLD}字超の文が{len(long_sentences)}件"
+                f"（最長{len(longest)}字、冒頭: '{head}...'）（meta/adr/0053 決定3）"
+            )
+
+        insertions = adr_style_insertion_count(body)
+        if insertions > ADR_STYLE_INSERTION_THRESHOLD:
+            reports.append(
+                f"{rel}: 挿入節（全角ダッシュ2連）が{insertions}回"
+                f"（閾値{ADR_STYLE_INSERTION_THRESHOLD}回超。meta/adr/0053 決定3）"
+            )
+
+
 # ---------------------------------------------------------------- friction-log
 FR_BLOCK_RE = re.compile(r"^## (FR-\d+):.*?\n+```yaml\n(.*?)\n```", re.S | re.M)
 
 
+def friction_log_paths() -> list[Path]:
+    """走査対象の台帳。C層（projects/<p>/）に加えA層（meta/friction-log.md）を含む（meta/adr/0058）。
+
+    A層の台帳が無いあいだ、テンプレート本体の作業で起きた摩擦は行き場がなく、ADR本文が代役を
+    務めていた。実害として `approval-artifact-readability-convention-missing` の4回目・5回目が
+    どこにも記録されないまま通り過ぎている（meta/adr/0058 文脈3）。
+    """
+    paths = sorted((ROOT / "projects").glob("*/friction-log.md"))
+    meta_log = ROOT / "meta" / "friction-log.md"
+    if meta_log.exists():
+        paths.append(meta_log)
+    return paths
+
+
 def check_friction_logs() -> None:
     required = ["id", "date", "found_at", "cause_category", "cause_key", "status"]
-    for path in sorted((ROOT / "projects").glob("*/friction-log.md")):
+    # 台帳を跨いだ cause_key の集計（meta/adr/0058 決定・論点2＝案2-B）。ファイル単位の報告は
+    # 残したまま、横断の再出現を**追加で**報告する。FR番号は台帳ごとに1から振られていて重複する
+    # ため、横断側は必ずファイルパス付きで出す（同ADR 文脈6）。
+    across: dict[str, list[str]] = {}
+    for path in friction_log_paths():
         rel = path.relative_to(ROOT).as_posix()
         text = path.read_text(encoding="utf-8")
 
@@ -333,6 +465,7 @@ def check_friction_logs() -> None:
                     errors.append(f"{rel} {fr_id}: pushed_to '{target}' が存在しない")
             if fm.get("cause_key"):
                 by_cause.setdefault(fm["cause_key"], []).append(fr_id)
+                across.setdefault(fm["cause_key"], []).append(f"{rel} {fr_id}")
             if fm.get("status") == "未対応":
                 reports.append(f"{rel} {fr_id}: 未対応のまま（棚卸し対象）")
 
@@ -342,6 +475,18 @@ def check_friction_logs() -> None:
                     f"{rel}: cause_key '{cause_key}' が {len(ids)}回 出現 → 構造的欠陥のシグナル "
                     f"（{', '.join(ids)}）。個別対処でなく一般ルール化を検討すること"
                 )
+
+    # 横断（meta/adr/0058）。1冊の中では2回に届かないが台帳を跨ぐと届く原因を拾う。
+    # 1冊に収まっている原因は上のファイル単位の報告と重複するので、ここでは出さない。
+    for cause_key, refs in sorted(across.items()):
+        if len(refs) < 2:
+            continue
+        if len({ref.rsplit(" ", 1)[0] for ref in refs}) < 2:
+            continue
+        reports.append(
+            f"[横断] cause_key '{cause_key}' が {len(refs)}回 出現（{len({r.rsplit(' ', 1)[0] for r in refs})}冊の台帳に分散） "
+            f"→ 構造的欠陥のシグナル（{', '.join(refs)}）。個別対処でなく一般ルール化を検討すること"
+        )
 
 
 # ---------------------------------------------------------------- 契約
@@ -546,6 +691,7 @@ def main() -> int:
     adrs = check_adrs()
     check_adr_links(adrs)
     report_pending_adrs(adrs)
+    check_adr_style(adrs)
     check_friction_logs()
     check_scenario_ids()
     check_contract_status()
