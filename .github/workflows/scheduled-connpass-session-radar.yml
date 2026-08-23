@@ -1,0 +1,37 @@
+name: Connpass Session Radar daily delivery
+
+# GitHub executes scheduled workflows from the default branch. The timezone is
+# explicit so the agreed 08:00 delivery does not depend on UTC conversion.
+
+on:
+  schedule:
+    - cron: "0 8 * * *"
+      timezone: "Asia/Tokyo"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: connpass-session-radar-daily-delivery
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: projects/connpass-session-radar
+
+jobs:
+  deliver:
+    name: Deliver the daily digest
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Fetch events and broadcast one digest
+        run: node src/index.js
+        env:
+          CONNPASS_API_KEY: ${{ secrets.CONNPASS_API_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
