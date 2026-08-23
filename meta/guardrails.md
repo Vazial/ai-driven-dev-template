@@ -16,25 +16,59 @@
 ## 2. PR・CI
 
 - **PR雛形の実体は `.github/pull_request_template.md` 一本（meta/adr/0057 決定3）**。GitHubがPR作成時に自動で開く＝全PRが必ず通る関所だからである。`meta/templates/pull-request.md` は複製を持たずここを指す
-- **PR本文は、このリポジトリを知らない人が読めるように書く（meta/adr/0057）**: 本文を上下2段に分ける。上段は読む人のためのもので「何が変わるか」「判断してほしいこと」「なぜ」「代償・残る弱点」の4節、区切り線から下は記録（変更したファイル・検証・統合先と対象契約・手続き）。**区切り線は「ここから下は判断に要らない」という合図**である。上段の書き方は3つ——**記号（`ADR-00xx`・`FR-0xx`・`P-0x`・`L0`・シナリオID）を裸で置かず、中身を先に一言添える**／**他のPRやissueの中身を前提にしない**（「#121の起こし直し」だけでは伝わらない）／**「なぜ」は起きた事から始める**（規程の引用・ファイル名・IDから始めない）。タイトルも同じで、末尾の「（ADR-00xx）」に中身を代弁させない。**機械検査は無い**——PR本文はリポジトリの中に無くgovlintからは見えない。守られているかは人間が読んで判断する。後退条件（守られない場合にhookで測る案へ進む条件）は meta/adr/0057 決定4
+- **PR本文は、このリポジトリを知らない人が読めるように書く（meta/adr/0057）**:
+  - 本文を上下2段に分ける。上段は読む人のためのもので「何が変わるか」「判断してほしいこと」「なぜ」「代償・残る弱点」の4節、区切り線から下は記録（変更したファイル・検証・統合先と対象契約・手続き）。
+  - **区切り線は「ここから下は判断に要らない」という合図**である。
+  - 上段の書き方は3つ——**記号（`ADR-00xx`・`FR-0xx`・`P-0x`・`L0`・シナリオID）を裸で置かず、中身を先に一言添える**／**他のPRやissueの中身を前提にしない**（「#121の起こし直し」だけでは伝わらない）／**「なぜ」は起きた事から始める**（規程の引用・ファイル名・IDから始めない）。
+  - タイトルも同じで、末尾の「（ADR-00xx）」に中身を代弁させない。
+  - **機械検査は無い**——PR本文はリポジトリの中に無くgovlintからは見えない。守られているかは人間が読んで判断する。
+  - 後退条件（守られない場合にhookで測る案へ進む条件）は meta/adr/0057 決定4
 - PRテンプレート必須項目: 「判断してほしいこと（種別と判断の要否）」「対象契約（シナリオID）」「DoD充足のエビデンス（CI結果）」
-- **PR種別と人間の判断の要否（meta/adr/0041）**: 判定基準は「**そのPRに、人間がまだしていない決定が含まれるか**」であり、PRの形（base/head）ではない。**スライス**（base=`project/<p>`）と **meta**（base=`main`、共有ガバナンス）は**承認事項あり**。**昇格**（base=`main`、head=`project/<p>`）は中身が承認済みコミットの積み上げのみで**承認事項なし**——マージはbranch protectionの形式要件であり、本文はDoD表・承認方式・論拠を書かず「載るもの」と検証結果に絞る。**同期**（base=`project/<p>`、head=`main`）は原則承認事項なしだが、**衝突解決を含む場合は判断であり冒頭に明記する**。**機械検証（L0〜L4）はどの種別でも省略しない**——統合して初めて壊れる場合があるため、orchestratorは統合結果に対して検証してから提出する（meta/adr/0039 決定1）。「承認事項なし」は人間の判断が不要という意味であって、検証が不要という意味ではない
-- **ADRの採番（meta/adr/0026 決定4・meta/adr/0052）**: 番号は**mainだけでなく、未マージのリモートブランチ全部**を見てから取る。「オープン中のPR」だけでは足りない——**PRを持たないブランチが番号を握っていた実例がある**（採番衝突4回目）。確認は次の1本で足りる。番号を取ったら**本文を書き終える前にプレースホルダをコミットしDraft PRを開く**（meta/adr/0026 決定4 手順2）——PRを開かずに番号だけ握ることは、下記CI検査の**検出網の外に出る**行為である（GitHub Actionsは対象PRのイベントでしか走らない）
+- **PR種別と人間の判断の要否（meta/adr/0041）**:
+  - 判定基準は「**そのPRに、人間がまだしていない決定が含まれるか**」であり、PRの形（base/head）ではない。
+  - **スライス**（base=`project/<p>`）と **meta**（base=`main`、共有ガバナンス）は**承認事項あり**。
+  - **昇格**（base=`main`、head=`project/<p>`）は中身が承認済みコミットの積み上げのみで**承認事項なし**——マージはbranch protectionの形式要件であり、本文はDoD表・承認方式・論拠を書かず「載るもの」と検証結果に絞る。
+  - **同期**（base=`project/<p>`、head=`main`）は原則承認事項なしだが、**衝突解決を含む場合は判断であり冒頭に明記する**。
+  - **機械検証（L0〜L4）はどの種別でも省略しない**——統合して初めて壊れる場合があるため、orchestratorは統合結果に対して検証してから提出する（meta/adr/0039 決定1）。
+  - 「承認事項なし」は人間の判断が不要という意味であって、検証が不要という意味ではない
+- **ADRの採番（meta/adr/0026 決定4・meta/adr/0052）**:
+  - 番号は**mainだけでなく、未マージのリモートブランチ全部**を見てから取る。
+  - 「オープン中のPR」だけでは足りない——**PRを持たないブランチが番号を握っていた実例がある**（採番衝突4回目）。
+  - 確認は次の1本で足りる。
+  - 番号を取ったら**本文を書き終える前にプレースホルダをコミットしDraft PRを開く**（meta/adr/0026 決定4 手順2）——PRを開かずに番号だけ握ることは、下記CI検査の**検出網の外に出る**行為である（GitHub Actionsは対象PRのイベントでしか走らない）
   ```bash
   git fetch --all --quiet
   for b in $(git ls-remote --heads origin | awk '{sub("refs/heads/","",$2); print $2}'); do
     git ls-tree -r --name-only "origin/$b" -- meta/adr | grep -oE '[0-9]{4}'
   done | sort -u | tail -5
   ```
-- CI構成（meta/adr/0026 決定1）: L0（govlint、`.github/workflows/govlint.yml`）はリポジトリ横断の共有ゲートで**常時実行・pathsフィルタなし**。各プロジェクトのL1〜L4は `.github/workflows/ci-<project>.yml` に分割し、自プロジェクト配下（`projects/<project>/**` と当該ワークフロー自身）の変更時のみ起動する。**新プロジェクトの参入は `ci-<project>.yml` を1本足すだけ**（共有ファイル・他プロジェクトのワークフローは編集しない）
-- **ADR採番の衝突検査（meta/adr/0052）**: `.github/workflows/adr-number.yml` が、(1)ツリー内の同一ディレクトリ・同一番号の重複と、(2)このPRが追加・改名したADR番号を他のオープンPRが主張していないかを検査する。**落ちるのは後発のPR＝振り直すべき側**。govlintに同居させないのは、govlintの「ネットワーク不使用・ROOT配下のみ」という性格（meta/adr/0014）と施錠（meta/adr/0046）を保つため。**required化はしていない**（PR画面の赤で足りる、で始める。P-05）
-- CI必須チェック（現状＝meta/adr/0026 決定1.3 の**案i**）: **L0（govlint）のみを hard-required** とする（全PRで必ず起動する共有ゲートのため required 化しても滞留しない）。各プロジェクトの L1 → L2 → L3 → L4（verification.md参照）は、pathsフィルタで無関係PRでは起動しないため**まだ required 化しておらず**、PR上で緑をレビュー時に目視確認する運用。将来 案ii（Rulesets のパス条件付き required）／案iii（ジョブ常時起動＋内部paths判定）で機械必須化に強化しうる。**pathsフィルタとrequired checksの噛み合わせ**（無関係PRで起動しないジョブがrequiredのまま滞留する既知の癖）の詳細は meta/adr/0026 決定1.3 参照。required checks一覧の変更は人間承認（meta/permissions.md「ゲート変更」）
-- **配線・結合の検証ゲート（meta/adr/0032）**: 部品・プロジェクトを跨ぐ配線とデータ疎通は**機械検証で
-  担保する**。agentが実スタックを手で起動して画面を目視する「ユースケース走破」を、この回帰ゲートに
-  用いない（機械検証でない＝P-01違反／アドホックな起動は非再現）。走破は**未知の帰結の探索**と、**意味
-  理解が要るUX・control surfaceの確認**（meta/adr/0024）に限る。層状のゲートの構成は
-  meta/verification.md「L3詳細」および §3.4 を参照
-- `main` はGitHub ruleset `protect main`（2026-07-27時点で有効）で保護されている。`project/<project>` はプロジェクト開始時に**AIが `gh` のadmin権限で GitHub Rulesets REST API（`gh api repos/:owner/:repo/rulesets`）を用いて作成し**、同じ保護（`pull_request`：PR経由のみ・直push不可／`non_fast_forward`：force push禁止／`deletion`：削除禁止／`required_status_checks`：`L0: 統治文書の整合(govlint)` を必須）をrulesetで設定する（`protect project/<project>` という名前、対象refは `refs/heads/project/<project>`。テンプレは既存の `protect main`・`protect project/toyama-weekend-radar` と同一。meta/adr/0028）。人間はプロジェクト開始をchatでauthorizeし作成結果を確認する。`project/reservation-frontend` はこの方式の初適用として作成済み（ブランチ＋ruleset `protect project/reservation-frontend`、2026-07-29。ADR-0028）。`project/toyama-dining-radar` も同じ方式で作成済み（ブランチ＋ruleset `protect project/toyama-dining-radar`、2026-07-30）——**プロジェクトを `dining-radar` へ改名した後もこのブランチ名とruleset名は据え置いた**（`projects/dining-radar/adr/0026`。refresh or retire の判断とセットで扱うため）。`project/reservation-system` は現時点で未作成である。rulesetの実体はGitHub設定（git管理外）に存在するため、作成・変更時は本行も更新する。
+- CI構成（meta/adr/0026 決定1）:
+  - L0（govlint、`.github/workflows/govlint.yml`）はリポジトリ横断の共有ゲートで**常時実行・pathsフィルタなし**。
+  - 各プロジェクトのL1〜L4は `.github/workflows/ci-<project>.yml` に分割し、自プロジェクト配下（`projects/<project>/**` と当該ワークフロー自身）の変更時のみ起動する。
+  - **新プロジェクトの参入は `ci-<project>.yml` を1本足すだけ**（共有ファイル・他プロジェクトのワークフローは編集しない）
+- **ADR採番の衝突検査（meta/adr/0052）**:
+  - `.github/workflows/adr-number.yml` が、(1)ツリー内の同一ディレクトリ・同一番号の重複と、(2)このPRが追加・改名したADR番号を他のオープンPRが主張していないかを検査する。
+  - **落ちるのは後発のPR＝振り直すべき側**。
+  - govlintに同居させないのは、govlintの「ネットワーク不使用・ROOT配下のみ」という性格（meta/adr/0014）と施錠（meta/adr/0046）を保つため。
+  - **required化はしていない**（PR画面の赤で足りる、で始める。P-05）
+- CI必須チェック（現状＝meta/adr/0026 決定1.3 の**案i**）:
+  - **L0（govlint）のみを hard-required** とする（全PRで必ず起動する共有ゲートのため required 化しても滞留しない）。
+  - 各プロジェクトの L1 → L2 → L3 → L4（verification.md参照）は、pathsフィルタで無関係PRでは起動しないため**まだ required 化しておらず**、PR上で緑をレビュー時に目視確認する運用。
+  - 将来 案ii（Rulesets のパス条件付き required）／案iii（ジョブ常時起動＋内部paths判定）で機械必須化に強化しうる。
+  - **pathsフィルタとrequired checksの噛み合わせ**（無関係PRで起動しないジョブがrequiredのまま滞留する既知の癖）の詳細は meta/adr/0026 決定1.3 参照。
+  - required checks一覧の変更は人間承認（meta/permissions.md「ゲート変更」）
+- **配線・結合の検証ゲート（meta/adr/0032）**:
+  - 部品・プロジェクトを跨ぐ配線とデータ疎通は**機械検証で担保する**。
+  - agentが実スタックを手で起動して画面を目視する「ユースケース走破」を、この回帰ゲートに用いない（機械検証でない＝P-01違反／アドホックな起動は非再現）。
+  - 走破は**未知の帰結の探索**と、**意味理解が要るUX・control surfaceの確認**（meta/adr/0024）に限る。
+  - 層状のゲートの構成は meta/verification.md「L3詳細」および §3.4 を参照
+- `main` はGitHub ruleset `protect main`（2026-07-27時点で有効）で保護されている。
+- `project/<project>` はプロジェクト開始時に**AIが `gh` のadmin権限で GitHub Rulesets REST API（`gh api repos/:owner/:repo/rulesets`）を用いて作成し**、同じ保護（`pull_request`：PR経由のみ・直push不可／`non_fast_forward`：force push禁止／`deletion`：削除禁止／`required_status_checks`：`L0: 統治文書の整合(govlint)` を必須）をrulesetで設定する（`protect project/<project>` という名前、対象refは `refs/heads/project/<project>`。テンプレは既存の `protect main`・`protect project/toyama-weekend-radar` と同一。meta/adr/0028）。
+- 人間はプロジェクト開始をchatでauthorizeし作成結果を確認する。
+- `project/reservation-frontend` はこの方式の初適用として作成済み（ブランチ＋ruleset `protect project/reservation-frontend`、2026-07-29。ADR-0028）。
+- `project/toyama-dining-radar` も同じ方式で作成済み（ブランチ＋ruleset `protect project/toyama-dining-radar`、2026-07-30）——**プロジェクトを `dining-radar` へ改名した後もこのブランチ名とruleset名は据え置いた**（`projects/dining-radar/adr/0026`。refresh or retire の判断とセットで扱うため）。
+- `project/reservation-system` は現時点で未作成である。
+- rulesetの実体はGitHub設定（git管理外）に存在するため、作成・変更時は本行も更新する。
 
 ## 3. シークレット・破壊的操作
 
@@ -50,10 +84,8 @@
 
 - 全agentは起動時に PRINCIPLES.md + 自分の役割定義 + activeContext.md を読む
 - activeContext.mdの更新タイミングと権限は permissions.md に従う
-- **役割定義（`.claude/agents/**`）を変えるPRをマージしたら、その役を起動する前にセッションを開き直す**
-  （meta/adr/0059 決定1）。役割定義はセッションを開いた時点で読み込まれ、走っている間は更新されない。
-  マージした同じセッションから起動すると、**説明文も `tools:` の道具一覧も古いまま走る**。2026-08-23に
-  実際に起きた（`meta/friction-log.md` FR-003）。git からは見えないので機械検査は無い——役割agent側の
-  起動時の自己検証（同 決定2）と、この手順の2つで見る
-- 役割agentは起動したら、自分の役割定義の `tools:` に挙がった道具が実際に渡されているかを確かめ、
-  食い違ったら作業を始めずに報告して止まる（meta/adr/0059 決定2）
+- **役割定義（`.claude/agents/**`）を変えるPRをマージしたら、その役を起動する前にセッションを開き直す**（meta/adr/0059 決定1）。
+  - 役割定義はセッションを開いた時点で読み込まれ、走っている間は更新されない。
+  - マージした同じセッションから起動すると、**説明文も `tools:` の道具一覧も古いまま走る**。2026-08-23に実際に起きた（`meta/friction-log.md` FR-003）。
+  - git からは見えないので機械検査は無い——役割agent側の起動時の自己検証（同 決定2）と、この手順の2つで見る
+- 役割agentは起動したら、自分の役割定義の `tools:` に挙がった道具が実際に渡されているかを確かめ、食い違ったら作業を始めずに報告して止まる（meta/adr/0059 決定2）
