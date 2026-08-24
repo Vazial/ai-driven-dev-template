@@ -28,20 +28,6 @@
       "port": 5173
     },
     {
-      "name": "dining-radar-design-preview",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": [
-        "--prefix",
-        "projects/dining-radar/design-preview",
-        "run",
-        "dev",
-        "--",
-        "--port",
-        "5174"
-      ],
-      "port": 5174
-    },
-    {
       "name": "reservation-frontend-real-api",
       "runtimeExecutable": "npm",
       "runtimeArgs": [
