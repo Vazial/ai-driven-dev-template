@@ -722,7 +722,7 @@ def check_contract_status() -> None:
 #
 # 遡及しない（決定5）。判定は date で切る。本ADRの日付より前に起草されたADRと契約は、承認欄が
 # マージ依存のままでも触らない。既存を一括で書き換えることは、読まずに承認するのと同じである。
-APPROVAL_VENUE_MIN_DATE = "2026-08-24"
+APPROVAL_VENUE_MIN_DATE = "2026-08-25"
 MERGE_APPROVAL_RE = re.compile(r"マージ(?:をもって|＝|=)承認")
 CONTRACT_STATUS_LINE_RE = re.compile(r"^#\s*ステータス:.*$", re.M)
 
