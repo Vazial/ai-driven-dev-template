@@ -1321,5 +1321,107 @@ class TestCheckPolicyDocBullets(GovlintTestCase):
         govlint.check_policy_doc_bullets()
         self.assertEqual(govlint.errors, [])
 
+# ---------------------------------------------------------------- 承認をどこで取ったか（ADR-0064）
+class TestCheckApprovalVenue(GovlintTestCase):
+    """合意はチャットで取り、承認欄に日付と裁定の要旨を書く（meta/adr/0064 決定1・3）。"""
+
+    NEW = "2026-08-25"   # 適用開始日より後
+    OLD = "2026-08-01"   # 適用開始日より前（遡及しない）
+    CHAT = '"人間裁定（2026-08-25 チャット: 窓の幅を7日にする）"'
+    MERGE = '"本PRのマージをもって承認"'
+
+    def _write_adr(self, adr_id: str, *, date: str, status: str, approved_by: str) -> None:
+        write(
+            self.root / "meta" / "adr" / f"{adr_id}-sample.md",
+            dedent(
+                f"""
+                ---
+                id: {adr_id}
+                scope: meta
+                status: {status}
+                date: {date}
+                approved_by: {approved_by}
+                supersedes: []
+                superseded_by: null
+                relates_to: []
+                ---
+                # ADR-{adr_id}: サンプル
+                """
+            ),
+        )
+
+    def _run(self) -> None:
+        adrs = govlint.check_adrs()
+        govlint.errors.clear()  # check_adrs 側のスキーマ検証の結果は本テストの対象外
+        govlint.check_approval_venue(adrs)
+
+    def test_chat_agreement_is_accepted(self) -> None:
+        self._write_adr("0100", date=self.NEW, status="承認済み", approved_by=self.CHAT)
+        self._run()
+        self.assertEqual(govlint.errors, [])
+
+    def test_merge_dependent_approval_is_error(self) -> None:
+        """マージに承認を預けた形は、いつ誰と合意したかが残らない。形式判定なのでERROR。"""
+        self._write_adr("0100", date=self.NEW, status="承認済み", approved_by=self.MERGE)
+        self._run()
+        self.assertEqual(len(govlint.errors), 1)
+        self.assertIn("承認をマージに預けている", govlint.errors[0])
+        self.assertIn("meta/adr/0064", govlint.errors[0])
+
+    def test_empty_approved_by_on_approved_adr_is_error(self) -> None:
+        self._write_adr("0100", date=self.NEW, status="承認済み", approved_by="null")
+        self._run()
+        self.assertEqual(len(govlint.errors), 1)
+        self.assertIn("approved_by が空", govlint.errors[0])
+
+    def test_adr_drafted_before_the_rule_is_untouched(self) -> None:
+        """既存を一括で書き換えることは、読まずに承認するのと同じ（決定5）。"""
+        self._write_adr("0100", date=self.OLD, status="承認済み", approved_by=self.MERGE)
+        self._run()
+        self.assertEqual(govlint.errors, [])
+
+    def test_pending_adr_is_untouched(self) -> None:
+        """判断を意図して保留している状態は残す（ADR-0035 方式(ii)）。"""
+        self._write_adr("0100", date=self.NEW, status="提案中", approved_by="null")
+        self._run()
+        self.assertEqual(govlint.errors, [])
+
+    def _write_feature(self, status_line: str) -> None:
+        write(
+            self.root / "projects" / "p" / "contracts" / "a.feature",
+            dedent(
+                f"""
+                # サンプル 受け入れシナリオ
+                {status_line}
+
+                Feature: サンプル
+                  Given 何か
+                """
+            ),
+        )
+
+    def test_contract_chat_agreement_is_accepted(self) -> None:
+        self._write_feature("# ステータス: 承認済み(2026-08-25) — 人間裁定（チャット: 窓の幅を7日に）")
+        govlint.check_approval_venue({})
+        self.assertEqual(govlint.errors, [])
+
+    def test_contract_merge_dependent_status_is_error(self) -> None:
+        self._write_feature("# ステータス: 承認済み(2026-08-25) — このPRのマージをもって承認")
+        govlint.check_approval_venue({})
+        self.assertEqual(len(govlint.errors), 1)
+        self.assertIn("承認をマージに預けている", govlint.errors[0])
+
+    def test_contract_approved_before_the_rule_is_untouched(self) -> None:
+        self._write_feature("# ステータス: 承認済み(2026-08-01) — このPRのマージをもって承認")
+        govlint.check_approval_venue({})
+        self.assertEqual(govlint.errors, [])
+
+    def test_contract_pending_is_left_to_the_other_check(self) -> None:
+        """承認待ちの棚卸しは check_contract_status の領分。ここでは二重に鳴らさない。"""
+        self._write_feature("# ステータス: 承認待ち")
+        govlint.check_approval_venue({})
+        self.assertEqual(govlint.errors, [])
+
+
 if __name__ == "__main__":
     unittest.main()

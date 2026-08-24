@@ -710,6 +710,60 @@ def check_contract_status() -> None:
         reports.append(f"  承認待ち: {rel}")
 
 
+# ------------------------------------------------- 承認をどこで取ったか（meta/adr/0064）
+# 承認材料が読めないという摩擦が6回くり返された。原因は文章力ではなく、人間が決断させられる
+# 場所がPR本文だったことである。PR本文は一方通行で、読み手が途中で聞き返せない。合意はチャットで
+# 取り、成立した時点で approved_by に日付と裁定の要旨を書く。マージは決まったことを公表する
+# 操作になる（meta/adr/0064 決定1）。
+#
+# ここでERRORにしてよいのは形式判定だからである。承認欄に日付と裁定の要旨があるかどうかは
+# 機械が確定できる。意味判定をERRORに載せない原則（P-04）に反しない。「承認すべきか」は
+# 依然として人間の判断であり、そちらはREPORT（report_pending_adrs）に留めてある。
+#
+# 遡及しない（決定5）。判定は date で切る。本ADRの日付より前に起草されたADRと契約は、承認欄が
+# マージ依存のままでも触らない。既存を一括で書き換えることは、読まずに承認するのと同じである。
+APPROVAL_VENUE_MIN_DATE = "2026-08-24"
+MERGE_APPROVAL_RE = re.compile(r"マージ(?:をもって|＝|=)承認")
+CONTRACT_STATUS_LINE_RE = re.compile(r"^#\s*ステータス:.*$", re.M)
+
+
+def check_approval_venue(adrs: dict[str, dict]) -> None:
+    """承認をマージに預けたままのADRと契約をERRORにする（meta/adr/0064 決定3）。"""
+    for entry in sorted(adrs.values(), key=lambda e: e["path"]):
+        fm, rel = entry["fm"], entry["path"]
+        if fm.get("status") != "承認済み":
+            continue
+        if str(fm.get("date") or "") < APPROVAL_VENUE_MIN_DATE:
+            continue
+        approved = str(fm.get("approved_by") or "").strip()
+        if not approved or approved == "None":
+            errors.append(
+                f"{rel}: status='承認済み' だが approved_by が空。"
+                f"いつ誰と何を合意したかを書くこと（meta/adr/0064 決定1）"
+            )
+        elif MERGE_APPROVAL_RE.search(approved):
+            errors.append(
+                f"{rel}: approved_by が承認をマージに預けている。合意はチャットで取り "
+                f"`人間裁定（YYYY-MM-DD チャット: 裁定の要旨）` と書く。"
+                f"マージは決まったことを公表する操作である（meta/adr/0064 決定1・3）"
+            )
+
+    for contracts in sorted((ROOT / "projects").glob("*/contracts")):
+        for feature in sorted(contracts.glob("*.feature")):
+            rel = feature.relative_to(ROOT).as_posix()
+            text = feature.read_text(encoding="utf-8")
+            m = CONTRACT_STATUS_RE.search(text)
+            # ステータス行が無い・形式不正・承認待ちは check_contract_status の領分
+            if not m or m.group(2) is None or m.group(2) < APPROVAL_VENUE_MIN_DATE:
+                continue
+            line = CONTRACT_STATUS_LINE_RE.search(text)
+            if line and MERGE_APPROVAL_RE.search(line.group(0)):
+                errors.append(
+                    f"{rel}: ステータス行が承認をマージに預けている。合意はチャットで取り、"
+                    f"日付と裁定の要旨を書く（meta/adr/0064 決定1・3）"
+                )
+
+
 def check_scenario_ids() -> None:
     """シナリオIDの定義が一意か、参照（.feature内・API仕様内）が実在の定義に解決するかを検証する。
 
@@ -780,6 +834,7 @@ def main() -> int:
     check_friction_logs()
     check_scenario_ids()
     check_contract_status()
+    check_approval_venue(adrs)
 
     print(f"govlint: ADR {len(adrs)}本を検証")
     if reports:
