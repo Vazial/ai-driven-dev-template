@@ -10,7 +10,7 @@
 | コミット規約 | Conventional Commits（feat / fix / refactor / test / docs / chore） | commitlint |
 | ブランチ運用 | `main`をリリース可能なブランチ、`project/<project>`を各プロジェクトの統合ブランチとする。1スライス=対応する `project/<project>`から切る1短命ブランチ=1PR（baseは `project/<project>`）。`project/<project>`から`main`へのPRで、そのプロジェクトのリリース可能なまとまりを昇格する。命名は `<type>/<project>-<slice>`（共有ガバナンスは例外的に `meta/<slug>`でmainをbaseとする）。meta/adr/0026 決定2、meta/adr/0028 | 運用 + PRテンプレ + branch protection |
 | AIができること | ブランチ作成（スライス短命ブランチ、および `project/<project>`統合ブランチ＋保護rulesetの作成。admin権限が要る。meta/adr/0028）、コミット、PR作成 | — |
-| 人間のみができること | main・`project/<project>`へのマージ | branch protection |
+| 人間のみができること | main・`project/<project>`へのマージ。合意はチャットで先に取るため、マージは承認ではなく公表の操作だが、**差分が合意と一致しているかを見る最後の機会**として人間に残す。AIへ移す条件は meta/adr/0064 決定4 | branch protection |
 | 禁止操作 | force push、main・`project/<project>`への直接push、ブランチ/タグの削除 | branch protection + agent権限設定 |
 
 ## 2. PR・CI

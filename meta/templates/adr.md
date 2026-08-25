@@ -3,7 +3,7 @@ id: NNNN
 scope: meta | project/<プロジェクト名>
 status: 提案中 | 承認済み | superseded
 date: YYYY-MM-DD
-approved_by: "本PRのマージをもって承認 | 人間裁定（<文脈>） | ..."
+approved_by: "人間裁定（YYYY-MM-DD チャット: 裁定の要旨） | null（承認は後日）"
 supersedes: []
 superseded_by: null
 relates_to: []
@@ -49,7 +49,9 @@ frontmatter（機械可読なメタデータ。meta/adr/0012。meta/tools/govlin
 - 1決定1枚。承認後の本文編集は禁止
 - 覆す時は新しいADRを書き、このファイルの status を superseded に変え superseded_by を設定するだけ
 - 承認は人間のみ（permissions.md）。architectがドラフトする
-- PRで提案するADRは、status を「承認済み」・approved_by を「本PRのマージをもって承認」と書いてよい（meta/adr/0006）
+- 合意はチャットで取り、成立した時点で approved_by に日付と裁定の要旨を書く。マージは決まったことを公表する操作であり、承認行為ではない（meta/adr/0064）
+- 「本PRのマージをもって承認」とは書かない。この形のまま「承認済み」になっているADRは govlint がERRORにする（meta/adr/0064 決定3）
+- 承認をまだ取らないなら status を「提案中」・approved_by を null のまま出す。判断を意図して保留する場合に限る（meta/adr/0035 方式(ii)）
 - **本文（文脈・代替案・帰結）はproseのまま**。理由・経緯・判断はスキーマ化しない（P-03）
 
 文体（meta/adr/0053）— ADRは「そのADRだけ読んで分かる」ように書く:
