@@ -56,8 +56,6 @@
   }
 
   var filterBar = document.getElementById("candidate-filter-bar");
-  var candidateCounter = null;
-  var candidateOrderByRef = {};
 
   // adr/0019 (unchanged by adr/0023): visible labels for the coarse card
   // reference enums. These exact strings are the browser-interface
@@ -85,14 +83,150 @@
   // correct (see that Python constant's own docstring for the full
   // reasoning; the API schema cannot enforce this agreement structurally).
   // Also reused to draw one walking-radius ring per preset around the
-  // search-origin marker.
-  var WALKING_TIME_MAX_PRESETS_MINUTES = [10, 15, 20, 30];
+  // search-origin marker, smallest first (ring styling below relies on this
+  // ascending order).
+  // Human decision 2026-08-26 added 5 ("徒歩5分もあってもいいかも"); the
+  // filter-side 5 preset is the developer's own extension for the same
+  // change, not itself asked for by the human -- see the mirrored Python
+  // constant's own comment.
+  var WALKING_TIME_MAX_PRESETS_MINUTES = [5, 10, 15, 20, 30];
   // Mirrors recommendation.pipeline.WALKING_METERS_PER_MINUTE exactly (the
   // walking-speed convention Japan's real-estate fair-competition rules fix
   // for "徒歩1分" figures), used only to convert a preset minute count into
   // a ring radius in meters for display -- never to recompute a candidate's
   // own walkingTimeMinutes, which the server always supplies.
   var WALKING_METERS_PER_MINUTE = 80;
+  // adr/0029 decision 1-2/4: mirrors
+  // dining_radar.recommendation.pipeline.WALKING_DETOUR_FACTOR exactly. The
+  // server's walking_time_minutes() (which every ring/card/filter figure is
+  // ultimately derived from) multiplies a straight-line distance by this
+  // factor before dividing by WALKING_METERS_PER_MINUTE; this module cannot
+  // call that Python function directly, so it mirrors both constants here to
+  // draw a ring radius that matches the server's own walking-time estimate
+  // (this is the same manual cross-module synchronization responsibility
+  // WALKING_TIME_MAX_PRESETS_MINUTES above already carries -- see
+  // pipeline.walking_time_minutes's own docstring for the developer
+  // obligation this creates).
+  var WALKING_DETOUR_FACTOR = 1.3;
+  // Used only to place a walking-radius ring's visible minute label at a
+  // point on the ring's own circumference (due north of the search origin,
+  // the same small-scale equirectangular approximation
+  // recommendation.pipeline._distance uses server-side) -- never to compute
+  // a ring's radius itself, which Leaflet's L.circle already accepts
+  // directly in meters.
+  var METERS_PER_DEGREE_LATITUDE = 111320;
+
+  // adr/0030 decision 1 + human decision 2026-08-26: every non-accent ring
+  // now shares one dash pattern/opacity (see the CSS rule for
+  // [data-testid="candidate-walking-radius-ring"] in home.html) -- the
+  // earlier per-band dash/opacity step-down (solid -> dotted, innermost to
+  // outermost) read as "それぞれ線が違います" on a real device once each
+  // ring already carries its own legible minute label. The ring matching
+  // the currently applied walking-time-max filter (if any) still gets a
+  // distinct accent style via the CSS "--accent" modifier classes below.
+  var WALKING_RADIUS_RING_BASE_WEIGHT = 1.8;
+  var WALKING_RADIUS_RING_CASING_EXTRA_WEIGHT = 3;
+  var WALKING_RADIUS_RING_ACCENT_WEIGHT = 2.4;
+  // Nudge margin (pixels) a ring's label is kept inside the visible map
+  // container by, so a label is never clipped flush against the edge.
+  var WALKING_RADIUS_RING_LABEL_MARGIN_PX = 20;
+  // Real-device report (2026-08-26): a ring's minute label was rendered
+  // directly behind a candidate-map-marker pin, hiding it. Designer's own
+  // spec only says "put the label on top of the line" -- no rule for
+  // avoiding a marker, so this developer-chosen placement strategy tries a
+  // small set of points around each ring's own circumference (clockwise
+  // degrees from due north, the previous fixed position, tried first so a
+  // label only moves when it actually needs to) and picks the first one
+  // that does not overlap any candidate/origin marker or an already-placed
+  // ring label, falling back to the original north position if every
+  // candidate collides (a slightly crowded label still beats none at all).
+  var WALKING_RADIUS_RING_LABEL_ANGLES_DEG = [0, 45, -45, 90, -90, 135, -135, 180];
+  // Conservative estimated half-extents (pixels) used only for this
+  // collision check, not for actual layout -- generous enough to cover the
+  // widest label text ("30分" at this chip's font-size/padding) without
+  // measuring the real (not-yet-attached) DOM element.
+  var WALKING_RADIUS_RING_LABEL_HALF_WIDTH_PX = 30;
+  var WALKING_RADIUS_RING_LABEL_HALF_HEIGHT_PX = 14;
+  // Candidate/origin marker icon half-sizes (iconSize is 44/28px square,
+  // anchored at its own center -- see initializeMap below), used the same
+  // way.
+  var CANDIDATE_MAP_MARKER_HALF_SIZE_PX = 22;
+  var CANDIDATE_ORIGIN_MARKER_HALF_SIZE_PX = 14;
+
+  // Task 2 (human decision 2026-08-26): fitBounds' padding is symmetric on
+  // one axis at a time -- Leaflet's `padding: [x, y]` shrinks the box it
+  // fits the given bounds into by x on the left+right and y on the top+
+  // bottom -- and the open-viewport value below (24, applied to a full-
+  // screen box hundreds of px tall) barely matters there. The closed band
+  // is a fixed 88px tall (home.html's .candidate-map-wrapper), so the same
+  // 24 on *both* axes there left only 88 - 24*2 = 40px of usable height,
+  // forcing fitBounds to pick a far-more-zoomed-out level than the band's
+  // actual ~350-400px width would need on its own -- since a single zoom
+  // level has to satisfy both axes at once, that over-zoomed-out level
+  // compressed every candidate's pixel distance from the others too,
+  // reproducing the real-device report's "5つのピンが帯の中央で重なって
+  // いる" (measured: pins clustered into a single ~15px blob instead of
+  // spreading across the band). Real-device round 9 measurement:
+  // MAP_BAND_FIT_PADDING_PX's asymmetric [16, 6] (16px left/right, only
+  // 6px top/bottom) roughly doubles the usable-height budget (88 - 6*2 =
+  // 76px) while still keeping candidates near the band's own left/right
+  // edges from touching it -- letting the band's own wide-short aspect
+  // ratio actually drive the zoom level instead of being dominated by its
+  // small height. Applied only while the sheet is closed (refreshMapView
+  // AndRings/initializeMap below both branch on mapSheetOpen); the open,
+  // full-screen fitBounds path (reached only when no candidate is
+  // selected to setView on) is unchanged from before this task.
+  //
+  // Measured limit of this fix, worth recording rather than silently
+  // discovering again later: Leaflet's fitBounds floors to the nearest
+  // whole zoom level (zoomSnap defaults to 1), so shrinking the top/bottom
+  // value further than 6 (tried 2 directly against this same local demo)
+  // did not change the outcome at all -- the extra few pixels of budget
+  // were not enough to cross the next zoom-level threshold. Separately,
+  // this local demo's own NORMAL_WITH_WEIGHTED_SAMPLING synthetic
+  // candidates (acceptance_state.py's _synthetic_candidate) all fix
+  // longitude=0.0 by that module's own deliberate, documented design (an
+  // exact 1-D latitude-only distance formula for deterministic walking-
+  // time boundaries) -- so every candidate this padding value was tuned
+  // against is collinear north-south, and no padding choice can spread
+  // them east-west. Production candidates (real provider data) are not
+  // collinear, so this same fix spreads them on both axes there; against
+  // this synthetic fixture specifically it only ever had the latitude
+  // axis to work with, which the measurement above (roughly doubled
+  // vertical marker spread, band-clustering visibly reduced though not
+  // eliminated -- five candidates spaced ~20m apart cannot occupy
+  // visually distinct positions inside an 88px-tall real-scale map view
+  // no matter the zoom) already accounts for.
+  var MAP_BAND_FIT_PADDING_PX = [16, 6];
+  var MAP_OPEN_FIT_PADDING_PX = [24, 24];
+
+  // Desktop 2-column layout (Desktop.dc.html decisions 1/2, human decision
+  // 2026-08-26 "デスクトップは閉じてなくていいんじゃないかな。ずっと右に
+  // 表示とかで"): at >=64rem the map is a permanent sticky column (home.html
+  // `@media (min-width: 64rem)` -- kept in exact agreement with this same
+  // "64rem" literal here, since CSS media queries and JS matchMedia cannot
+  // share one source of truth), not the mobile-only 88px closed band
+  // MAP_BAND_FIT_PADDING_PX's own comment describes. isCompactMapBand tells
+  // the two fitBounds call sites below (initializeMap, refreshMapViewAndRings)
+  // which padding suits the box actually on screen: the closed band's own
+  // asymmetric padding only makes sense for that specific tiny, wide-short
+  // box, never for the desktop column (roughly as tall as it is wide, much
+  // closer in shape to the mobile full-screen sheet MAP_OPEN_FIT_PADDING_PX
+  // was tuned for) or for the mobile sheet itself (already excluded by the
+  // `!mapSheetOpen` check, unchanged from before this task).
+  function isCompactMapBand() {
+    return !mapSheetOpen && !(window.matchMedia && window.matchMedia("(min-width: 64rem)").matches);
+  }
+
+  // Layers this module adds beyond candidate/origin markers (walking-radius
+  // ring paths, their white casings, minute labels, and the innermost-band
+  // tint) -- tracked so a later re-layout (map resize, e.g. opening/closing
+  // the full-screen map sheet) can clear and redraw them against the map's
+  // new size, and so a fresh initializeMap call starts from none.
+  var walkingRadiusRingLayers = [];
+  var walkingRadiusRingOrigin = null;
+  var currentMapLatLngs = [];
+  var originMarkerEl = null;
 
   // adr/0024 decision 4 item 8: shownCandidateMemory's sessionStorage key and
   // retention bound. 20 hours (not the regulatory ceiling of 24) leaves a
@@ -125,6 +259,32 @@
   // them (see renderProblem's `additive` parameter and
   // applyPendingFilters/handleProposalResponse below).
   var hasDisplayedProposal = false;
+
+  // Task 3 (designer): list-primary + 88px map ribbon + tap-to-open
+  // full-screen map sheet, one Leaflet map instance throughout (the same
+  // [data-testid="candidate-map"] element/instance is simply resized by CSS
+  // -- see initializeMap's ResizeObserver and openMapSheet/closeMapSheet
+  // below). mapSheetOpen tracks which of the two states the map is
+  // currently in; selectedCandidateRef mirrors the currently selected
+  // candidate outside of selectCandidate's own DOM bookkeeping so the sheet
+  // knows who to show/center on; latLngByRef lets the sheet re-center
+  // without re-deriving a candidate's coordinates. orderedCardElements/
+  // cardsContainerEl/mapSheetPanelEl support moving the single selected
+  // candidate-card element (never cloning/duplicating it -- see
+  // syncMapSheetPanelToSelection) between the list and the sheet.
+  var mapSheetOpen = false;
+  var selectedCandidateRef = null;
+  var latLngByRef = {};
+  var orderedCardElements = [];
+  var cardsContainerEl = null;
+  var mapWrapperEl = null;
+  var mapSheetPanelEl = null;
+  var mapSheetCounterEl = null;
+  // The element focus should return to when the sheet closes -- whichever
+  // control opened it (the ribbon, or a marker tapped while it was
+  // reachable) -- so closing the sheet does not strand keyboard focus on a
+  // now-detached/moved element.
+  var sheetCloseFocusTarget = null;
 
   function defaultFilters() {
     return {
@@ -326,6 +486,7 @@
   }
 
   function selectCandidate(candidateRef, revealCard) {
+    selectedCandidateRef = candidateRef;
     Object.keys(cardElementsByRef).forEach(function (ref) {
       var state = ref === candidateRef ? "selected" : "unselected";
       cardElementsByRef[ref].setAttribute("data-selection-state", state);
@@ -333,17 +494,21 @@
         markerElementsByRef[ref].setAttribute("data-selection-state", state);
       }
     });
-    if (candidateCounter && candidateOrderByRef[candidateRef] !== undefined) {
-      candidateCounter.textContent =
-        String(candidateOrderByRef[candidateRef] + 1) + "/" +
-        String(Object.keys(cardElementsByRef).length);
-    }
     if (revealCard && cardElementsByRef[candidateRef]) {
       cardElementsByRef[candidateRef].scrollIntoView({
         behavior: "smooth",
         block: "nearest",
         inline: "center",
       });
+    }
+    // Task 3: inside the full-screen map sheet, the sheet always shows
+    // exactly the currently selected candidate (designer: "選択中の1店だけ
+    // を残す") -- switching which pin is selected (or, outside the sheet,
+    // which card) keeps the sheet's single-candidate panel in sync without
+    // duplicating any candidate-card element (see syncMapSheetPanelToSelection).
+    if (mapSheetOpen) {
+      syncMapSheetPanelToSelection();
+      refreshMapViewAndRings();
     }
   }
 
@@ -377,27 +542,15 @@
       }
     });
 
-    // Identification row: the same number the map marker shows (so a card
-    // and its marker are visually tied together) and the genre as a small
-    // chip.
+    // Design realignment (human real-device report 2026-08-25, E:\AWS    // dsg-out\Main.dc.html's own .card markup): the id row carries the
+    // badge, the shop name itself, and the walking-time estimate as a
+    // trailing chip, all on one line -- not just the badge with genre
+    // trailing it. Genre moves to its own plain-text line (no chip)
+    // directly above the description, and walking time moves out of the
+    // facts grid entirely (into this row's chip), leaving the facts grid
+    // exactly the four/three items the design's own 2-column grid shows.
     var idRow = el("div", { "class": "candidate-card-id-row" }, [
       el("span", { "class": "candidate-marker-badge", "aria-hidden": "true" }, [String(index + 1)]),
-    ]);
-    idRow.appendChild(
-      el(
-        "p",
-        {
-          "data-testid": "candidate-card-genre",
-          "data-field-label": "ジャンル",
-          "data-value-state": "provided",
-          "class": "candidate-genre-chip",
-        },
-        [candidate.genre]
-      )
-    );
-    card.appendChild(idRow);
-
-    card.appendChild(
       el(
         "h3",
         {
@@ -407,20 +560,61 @@
           "class": "candidate-shop-name",
         },
         [candidate.name]
+      ),
+      el("span", { "class": "candidate-card-id-row-spacer", "aria-hidden": "true" }, []),
+      // adr/0025 decision 2: always provided (never "情報なし" -- walking
+      // time is always computable from the response's own searchOrigin and
+      // this candidate's location), so no rawValueAttribute is declared --
+      // the visible value and the raw response number are the same value,
+      // unlike totalSeats/nonSmokingStatus/dinnerBudgetTier's coarse-label
+      // translations below. The leading "約" is the required estimate-
+      // wording signal (candidate-search-browser-interface.yaml's
+      // walkingTimeEstimateWording): this is an estimate, not a measured
+      // route. Contract only fixes this element's own testid/field-label/
+      // value-state/text -- not that it be a dt/dd fieldRow pair -- so a
+      // standalone chip carries the same attributes fieldRow would have.
+      el(
+        "span",
+        {
+          "data-testid": "candidate-card-walking-time",
+          "data-field-label": "徒歩",
+          "data-value-state": "provided",
+          "class": "candidate-walk-chip",
+        },
+        ["徒歩 約" + candidate.walkingTimeMinutes + "分"]
+      ),
+    ]);
+    card.appendChild(idRow);
+
+    card.appendChild(
+      el("p", { "data-testid": "candidate-card-genre", "data-field-label": "ジャンル", "data-value-state": "provided", "class": "candidate-genre-text" }, [
+        candidate.genre,
+      ])
+    );
+
+    // Design realignment (E:\AWS\dsg-out\Main.dc.html): description is a
+    // plain paragraph directly under genre, not a labelled fact row inside
+    // the facts grid -- design shows no "紹介" heading at all, just the
+    // text itself. fieldRow always renders a visible dt label, so this is
+    // built directly instead; data-field-label/-value-state/rawValueAttribue-
+    // equivalent absence match what fieldRow would have produced for this
+    // same field (fieldRow's own "unavailable" fallback text is kept too).
+    var descriptionProvided =
+      candidate.description !== null && candidate.description !== undefined && candidate.description !== "";
+    card.appendChild(
+      el(
+        "p",
+        {
+          "data-testid": "candidate-card-description",
+          "data-field-label": "紹介",
+          "data-value-state": descriptionProvided ? "provided" : "unavailable",
+          "class": "candidate-description-text",
+        },
+        [descriptionProvided ? candidate.description : "紹介文の登録はありません"]
       )
     );
 
     var facts = el("dl", { "class": "candidate-facts" }, []);
-    facts.appendChild(
-      fieldRow(
-        "紹介",
-        "candidate-card-description",
-        candidate.description,
-        undefined,
-        undefined,
-        "紹介文の登録はありません"
-      )
-    );
     facts.appendChild(
       fieldRow(
         "総席数",
@@ -455,26 +649,6 @@
         "data-raw-value",
         undefined,
         "夜予算"
-      )
-    );
-    // adr/0025 decision 2: always provided (never "情報なし" -- walking time
-    // is always computable from the response's own searchOrigin and this
-    // candidate's location), so no rawValueAttribute is declared -- the
-    // visible value and the raw response number are the same value, unlike
-    // totalSeats/nonSmokingStatus/dinnerBudgetTier's coarse-label
-    // translations above. The leading "約" is the required estimate-wording
-    // signal (candidate-search-browser-interface.yaml's
-    // walkingTimeEstimateWording): this is an estimate, not a measured
-    // route.
-    facts.appendChild(
-      fieldRow(
-        "徒歩のめやす",
-        "candidate-card-walking-time",
-        candidate.walkingTimeMinutes,
-        "約" + candidate.walkingTimeMinutes + "分",
-        undefined,
-        undefined,
-        "徒歩"
       )
     );
     card.appendChild(facts);
@@ -523,8 +697,476 @@
     return card;
   }
 
+  function clearWalkingRadiusRingLayers() {
+    walkingRadiusRingLayers.forEach(function (layer) {
+      layer.remove();
+    });
+    walkingRadiusRingLayers = [];
+  }
+
+  // adr/0025 decision 1 (rings exist) + adr/0029 decisions 1/2/4 (their
+  // radii use the detour-corrected walking-time estimate) +
+  // contracts/candidate-search-browser-interface.yaml's walkingRadiusRings.
+  // bandLabel (adr/0030 decision 1, every present ring must carry a visible/
+  // accessible label matching its bandAttribute) + designer's ring-
+  // legibility guidance (casing, per-band dash/opacity steps, an accent
+  // ring for the applied walking-time-max filter, an innermost-band tint,
+  // and skipping/nudging labels for rings that fall off the current map
+  // view). Re-runs from scratch on every call (see clearWalkingRadiusRingLayers
+  // above) so it can be called again whenever the map's own size or view
+  // changes -- see initializeMap's ResizeObserver below, which is the only
+  // caller today.
+  function layoutWalkingRadiusRings(map, originLatLng) {
+    clearWalkingRadiusRingLayers();
+    if (!originLatLng || !window.L) {
+      return;
+    }
+
+    var containerSize = map.getSize();
+    var originPoint = map.latLngToContainerPoint(originLatLng);
+    var selectedMinutes = currentFilters.walkingTimeMaxMinutes;
+
+    var rings = WALKING_TIME_MAX_PRESETS_MINUTES.map(function (minutes, index) {
+      var radiusMeters = (minutes * WALKING_METERS_PER_MINUTE) / WALKING_DETOUR_FACTOR;
+      var northLatLng = window.L.latLng(
+        originLatLng[0] + radiusMeters / METERS_PER_DEGREE_LATITUDE,
+        originLatLng[1]
+      );
+      var northPoint = map.latLngToContainerPoint(northLatLng);
+      var radiusPx = originPoint.distanceTo(northPoint);
+      var nearestPoint = window.L.point(
+        Math.max(0, Math.min(containerSize.x, originPoint.x)),
+        Math.max(0, Math.min(containerSize.y, originPoint.y))
+      );
+      var nearestDistance = originPoint.distanceTo(nearestPoint);
+      var corners = [
+        window.L.point(0, 0),
+        window.L.point(containerSize.x, 0),
+        window.L.point(0, containerSize.y),
+        window.L.point(containerSize.x, containerSize.y),
+      ];
+      var farthestDistance = corners.reduce(function (farthest, corner) {
+        return Math.max(farthest, originPoint.distanceTo(corner));
+      }, 0);
+      // A ring's boundary crosses the currently visible container exactly
+      // when the container's nearest point to the origin is within the
+      // ring's radius and its farthest point is beyond it -- if the whole
+      // container were inside the ring (farthest < radius), no part of the
+      // ring's line would actually cross it, so it is treated the same as
+      // "entirely outside" (designer's "1本も入らない輪は描かない").
+      var visible = nearestDistance <= radiusPx && radiusPx <= farthestDistance;
+      return {
+        minutes: minutes,
+        index: index,
+        radiusMeters: radiusMeters,
+        northPoint: northPoint,
+        radiusPx: radiusPx,
+        visible: visible,
+      };
+    });
+
+    // Nudge an off-center label back into the visible map area (designer:
+    // "画面外に出る輪は画面内へ寄せる"), inset by a margin so it never sits
+    // flush against the edge.
+    function clampLabelPointToContainer(point) {
+      return window.L.point(
+        Math.min(
+          Math.max(point.x, WALKING_RADIUS_RING_LABEL_MARGIN_PX),
+          containerSize.x - WALKING_RADIUS_RING_LABEL_MARGIN_PX
+        ),
+        Math.min(
+          Math.max(point.y, WALKING_RADIUS_RING_LABEL_MARGIN_PX),
+          containerSize.y - WALKING_RADIUS_RING_LABEL_MARGIN_PX
+        )
+      );
+    }
+
+    // A label at candidatePoint overlaps a keep-out entry when both axes'
+    // gaps are smaller than the two boxes' combined half-extents -- a plain
+    // axis-aligned rectangle overlap test, generous enough (see the two
+    // *_HALF_*_PX constants above) to not need the label's real, not-yet-
+    // attached DOM size.
+    function labelPointCollides(candidatePoint, keepOutEntries) {
+      return keepOutEntries.some(function (entry) {
+        return (
+          Math.abs(candidatePoint.x - entry.point.x) <
+            WALKING_RADIUS_RING_LABEL_HALF_WIDTH_PX + entry.halfWidth &&
+          Math.abs(candidatePoint.y - entry.point.y) <
+            WALKING_RADIUS_RING_LABEL_HALF_HEIGHT_PX + entry.halfHeight
+        );
+      });
+    }
+
+    // Every candidate/origin marker's current on-screen position, used only
+    // to steer ring labels away from them (see
+    // WALKING_RADIUS_RING_LABEL_ANGLES_DEG's own comment above) -- markers
+    // themselves are laid out separately by initializeMap, which always
+    // populates latLngByRef before this function runs (both on initial
+    // load and on every later re-layout).
+    var labelKeepOutEntries = Object.keys(latLngByRef).map(function (ref) {
+      return {
+        point: map.latLngToContainerPoint(latLngByRef[ref]),
+        halfWidth: CANDIDATE_MAP_MARKER_HALF_SIZE_PX,
+        halfHeight: CANDIDATE_MAP_MARKER_HALF_SIZE_PX,
+      };
+    });
+    labelKeepOutEntries.push({
+      point: originPoint,
+      halfWidth: CANDIDATE_ORIGIN_MARKER_HALF_SIZE_PX,
+      halfHeight: CANDIDATE_ORIGIN_MARKER_HALF_SIZE_PX,
+    });
+
+    if (rings.length > 0 && rings[0].visible) {
+      var tint = window.L.circle(originLatLng, {
+        radius: rings[0].radiusMeters,
+        className: "candidate-walking-radius-ring-inner-tint",
+        stroke: false,
+        fill: true,
+        fillOpacity: 0.05,
+        interactive: false,
+      });
+      tint.addTo(map);
+      walkingRadiusRingLayers.push(tint);
+    }
+
+    rings.forEach(function (ring) {
+      if (!ring.visible) {
+        return;
+      }
+      var isSelected = selectedMinutes === ring.minutes;
+      var casingClassName =
+        "candidate-walking-radius-ring-casing" +
+        (isSelected ? " candidate-walking-radius-ring-casing--accent" : "");
+      var casing = window.L.circle(originLatLng, {
+        radius: ring.radiusMeters,
+        className: casingClassName,
+        weight:
+          (isSelected ? WALKING_RADIUS_RING_ACCENT_WEIGHT : WALKING_RADIUS_RING_BASE_WEIGHT) +
+          WALKING_RADIUS_RING_CASING_EXTRA_WEIGHT,
+        fill: false,
+        interactive: false,
+      });
+      casing.addTo(map);
+      walkingRadiusRingLayers.push(casing);
+
+      var ringClassName =
+        "candidate-walking-radius-ring-path" +
+        (isSelected ? " candidate-walking-radius-ring-path--accent" : "");
+      var ringLayer = window.L.circle(originLatLng, {
+        radius: ring.radiusMeters,
+        className: ringClassName,
+        weight: isSelected ? WALKING_RADIUS_RING_ACCENT_WEIGHT : WALKING_RADIUS_RING_BASE_WEIGHT,
+        fill: false,
+        interactive: false,
+      });
+      ringLayer.addTo(map);
+      walkingRadiusRingLayers.push(ringLayer);
+
+      var labelText = String(ring.minutes) + "分";
+      var ringEl = ringLayer.getElement();
+      if (ringEl) {
+        ringEl.setAttribute("data-testid", "candidate-walking-radius-ring");
+        ringEl.setAttribute("data-walking-radius-minutes", String(ring.minutes));
+        // adr/0030 decision 1's bandLabel Must: a non-empty visible or
+        // accessible label whose leading digits equal bandAttribute. The
+        // divIcon label below is the genuinely visible one; this aria-label
+        // on the ring's own path element additionally satisfies the Must
+        // through the ring element itself, belt-and-suspenders, in case a
+        // reader never reaches a sibling map layer.
+        ringEl.setAttribute("aria-label", labelText);
+      }
+
+      // Try each candidate angle around this ring's own circumference (due
+      // north first, matching the previous fixed position), clamped into
+      // the visible map area the same way as before, until one does not
+      // collide with a marker or an already-placed ring label. Falls back
+      // to the plain north-clamped position (the old, unconditional
+      // behavior) if every candidate collides.
+      var clampedPoint = null;
+      for (var angleIndex = 0; angleIndex < WALKING_RADIUS_RING_LABEL_ANGLES_DEG.length; angleIndex++) {
+        var angleRad = (WALKING_RADIUS_RING_LABEL_ANGLES_DEG[angleIndex] * Math.PI) / 180;
+        var rawPoint = window.L.point(
+          originPoint.x + ring.radiusPx * Math.sin(angleRad),
+          originPoint.y - ring.radiusPx * Math.cos(angleRad)
+        );
+        var candidatePoint = clampLabelPointToContainer(rawPoint);
+        if (!labelPointCollides(candidatePoint, labelKeepOutEntries)) {
+          clampedPoint = candidatePoint;
+          break;
+        }
+      }
+      if (!clampedPoint) {
+        clampedPoint = clampLabelPointToContainer(ring.northPoint);
+      }
+      labelKeepOutEntries.push({
+        point: clampedPoint,
+        halfWidth: WALKING_RADIUS_RING_LABEL_HALF_WIDTH_PX,
+        halfHeight: WALKING_RADIUS_RING_LABEL_HALF_HEIGHT_PX,
+      });
+      var labelIcon = window.L.divIcon({
+        className:
+          "candidate-walking-radius-ring-label" +
+          (isSelected ? " candidate-walking-radius-ring-label--accent" : ""),
+        html: '<span class="candidate-walking-radius-ring-label-visual"></span>',
+        iconSize: [1, 1],
+        iconAnchor: [0, 0],
+      });
+      var label = window.L.marker(map.containerPointToLatLng(clampedPoint), {
+        icon: labelIcon,
+        interactive: false,
+        keyboard: false,
+      });
+      label.addTo(map);
+      var labelEl = label.getElement();
+      if (labelEl) {
+        var labelVisual = labelEl.querySelector(".candidate-walking-radius-ring-label-visual");
+        if (labelVisual) {
+          labelVisual.textContent = labelText;
+        }
+      }
+      walkingRadiusRingLayers.push(label);
+    });
+  }
+
+  // Task 3 (designer): moves (never clones) the selected candidate's own
+  // candidate-card element between the vertical list and the full-screen
+  // sheet's single-candidate panel. There is never more than one DOM
+  // element carrying a given data-candidate-ref's candidate-card at a
+  // time -- contracts/candidate-search-browser-interface.yaml's
+  // mapObservations.markerSet ("every candidate-card has exactly one
+  // marker with same data-candidate-ref") is unaffected by *where in the
+  // DOM* that one element currently lives. Restoring every ordered card to
+  // the list first (rather than tracking only "the one currently in the
+  // panel") is what keeps this correct regardless of how many times
+  // selection changed while the sheet was open.
+  function syncMapSheetPanelToSelection() {
+    if (!mapSheetOpen || !mapSheetPanelEl || !cardsContainerEl) {
+      return;
+    }
+    orderedCardElements.forEach(function (card) {
+      cardsContainerEl.appendChild(card);
+    });
+    var selectedCard = selectedCandidateRef ? cardElementsByRef[selectedCandidateRef] : null;
+    mapSheetPanelEl.innerHTML = "";
+    if (selectedCard) {
+      mapSheetPanelEl.appendChild(selectedCard);
+      // Design realignment (E:\AWS\dsg-out\MapSheet.dc.html): a hint
+      // line under the primary action, since there is no card deck here
+      // to imply "there are more of these".
+      mapSheetPanelEl.appendChild(
+        el("p", { "class": "candidate-map-sheet-hint" }, ["ほかの店を見るには地図のピンをタップ"])
+      );
+    }
+    // Design realignment (E:\AWS\dsg-out\MapSheet.dc.html's header bar):
+    // "N / total" position counter, matching the design's own "1 / 5".
+    if (mapSheetCounterEl) {
+      var position = orderedCardElements.findIndex(function (card) {
+        return card.getAttribute("data-candidate-ref") === selectedCandidateRef;
+      });
+      mapSheetCounterEl.textContent =
+        position === -1 ? "" : String(position + 1) + " / " + String(orderedCardElements.length);
+    }
+  }
+
+  // `inert` (feature-detected -- supported by every browser this project's
+  // own Playwright harness exercises, activeContext.md records the exact
+  // Chromium build; a no-op enhancement, never a hard dependency, on any
+  // browser that lacks it) removes a whole subtree from the Tab order and
+  // the accessibility tree, and -- unlike a CSS pointer-events rule --
+  // does this regardless of what pointer-events/tabindex value any
+  // descendant declares for itself. That "regardless of the descendant's
+  // own declaration" property is exactly what home.html's own comment on
+  // [data-testid="candidate-map"] explains was missing before: Leaflet's
+  // vendored CSS sets pointer-events:auto explicitly on marker elements,
+  // which no ancestor-level pointer-events:none (CSS inheritance) can
+  // override on its own.
+  function setInert(elements, isInert) {
+    if (!("inert" in HTMLElement.prototype)) {
+      return;
+    }
+    elements.forEach(function (element) {
+      if (!element) {
+        return;
+      }
+      if (isInert) {
+        element.setAttribute("inert", "");
+      } else {
+        element.removeAttribute("inert");
+      }
+    });
+  }
+
+  // Excludes the list/filter bar/header from the Tab order and the
+  // accessibility tree while the full-screen map sheet visually covers
+  // them (task 3) -- without this, a keyboard user could still Tab into
+  // controls a sighted user cannot currently see or reach.
+  function setBackgroundInert(isInert) {
+    var header = document.querySelector('header[data-testid="authenticated-application-shell"]');
+    setInert([header, filterBar, cardsContainerEl], isInert);
+  }
+
+  // Human real-device report, second round (2026-08-25; still the reason
+  // this fix is needed after task 2 made the closed map genuinely visible
+  // again): the closed map was still answering real taps meant for
+  // candidate-map-open and the cards underneath -- elementFromPoint
+  // measurement confirmed a closed-state marker, not the button beneath
+  // it, received the tap. Fixed by home.html's
+  // `* { pointer-events: none !important; }` rule (CSS-only, no feature
+  // detection needed, wins over Leaflet's own explicit pointer-events:auto
+  // regardless of specificity because !important always does).
+  //
+  // Deliberately NOT fixed with `inert` on the whole map container, even
+  // though that was tried first and did stop the stray taps: `inert`
+  // disables keyboard reachability for its entire subtree with no way for
+  // a descendant to opt back in (confirmed empirically -- an inert
+  // ancestor makes Tab skip every descendant regardless of the
+  // descendant's own tabindex, and even a direct .focus() call on a
+  // descendant becomes a silent no-op). candidate-map-marker is one of
+  // ADR-0020 decision 4(c)'s own gated control-surface elements --
+  // test_c_candidate_map_marker_selection_is_keyboard_operable presses
+  // Enter/Space on it *in this screen's default (closed) state*, with no
+  // "open the sheet first" step -- so making it inert while closed
+  // reddened that frozen test (developer may not weaken it). The origin
+  // marker carries no such requirement (candidate-search-browser-
+  // interface.yaml's displayOnlyOriginException explicitly tolerates
+  // focusability either way), so setOriginMarkerTabbable below narrows
+  // the keyboard fix to it alone, leaving candidate-map-marker's own
+  // tabindex/keydown handler completely untouched. This is a real,
+  // reported trade-off, not a silent partial fix -- see activeContext.md
+  // for the full reasoning: candidate-map-marker itself stays Tab-
+  // reachable (and, per its own existing keydown handler, Enter/Space-
+  // activatable) even while genuinely invisible and closed, because the
+  // alternative was breaking a frozen ADR-0020 gate.
+  function setOriginMarkerTabbable(isTabbable) {
+    if (!originMarkerEl) {
+      return;
+    }
+    originMarkerEl.setAttribute("tabindex", isTabbable ? "0" : "-1");
+  }
+
+  // Human real-device report (2026-08-25): opening the sheet collapsed the
+  // map to a 0-height box (candidate-map-wrapper's own children -- the map,
+  // the open control, the close control, the sheet panel -- were laid out
+  // by a column flexbox that sized the wrapper by its in-flow content;
+  // toggling the map to position:fixed removed it from that flow, leaving
+  // nothing in-flow to size the wrapper by). Fixed at the time by making the
+  // map element's own box constant at all times (always position:fixed,
+  // always full-viewport width/height) so it never depended on the
+  // wrapper's own sizing. Task 2 (2026-08-26) reintroduces a box-model
+  // change (position:absolute 88px band while closed <-> position:fixed
+  // full-viewport while open -- see [data-testid="candidate-map"]'s CSS in
+  // home.html) but keeps this fix's actual lesson: .candidate-map-wrapper
+  // itself now carries an explicit, non-auto height (5.5rem) that does not
+  // depend on the map or any other child, open or closed, so nothing can
+  // collapse it the way the original flex-sized wrapper did. Because the
+  // box genuinely resizes between the two states again, a later resize is
+  // not guaranteed to be the *only* thing that changes its geometry --
+  // refreshMapViewAndRings is therefore still called directly here rather
+  // than relying solely on the ResizeObserver (which still exists, still
+  // fires for this same change too, and still matters for genuine later
+  // resizes: window resize, mobile-toolbar dvh changes, orientation
+  // change).
+  function refreshMapViewAndRings() {
+    if (!leafletMap) {
+      return;
+    }
+    leafletMap.invalidateSize();
+    if (mapSheetOpen && selectedCandidateRef && latLngByRef[selectedCandidateRef]) {
+      // animate: false -- layoutWalkingRadiusRings (called synchronously
+      // below) derives each ring label's position from this view's pixel
+      // geometry via containerPointToLatLng, then bakes that into a fixed
+      // marker latLng. An animated setView only updates that pixel geometry
+      // to its final state once the animation's zoomend/moveend fires,
+      // after this call already returned -- so an animated call here baked
+      // a label position from a mid-animation, not the final, view, which
+      // could later re-project somewhere far off (confirmed empirically:
+      // one label rendered above the visible viewport entirely). Snapping
+      // immediately keeps the label geometry and the final rendered view in
+      // agreement.
+      leafletMap.setView(latLngByRef[selectedCandidateRef], Math.max(leafletMap.getZoom(), 16), {
+        animate: false,
+      });
+    } else if (currentMapLatLngs.length > 0) {
+      // mapSheetOpen is false in every real call to this branch (the sibling
+      // branch above already claims every case where the sheet is open and
+      // a candidate is selected, which is always true once any candidate
+      // exists -- see selectedCandidateRef's own initialization). Reading
+      // isCompactMapBand() here anyway, rather than hardcoding the closed-
+      // band padding, keeps this branch correct for the zero-candidate edge
+      // case too, and for the invariant that follows from
+      // MAP_BAND_FIT_PADDING_PX's own comment: whichever box is actually on
+      // screen right now gets its own matching padding -- isCompactMapBand's
+      // own comment covers why the desktop sticky column also takes the
+      // "open" padding, not the closed band's.
+      leafletMap.fitBounds(window.L.latLngBounds(currentMapLatLngs), {
+        padding: isCompactMapBand() ? MAP_BAND_FIT_PADDING_PX : MAP_OPEN_FIT_PADDING_PX,
+      });
+    }
+    layoutWalkingRadiusRings(leafletMap, walkingRadiusRingOrigin);
+  }
+
+  function openMapSheet() {
+    if (mapSheetOpen || !mapWrapperEl) {
+      return;
+    }
+    mapSheetOpen = true;
+    mapWrapperEl.closest(".candidate-main-layout").setAttribute("data-map-sheet-open", "true");
+    // Human real-device report, third round (2026-08-25): with the sheet
+    // open, the still-in-normal-flow candidate list (everything except the
+    // one selected card, already moved into candidate-map-sheet-panel by
+    // syncMapSheetPanelToSelection below) kept answering taps/painting on
+    // top of the full-screen map -- elementFromPoint measurement confirmed
+    // 4 of 5 markers were unreachable, hit by a candidate-card instead.
+    // inert (setBackgroundInert, already called next) turned out not to
+    // reliably stop this in the real page despite hasAttribute("inert")
+    // reading true (measured directly; the mechanism this project already
+    // trusted for keyboard exclusion did not reproduce the same protection
+    // for elementFromPoint here, unlike an isolated reproduction). Setting
+    // this same attribute on <body> lets home.html's CSS reach
+    // header/#candidate-filter-bar/candidate-proposal-cards (none of which
+    // are descendants of .candidate-main-layout) with the identical
+    // visibility:hidden + `* { pointer-events: none !important; }`
+    // combination already proven robust for the closed map itself.
+    document.body.setAttribute("data-map-sheet-open", "true");
+    setBackgroundInert(true);
+    setOriginMarkerTabbable(true);
+    syncMapSheetPanelToSelection();
+    refreshMapViewAndRings();
+    sheetCloseFocusTarget = document.activeElement;
+    var closeControl = mapWrapperEl.querySelector(".candidate-map-sheet-back");
+    if (closeControl) {
+      closeControl.focus();
+    }
+  }
+
+  function closeMapSheet() {
+    if (!mapSheetOpen || !mapWrapperEl) {
+      return;
+    }
+    mapSheetOpen = false;
+    mapWrapperEl.closest(".candidate-main-layout").setAttribute("data-map-sheet-open", "false");
+    document.body.removeAttribute("data-map-sheet-open");
+    setBackgroundInert(false);
+    setOriginMarkerTabbable(false);
+    orderedCardElements.forEach(function (card) {
+      cardsContainerEl.appendChild(card);
+    });
+    if (mapSheetPanelEl) {
+      mapSheetPanelEl.innerHTML = "";
+    }
+    refreshMapViewAndRings();
+    var openControl = mapWrapperEl.querySelector(".candidate-map-open");
+    if (sheetCloseFocusTarget && document.contains(sheetCloseFocusTarget)) {
+      sheetCloseFocusTarget.focus();
+    } else if (openControl) {
+      openControl.focus();
+    }
+    sheetCloseFocusTarget = null;
+  }
+
   function initializeMap(container, candidates, searchOrigin) {
     markerElementsByRef = {};
+    latLngByRef = {};
     if (mapResizeObserver) {
       mapResizeObserver.disconnect();
       mapResizeObserver = null;
@@ -545,19 +1187,40 @@
     var latLngs = candidates.map(function (candidate) {
       return [candidate.location.latitude, candidate.location.longitude];
     });
+    currentMapLatLngs = latLngs;
+    var originLatLng = searchOrigin ? [searchOrigin.latitude, searchOrigin.longitude] : null;
 
     // Leaflet's Map#addLayer defers a layer's onAdd (and therefore marker
     // icon creation) until the map has an established view, via
     // Map#whenReady: https://leafletjs.com/reference.html#map-whenready.
     // A map created without initial center/zoom has no view until setView
     // or fitBounds runs, so it must happen before any marker is added below.
+    // container is already connected to the live DOM by the time this runs
+    // (root.appendChild(content) above, itself already attached, ran before
+    // this function was called), so this initial fitBounds already measures
+    // whichever real box the CSS gives the container right now: task 2's
+    // closed-state 88px band by default at narrow widths (mainLayout's own
+    // data-map-sheet-open starts "false" -- see the mainLayout comment
+    // above), the desktop sticky column at >=64rem (also data-map-sheet-
+    // open="false" -- decision 6 leaves no control that could ever flip it
+    // at this width), or the full-viewport open-state box on the rare
+    // initial render where the mobile sheet is somehow already open. Either
+    // way this fit targets the box Leaflet will actually paint into, not a
+    // stale or assumed one -- see [data-testid="candidate-map"]'s CSS in
+    // home.html for all three boxes. Padding matches whichever of those
+    // boxes this fit is targeting -- see isCompactMapBand's own comment for
+    // why the desktop column takes the same padding as the open,
+    // full-viewport mobile sheet, not the closed band's.
     if (latLngs.length > 0) {
-      map.fitBounds(window.L.latLngBounds(latLngs), { padding: [24, 24] });
+      map.fitBounds(window.L.latLngBounds(latLngs), {
+        padding: isCompactMapBand() ? MAP_BAND_FIT_PADDING_PX : MAP_OPEN_FIT_PADDING_PX,
+      });
     } else {
       map.setView([0, 0], 2);
     }
 
     candidates.forEach(function (candidate, index) {
+      latLngByRef[candidate.candidateRef] = latLngs[index];
       var icon = window.L.divIcon({
         className: "candidate-map-marker-icon",
         html: '<span class="candidate-map-marker-visual"></span>',
@@ -582,7 +1245,12 @@
         markerVisual.textContent = String(index + 1);
       }
       markerEl.addEventListener("click", function () {
-        selectCandidate(candidate.candidateRef, true);
+        // Task 3 (designer): inside the full-screen map sheet, tapping a
+        // pin is how an organizer switches which single candidate the sheet
+        // shows -- selectCandidate's own sync with the sheet (see below)
+        // handles that; outside the sheet this is unchanged card/marker
+        // selection.
+        selectCandidate(candidate.candidateRef, !mapSheetOpen);
       });
       // ADR-0020 decision 4(c): Leaflet's `keyboard: true` option only makes
       // the marker's icon element focusable (tabIndex/role, see the vendored
@@ -600,34 +1268,18 @@
       markerElementsByRef[candidate.candidateRef] = markerEl;
     });
 
-    // adr/0025 decision 1: the private search origin and walking-time
-    // rings. Both are read-only display elements -- see
-    // candidate-search-browser-interface.yaml's displayOnlyOriginException:
-    // the exception is defined by behavior (no click/keydown handler here
-    // changes any proposal request, displayed candidate, marker, or
-    // condition summary), not by focusability, so Leaflet's own
-    // keyboard:true default (which makes the icon Tab-reachable, per
-    // ADR-0020's own finding for candidate markers) does not disqualify
-    // this element from the exception.
-    if (searchOrigin) {
-      var originLatLng = [searchOrigin.latitude, searchOrigin.longitude];
-
-      WALKING_TIME_MAX_PRESETS_MINUTES.forEach(function (minutes) {
-        var ring = window.L.circle(originLatLng, {
-          radius: minutes * WALKING_METERS_PER_MINUTE,
-          className: "candidate-walking-radius-ring-path",
-          weight: 1,
-          fill: false,
-          interactive: false,
-        });
-        ring.addTo(map);
-        var ringEl = ring.getElement();
-        if (ringEl) {
-          ringEl.setAttribute("data-testid", "candidate-walking-radius-ring");
-          ringEl.setAttribute("data-walking-radius-minutes", String(minutes));
-        }
-      });
-
+    // adr/0025 decision 1: the private search origin marker. A read-only
+    // display element -- see candidate-search-browser-interface.yaml's
+    // displayOnlyOriginException: the exception is defined by behavior (no
+    // click/keydown handler here changes any proposal request, displayed
+    // candidate, marker, or condition summary), not by focusability, so
+    // Leaflet's own keyboard:true default (which makes the icon
+    // Tab-reachable, per ADR-0020's own finding for candidate markers) does
+    // not disqualify this element from the exception. The walking-radius
+    // rings (same exception) are laid out separately by
+    // layoutWalkingRadiusRings below, which is also the function the
+    // ResizeObserver re-runs on every later container resize.
+    if (originLatLng) {
       var originIcon = window.L.divIcon({
         className: "candidate-origin-marker-icon",
         html: '<span class="candidate-origin-marker-visual"></span>',
@@ -640,10 +1292,16 @@
         alt: "検索基点",
       });
       originMarker.addTo(map);
-      var originMarkerEl = originMarker.getElement();
+      originMarkerEl = originMarker.getElement();
       if (originMarkerEl) {
         originMarkerEl.setAttribute("data-testid", "candidate-origin-marker");
         originMarkerEl.setAttribute("aria-label", "検索基点");
+        // Human real-device report, second round (2026-08-25): tabindex=-1
+        // while the map is closed/invisible, so a keyboard user tabbing
+        // through the page cannot land on it -- setOriginMarkerTabbable's
+        // own comment explains why this element (not candidate-map-marker)
+        // is the one this fix targets. openMapSheet restores tabindex=0.
+        originMarkerEl.setAttribute("tabindex", mapSheetOpen ? "0" : "-1");
         // positionAttributes (candidate-search-browser-interface.yaml
         // mapObservations.searchOriginMarker, contractVersion 1.3.1,
         // FR-022(1)): the exact canonical decimal string of
@@ -663,34 +1321,35 @@
       }
     }
 
+    walkingRadiusRingOrigin = originLatLng;
+    layoutWalkingRadiusRings(map, originLatLng);
+
     container.setAttribute("data-map-fit-state", "displayed-candidates");
     leafletMap = map;
 
-    // Re-fit Leaflet's internal view whenever the map container's own size
-    // changes after this initial render, even when that change carries no
-    // `window` "resize" event. Leaflet's own default `trackResize: true`
-    // (candidate.js never overrides it) already listens for `window`
-    // "resize" and calls invalidateSize() on a plain browser-window resize,
-    // confirmed by reading the vendored leaflet.js's own `_initEvents` and by
-    // testing: even before this handler existed, a real `window resize`
-    // (e.g. Playwright's set_viewport_size, which fires one) already re-fit
-    // the map correctly. What that built-in handler cannot see is a
-    // container-size change with no accompanying `window` resize -- which
-    // this screen's own CSS can produce on a phone: candidate-map's height
-    // is sized in `dvh` (dynamic viewport height, home.html), so a mobile
-    // browser's toolbar collapsing/reappearing while scrolling (the
-    // organizer persona this screen is built for, per human decision
-    // 2026-08-22) resizes the container purely through CSS, without firing
-    // `window` "resize" on many mobile browsers. Confirmed by testing:
-    // forcing the container's own box to change size via inline style, with
-    // no viewport change, left the rendered tiles at their stale pre-resize
-    // extent (a real uncovered gap) with this ResizeObserver removed, and
-    // correctly grew to cover the new box with it in place (see
-    // activeContext.md Next work 5 for the original, narrower "no resize
-    // handler at all" framing this refines).
+    // Re-fit Leaflet's internal view (and re-lay-out the walking-radius
+    // rings) whenever the map container's own size genuinely changes after
+    // this initial render, even when that change carries no `window`
+    // "resize" event. Leaflet's own default `trackResize: true` (candidate.js
+    // never overrides it) already listens for `window` "resize" and calls
+    // invalidateSize() on a plain browser-window resize, confirmed by
+    // reading the vendored leaflet.js's own `_initEvents`. What that built-
+    // in handler cannot see is a container-size change with no accompanying
+    // `window` resize -- which this screen's own CSS produces when a mobile
+    // browser's toolbar collapsing/reappearing while scrolling changes
+    // `100dvh` (human decision 2026-08-22). Opening/closing the full-screen
+    // map sheet (task 3, box model changed again by task 2's 2026-08-26
+    // closed-state band -- see [data-testid="candidate-map"]'s CSS in
+    // home.html) does genuinely resize this same container, so this
+    // observer's own callback fires for that too; openMapSheet/
+    // closeMapSheet also call refreshMapViewAndRings directly regardless,
+    // rather than depending solely on the observer -- both call sites
+    // agree on the same idempotent function, so the redundancy costs
+    // nothing (see refreshMapViewAndRings's own comment for why an
+    // animated setView here would be wrong either way).
     if (window.ResizeObserver) {
       mapResizeObserver = new window.ResizeObserver(function () {
-        map.invalidateSize();
+        refreshMapViewAndRings();
       });
       mapResizeObserver.observe(container);
     }
@@ -1076,6 +1735,35 @@
     }
   }
 
+  // adr/0030 decision 2 (human decision 2026-08-24): candidate-no-results'
+  // guidance must carry its own pressable element, not only point at the
+  // distant toolbar's candidate-filter-open, and activating it must produce
+  // exactly openFilterPanel's requiredOutcome for the current pending/
+  // applied state -- unlike candidate-filter-open's own summary toggle
+  // (which opens or closes depending on filterExpanded's current value,
+  // see below), this control only ever opens: candidate-no-results is only
+  // ever rendered on a fresh response, before this button could have
+  // toggled anything.
+  function renderNoResultsReviseFiltersControl() {
+    var button = el(
+      "button",
+      {
+        type: "button",
+        "class": "candidate-no-results-revise-filters",
+        "data-testid": "candidate-no-results-revise-filters",
+        "data-candidate-control-category": "button",
+        "data-candidate-control-purpose": "candidate-no-results-open-filter",
+      },
+      ["絞り込み条件を変更する"]
+    );
+    button.addEventListener("click", function () {
+      filterExpanded = true;
+      renderFilterBar();
+      restoreFilterFocus({ testId: "candidate-filter-open" });
+    });
+    return button;
+  }
+
   function renderFilterBar(restoreFocus) {
     var focusTarget = restoreFocus || filterFocusTarget();
     var dirty = !sameFilters(pendingFilters, currentFilters);
@@ -1299,8 +1987,12 @@
 
   function renderResult(body) {
     cardElementsByRef = {};
-    candidateOrderByRef = {};
-    candidateCounter = null;
+    orderedCardElements = [];
+    mapSheetOpen = false;
+    selectedCandidateRef = null;
+    cardsContainerEl = null;
+    mapWrapperEl = null;
+    mapSheetPanelEl = null;
     root.innerHTML = "";
 
     // The filter bar is not part of this element: it lives outside the
@@ -1333,55 +2025,237 @@
       content.appendChild(
         el("section", { "data-testid": "candidate-no-results" }, [
           "絞り込み条件に合うランチ候補が見つかりませんでした。絞り込み条件を変更してお試しください。",
+          renderNoResultsReviseFiltersControl(),
         ])
       );
       root.appendChild(content);
       return;
     }
 
-    var mainLayout = el("div", { "class": "candidate-main-layout" }, []);
+    // Task 3 (designer): list-primary + a real map (never a collapsed
+    // placeholder button -- this is what keeps candidate-map/candidate-
+    // origin-marker genuinely present on initial render, satisfying
+    // authenticatedInitialOutcome.present without a contract change) +
+    // tap-to-open full-screen map sheet, one Leaflet map instance
+    // throughout. While closed, task 2 (human decision 2026-08-26) shows
+    // this same instance clipped to an 88px band rather than hiding it --
+    // see [data-testid="candidate-map"]'s own CSS in home.html for how.
+    var mainLayout = el(
+      "div",
+      { "class": "candidate-main-layout", "data-map-sheet-open": "false" },
+      []
+    );
 
     var mapContainer = el(
       "div",
       { "data-testid": "candidate-map", "data-map-tile-provider": "openstreetmap-standard" },
       []
     );
-    var mapWrapper = el("div", { "class": "candidate-map-wrapper" }, [
-      mapContainer,
-      el(
-        "a",
-        {
-          "data-testid": "candidate-map-attribution",
-          href: "https://www.openstreetmap.org/copyright",
-          target: "_blank",
-          rel: "noopener noreferrer",
-        },
-        ["© OpenStreetMap contributors"]
-      ),
+    // candidate-map-open (human decision 2026-08-25, redesigned
+    // 2026-08-26 by task 2 to show the closed map itself as an 88px band
+    // instead of hiding it entirely) is the sole visible entry point into
+    // the map. It, and the sheet's close control, only ever change the
+    // *visible map viewport* (compact band <-> full-screen sheet)
+    // -- never a proposal request, selection, filter, origin, or range --
+    // the same behavioral property displayOnlyOriginException/Leaflet's own
+    // zoom control already rely on (contracts/candidate-search-browser-
+    // interface.yaml's locationRangeControlProhibition invariant; see this
+    // file's own comment on the Leaflet zoom control CSS in home.html).
+    // Deliberately built as a focusable <div> (tabindex, explicit
+    // click/keydown handlers), not a <button> element -- exactly the
+    // pattern candidate-origin-marker/candidate-walking-radius-ring
+    // already use -- so it stays outside
+    // allCandidateScreenFormControlsMustDeclarePurpose's closed
+    // allowedPurposes list (that Must's own machineObservation only sweeps
+    // literal <button>/<input>/<select>/<textarea>/interactive-ARIA-role
+    // elements, per tests/acceptance/dsl/candidate_search_browser.py's
+    // FORM_CONTROL_SELECTOR, which developer/tester may read but not edit)
+    // rather than inventing a new purpose value this contract does not
+    // define (developer cannot edit contracts/**).
+    //
+    // Both still carry a data-testid, though -- reviewer's independent
+    // audit (reviews/audit-detour-ring-labels-skeleton.md, G2) found that
+    // the sole entry point into the map had no machine-observable
+    // identifier at all (not even a bare test id), so nothing would redden
+    // if it broke. A test id alone (no data-candidate-control-purpose) is
+    // the same style candidate-origin-marker already uses for a display-
+    // only element outside the purpose regime, so this does not conflict
+    // with the reasoning above. It does not, on its own, make this
+    // control's presence/behavior a contract Must -- see activeContext.md
+    // for what would still be missing for that.
+    //
+    // candidate-map-open (only -- not the close control below) additionally
+    // carries role="button" (human decision 2026-08-25: the sole entry
+    // point into the map should not be semantically un-button-like for
+    // assistive technology just to dodge the purpose regime). Verified
+    // this does not add it to that regime after all: FORM_CONTROL_
+    // SELECTOR's role-based clauses are an explicit, closed list --
+    // [role='checkbox'/'radio'/'range'/'combobox'/'listbox'/'slider'/
+    // 'spinbutton'] -- and 'button' is not one of them, so this element
+    // still does not match it. This is a narrower reading of the
+    // contract's own machineObservation prose than what is actually
+    // mechanically checked today ("...or element with an interactive ARIA
+    // role..." reads as though it should include role="button"), which
+    // developer is reporting rather than resolving -- see activeContext.md.
+    // Real-device report (2026-08-26): this project's own designer/
+    // wireframe conventions (.claude/agents/designer.md, meta/templates/
+    // wireframe.md) forbid emoji as icon stand-ins -- this control's icon
+    // used to be a literal map emoji. Replaced with the same inline-SVG
+    // line icon designer's own canvas already uses for a map-expand
+    // control (E:\AWS\dsg-out\Main.dc.html's 44px "expand to full screen"
+    // corner-arrows glyph over its own map ribbon -- the same literal path
+    // data, generalized from a fixed accent color to currentColor so it
+    // follows this element's own text color instead of hardcoding one).
+    // innerHTML is used only for this fixed, developer-authored SVG markup
+    // (never user/candidate data), so it carries no injection risk despite
+    // el() itself only supporting plain HTML elements (document.
+    // createElement does not create SVG nodes).
+    var mapOpenIcon = el(
+      "span",
+      { "class": "candidate-map-open-icon", "aria-hidden": "true" },
+      []
+    );
+    mapOpenIcon.innerHTML =
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+      'stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">' +
+      '<path d="M9 4H4v5M15 20h5v-5M20 9V4h-5M4 15v5h5"></path></svg>';
+    // Task 2 (human decision 2026-08-26, Main.dc.html lines 76-109): the
+    // closed-state band shows a "N件の位置" pill (top-left) and this same
+    // expand icon in its own 44x44 badge (top-right), not a centered
+    // text+icon bar -- both are purely decorative (home.html gives them
+    // pointer-events: none), since the *whole* band is candidate-map-open's
+    // own hit area now, not just this smaller visual. The pill's count is
+    // body.candidates.length -- the same population this map's markers are
+    // drawn from (see the loop above), so it can never disagree with what
+    // is actually pinned. No visible "地図で見る" text label survives this
+    // redesign; aria-label below still carries the control's accessible
+    // name for assistive technology.
+    var mapOpenPill = el(
+      "span",
+      { "class": "candidate-map-open-pill", "aria-hidden": "true" },
+      [String(body.candidates.length) + "件の位置"]
+    );
+    var mapOpenExpand = el(
+      "span",
+      { "class": "candidate-map-open-expand", "aria-hidden": "true" },
+      [mapOpenIcon]
+    );
+    var mapOpenButton = el(
+      "div",
+      {
+        "data-testid": "candidate-map-open",
+        "class": "candidate-map-open",
+        role: "button",
+        tabindex: "0",
+        "aria-label": "地図を表示する",
+      },
+      [mapOpenPill, mapOpenExpand]
+    );
+    mapOpenButton.addEventListener("click", function () {
+      openMapSheet();
+    });
+    mapOpenButton.addEventListener("keydown", function (event) {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openMapSheet();
+      }
+    });
+    // Design realignment (human real-device report 2026-08-25,
+    // E:\AWS\dsg-out\MapSheet.dc.html): a 52px header bar ("リストへ戻る"
+    // + a position counter), not a floating circular X in the corner.
+    // Keeps the existing candidate-map-sheet-close test id/purpose (same
+    // close behavior, no data-candidate-control-purpose -- see this file's
+    // own earlier comment for why) on the back-labelled element itself.
+    var sheetCloseButton = el(
+      "div",
+      {
+        "data-testid": "candidate-map-sheet-close",
+        "class": "candidate-map-sheet-back",
+        tabindex: "0",
+        "aria-label": "地図を閉じてリストへ戻る",
+      },
+      [
+        el("span", { "class": "candidate-map-sheet-back-icon", "aria-hidden": "true" }, ["←"]),
+        el("span", {}, ["リストへ戻る"]),
+      ]
+    );
+    sheetCloseButton.addEventListener("click", function () {
+      closeMapSheet();
+    });
+    sheetCloseButton.addEventListener("keydown", function (event) {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        closeMapSheet();
+      }
+    });
+    mapSheetCounterEl = el(
+      "span",
+      { "class": "candidate-map-sheet-counter", "aria-live": "polite", "aria-label": "選択中の候補" },
+      [""]
+    );
+    var mapSheetHeader = el("div", { "class": "candidate-map-sheet-header" }, [
+      sheetCloseButton,
+      mapSheetCounterEl,
     ]);
+    mapSheetPanelEl = el("div", { "class": "candidate-map-sheet-panel" }, []);
+    var mapAttributionLink = el(
+      "a",
+      {
+        "data-testid": "candidate-map-attribution",
+        href: "https://www.openstreetmap.org/copyright",
+        target: "_blank",
+        rel: "noopener noreferrer",
+      },
+      ["© OpenStreetMap contributors"]
+    );
+    // Desktop.dc.html decision 6 (orchestrator, 2026-08-26): at >=64rem the
+    // map is a permanent column with no open/close control (decision 2), so
+    // the mobile-only ribbon-open control, full-screen-sheet header/back
+    // bar, and the sheet's own single-candidate info panel (decision 5:
+    // the desktop map column carries pins/rings only, never a duplicate
+    // detail panel -- full detail stays in the card column alone) do not
+    // belong in the DOM at all at this width, not merely hidden by CSS --
+    // there is nothing left for them to open/close/summarize. isDesktopLayout
+    // is read once per render (matching this file's other one-shot,
+    // render-time-only viewport reads, e.g. isCompactMapBand); it is not
+    // re-evaluated on a later browser-window resize across the 64rem
+    // boundary without a fresh proposal response (search-again/filter apply
+    // both call renderResult again, which re-reads it) -- candidate.js has
+    // no other DOM-rebuilding resize handling today (only the map's own
+    // ResizeObserver, which resizes the existing map, not the surrounding
+    // controls), and adding one only for this edge case was judged not
+    // worth the risk of a new resize-driven re-render regression against
+    // this same screen's already-elaborate open/close history (see the
+    // mapSheetOpen/openMapSheet/closeMapSheet comments above). mapOpenButton/
+    // mapSheetHeader/mapSheetPanelEl are still built unconditionally above
+    // (openMapSheet/closeMapSheet/syncMapSheetPanelToSelection keep
+    // referencing them by variable/class, and they never run at this width
+    // regardless, since nothing can ever set mapSheetOpen=true here) --
+    // only whether they are appended into the live DOM differs.
+    var isDesktopLayout = window.matchMedia && window.matchMedia("(min-width: 64rem)").matches;
+    var mapWrapperChildren = [mapContainer];
+    if (!isDesktopLayout) {
+      mapWrapperChildren.push(mapOpenButton, mapSheetHeader, mapSheetPanelEl);
+    }
+    mapWrapperChildren.push(mapAttributionLink);
+    var mapWrapper = el("div", { "class": "candidate-map-wrapper" }, mapWrapperChildren);
+    mapWrapperEl = mapWrapper;
 
     var cardsContainer = el("div", { "data-testid": "candidate-proposal-cards" }, []);
     body.candidates.forEach(function (candidate, index) {
-      candidateOrderByRef[candidate.candidateRef] = index;
-      cardsContainer.appendChild(renderCard(candidate, index === 0, index));
+      var card = renderCard(candidate, index === 0, index);
+      orderedCardElements.push(card);
+      cardsContainer.appendChild(card);
     });
-    candidateCounter = el(
-      "output",
-      {
-        "class": "candidate-deck-counter",
-        "data-testid": "candidate-deck-counter",
-        "aria-live": "polite",
-        "aria-label": "選択中の候補",
-      },
-      ["1/" + String(body.candidates.length)]
-    );
-    // DOM order is cards-then-map (matching the PC reading order, where
-    // cards are primary) on purpose: CSS grid-template-areas is what moves
-    // the map above the cards at narrow widths (see home.html), so this DOM
-    // order is what keyboard/reader users encounter at every width.
-    mainLayout.appendChild(cardsContainer);
+    cardsContainerEl = cardsContainer;
+    selectedCandidateRef = body.candidates.length > 0 ? body.candidates[0].candidateRef : null;
+
+    // DOM order is ribbon-then-list (the ribbon is the compact map preview
+    // sitting above the list, task 3) -- CSS lays this out as a simple
+    // vertical stack at every width (home.html), so this DOM order is what
+    // keyboard/reader users encounter throughout.
     mainLayout.appendChild(mapWrapper);
-    mainLayout.appendChild(candidateCounter);
+    mainLayout.appendChild(cardsContainer);
     content.appendChild(mainLayout);
 
     content.appendChild(

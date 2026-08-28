@@ -81,33 +81,90 @@ class LeafletVendoringSourceTests(SimpleTestCase):
 class CandidateSurfaceSourceTests(SimpleTestCase):
     """Guard the presentation boundaries that do not need live provider data."""
 
-    def test_map_led_deck_keeps_cards_and_map_in_the_same_surface(self):
-        source = HOME_TEMPLATE.read_text(encoding="utf-8")
-
-        self.assertIn('grid-template-areas: "map" "cards"', source)
-        self.assertIn("scroll-snap-type: inline mandatory", source)
-        self.assertIn("height: calc(100dvh - 6.875rem)", source)
-        self.assertIn("position: absolute; inset: 0", source)
-        self.assertIn("height: clamp(22rem, 50dvh, 34rem)", source)
-        self.assertIn("flex: 0 0 calc(100vw - 2rem)", source)
-        self.assertIn("min-height: 12.9rem", source)
-        self.assertIn("scrollbar-width: none", source)
-        self.assertIn("isolation: isolate", source)
-        self.assertIn("top: 0.5rem;\n      right: 0.5rem", source)
-        self.assertIn("background: rgb(255 255 255 / 92%)", source)
-
-    def test_mobile_layout_keeps_decision_controls_compact(self):
+    def test_list_primary_and_full_screen_sheet_keep_one_map_instance(self):
+        # Task 3 (designer artifact efe1c44f-ead4-40c6-9141-b801583aadd9):
+        # list-primary, tap candidate-map-open to open a full-screen map
+        # sheet, retiring the earlier map-led horizontally-swipable card
+        # deck this test used to guard (test_map_led_deck_keeps_cards_and_
+        # map_in_the_same_surface, superseded here rather than kept
+        # alongside a contradictory skeleton). One [data-testid=
+        # "candidate-map"] element is declared once in candidate.js, never
+        # a second map instance.
+        #
+        # Task 2 (human decision 2026-08-26, "ちょっとだけ地図写すように"):
+        # the closed state now shows this same instance clipped to an 88px
+        # band (design origin E:\AWS\dsg-out\Main.dc.html lines 76-109),
+        # not an invisible map behind an opaque button -- opening/closing
+        # again toggles the map's own box model (position:absolute 88px
+        # band <-> position:fixed full-viewport), which the 2026-08-25
+        # skeleton this test used to guard deliberately avoided after an
+        # earlier version of exactly that toggle collapsed the map to a
+        # measured 0-height box on open. Task 2 is safe from that same
+        # regression only because .candidate-map-wrapper itself now carries
+        # an explicit, non-auto height that does not depend on the map (or
+        # any other child) to size it -- assertion below pins that
+        # specific fix, not just the box-model toggle itself, so a future
+        # change cannot silently drop the wrapper's own height and
+        # reintroduce the 2026-08-25 defect. candidate-map-open is still
+        # the sole visible entry point while closed (now the entire band's
+        # own hit area, per Main.dc.html's "帯の全面が押せる"), and still
+        # carries a data-testid (reviewer's audit-detour-ring-labels-
+        # skeleton.md G2: the original entry point had no machine-
+        # observable identifier at all).
         template = HOME_TEMPLATE.read_text(encoding="utf-8")
         script = CANDIDATE_SCRIPT.read_text(encoding="utf-8")
 
+        self.assertIn('[data-testid="candidate-map"] {', template)
+        self.assertIn("pointer-events: none;", template)
+        self.assertIn(
+            '.candidate-main-layout:not([data-map-sheet-open="true"]) '
+            '[data-testid="candidate-map"] * {\n      pointer-events: none !important;\n    }',
+            template,
+            "Leaflet's own .leaflet-interactive pointer-events:auto must stay overridden "
+            "for every descendant of the closed map (2026-08-25 real-device fix)",
+        )
+        self.assertIn('.candidate-main-layout[data-map-sheet-open="true"]', template)
+        self.assertIn("candidate-map-open", template)
+        # Task 2's own anti-regression pin: the wrapper's explicit height is
+        # what keeps the box-model toggle below safe -- see the comment
+        # above [data-testid="candidate-map"] does change box model
+        # (position:absolute while closed, position:fixed while open).
+        self.assertIn(".candidate-map-wrapper {", template)
+        self.assertIn("height: 5.5rem;", template)
+        self.assertIn("position: absolute;", template)
+        self.assertIn("position: fixed;", template)
+        # The band's own decorative layers (Main.dc.html: pill top-left,
+        # expand badge top-right, credit bottom-right) must never steal the
+        # tap from the band itself.
+        self.assertIn(".candidate-map-open-pill {", template)
+        self.assertIn(".candidate-map-open-expand {", template)
+        self.assertIn('"data-testid": "candidate-map-open"', script)
+        self.assertIn('"data-testid": "candidate-map-sheet-close"', script)
+        self.assertIn("candidate-map-sheet-back", template)
+        self.assertIn("candidate-map-sheet-header", template)
+        self.assertIn("candidate-map-sheet-panel", template)
+        self.assertEqual(
+            script.count('{ "data-testid": "candidate-map", "data-map-tile-provider"'),
+            1,
+            "exactly one candidate-map element/Leaflet map instance must be declared",
+        )
+        self.assertIn("件の位置", script)
+        self.assertIn("function openMapSheet()", script)
+        self.assertIn("function closeMapSheet()", script)
+        self.assertIn("function syncMapSheetPanelToSelection()", script)
+        self.assertIn("function refreshMapViewAndRings()", script)
+
+    def test_mobile_layout_keeps_decision_controls_compact(self):
+        template = HOME_TEMPLATE.read_text(encoding="utf-8")
+
         self.assertIn("min-height: 3.25rem", template)
-        self.assertIn("height: 3.5rem", template)
+        # Tokens.dc.html: header 52 / condition bar 48 (E:\AWS\dsg-out;
+        # design realignment 2026-08-25).
+        self.assertIn("height: 3rem", template)
         self.assertIn("height: 3.25rem", template)
         self.assertIn("flex-wrap: nowrap; overflow-x: auto", template)
         self.assertIn("candidate-card-description", template)
         self.assertIn("display: none", template)
-        self.assertIn('"data-testid": "candidate-deck-counter"', script)
-        self.assertIn('["1/" + String(body.candidates.length)]', script)
 
     def test_card_payment_caution_and_regular_holiday_do_not_overstate_or_truncate(self):
         template = HOME_TEMPLATE.read_text(encoding="utf-8")
@@ -150,19 +207,18 @@ class CandidateSurfaceSourceTests(SimpleTestCase):
         self.assertIn("min-height: 2.75rem", source)
         self.assertIn(".candidate-chip { min-width: 2.75rem; }", source)
 
-    def test_desktop_visual_polish_keeps_filter_workflow_and_deck_cues(self):
+    def test_desktop_visual_polish_keeps_filter_workflow(self):
+        # The desktop-only horizontal-deck scrollbar theming this test used
+        # to also guard is retired along with the deck itself (task 3; see
+        # test_list_primary_map_ribbon_and_full_screen_sheet_keep_one_map_
+        # instance above) -- [data-testid="candidate-proposal-cards"] is a
+        # plain vertical list at every width now, so it has no desktop-only
+        # scrollbar/fade styling left to assert.
         template = HOME_TEMPLATE.read_text(encoding="utf-8")
         script = CANDIDATE_SCRIPT.read_text(encoding="utf-8")
 
         self.assertIn("grid-template-columns: repeat(3, minmax(0, 1fr))", template)
         self.assertIn("position: absolute; top: calc(100% + 0.5rem)", template)
-        self.assertIn('[data-testid="candidate-proposal-cards"]::after', template)
-        self.assertIn("scrollbar-width: thin", template)
-        self.assertIn("scrollbar-color: #8da093 transparent", template)
-        self.assertIn(
-            '[data-testid="candidate-proposal-cards"]::-webkit-scrollbar { height: 0.5rem; }',
-            template,
-        )
         self.assertIn("candidate-search-again-label", template)
         self.assertIn('"class": "candidate-search-again-label"', script)
         self.assertIn('"aria-hidden": "true"', script)

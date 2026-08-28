@@ -8,13 +8,13 @@ against the same-origin screen or its public candidate-proposal endpoint.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from itertools import product
 from pathlib import Path
 
 from django.test import SimpleTestCase
 from playwright.sync_api import Locator, Page, expect
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from tests.acceptance.dsl.authentication_browser import AuthenticationBrowserDsl
 from tests.acceptance.dsl.browser_mechanics import HttpBrowser, assert_no_content
@@ -80,6 +80,21 @@ SEARCH_ORIGIN_POSITION_TOLERANCE_DEGREES = 1e-9
 # search origin, name, or address.
 KNOWN_SEARCH_ORIGIN = (12.345678, -98.765432)
 WALKING_RADIUS_RING = "candidate-walking-radius-ring"
+# adr/0030 決定1: mapObservations.walkingRadiusRings.bandAttribute -- the
+# attribute name production already used for the machine-only value; the
+# same decision's bandLabel Must is what assert_walking_radius_rings_have_
+# legible_band_labels checks on top of this (a matching visible/accessible
+# text label, not merely this attribute's presence).
+RING_BAND_ATTRIBUTE = "data-walking-radius-minutes"
+# reviews/audit-ring-labels-and-empty-guidance.md F1: the ring itself
+# (WALKING_RADIUS_RING, a bare Leaflet SVG <path>) has no descendant that
+# ever carries the readable minutes an organizer sees on screen -- that text
+# is drawn as a *separate* Leaflet L.divIcon marker layer, a DOM sibling of
+# the ring rather than something it owns. This is a CSS class rather than a
+# project data-testid because the implementation does not currently expose
+# one for this element; tester does not add attributes to src/** itself
+# (reported upstream instead -- see this slice's fix report).
+WALKING_RADIUS_RING_LABEL_SELECTOR = ".candidate-walking-radius-ring-label-visual"
 PROVIDER_CREDIT = "candidate-provider-credit"
 FILTER_OPEN = "candidate-filter-open"
 FILTER_PANEL = "candidate-filter-panel"
@@ -100,6 +115,10 @@ SEARCH_AGAIN = "candidate-search-again"
 IZAKAYA_BAR_FALLBACK_NOTICE = "candidate-izakaya-bar-fallback-notice"
 BUDGET_TIER_NOTE = "candidate-budget-tier-note"
 NO_RESULTS = "candidate-no-results"
+# adr/0030 決定2: browserControlSurface.empty.reviseFiltersControl.testId --
+# the dedicated actionable element candidate-no-results must own, distinct
+# from the pre-existing toolbar candidate-filter-open.
+NO_RESULTS_REVISE_FILTERS = "candidate-no-results-revise-filters"
 PROBLEM = "candidate-proposal-problem"
 PROBLEM_GUIDANCE = "candidate-proposal-problem-guidance"
 MANUAL_ORDERING = "candidate-manual-ordering"
@@ -226,6 +245,22 @@ LOCATION_RANGE_FORBIDDEN_TOKENS = [
     "distance",
 ]
 STATUS_BY_PROBLEM_CODE = {"PROVIDER_UNAVAILABLE": 503, "PROPOSAL_RATE_LIMITED": 429}
+# adr/0030 決定1 bandLabel: "whose leading digits, parsed as an integer,
+# equal that same bandAttribute value". Only a run of digits at the very
+# start of the text counts -- a label like "徒歩10分" (digits not leading)
+# does not satisfy this Must even though it visibly contains "10", matching
+# the contract's own wording precisely rather than a looser "contains the
+# number" reading.
+_LEADING_MINUTES_PATTERN = re.compile(r"^\s*(\d+)")
+
+
+def _leading_minutes(text: str | None) -> int | None:
+    if not text:
+        return None
+    match = _LEADING_MINUTES_PATTERN.match(text)
+    if match is None:
+        return None
+    return int(match.group(1))
 
 
 @dataclass(frozen=True)
@@ -358,6 +393,34 @@ class CandidateSearchBrowserDsl:
     def open_filter_panel(self) -> None:
         url_before = self.page.url
         by_test_id(self.page, FILTER_OPEN).click()
+        self._assert_filter_panel_opened(url_before)
+
+    def open_filter_panel_via_no_results_guidance(self) -> None:
+        """0件案内を選ぶと絞り込み条件を変更する画面が開く (TDR-CS-05, adr/0030 決定2).
+
+        browserControlSurface.empty.reviseFiltersControl requires
+        candidate-no-results to own exactly one pressable element that,
+        activated, produces openFilterPanel's own requiredOutcome --
+        openFilterPanel.input now names candidate-filter-open-or-
+        candidate-no-results-revise-filters as two alternative inputs for
+        one outcome, so this reuses the same outcome assertion
+        open_filter_panel already runs for the pre-existing toolbar
+        trigger, rather than a separate reimplementation that could drift
+        from it. candidate-filter-open itself stays reachable in this
+        render state too (it is not a member of browserControlSurface.
+        empty.absent); this only proves the guidance's own dedicated
+        control does the same thing, not that the toolbar button
+        disappeared.
+        """
+        no_results = assert_present(self.assertions, self.page, NO_RESULTS)
+        control = by_test_id(no_results, NO_RESULTS_REVISE_FILTERS)
+        expect(control).to_have_count(1)
+        expect(control).to_be_enabled()
+        url_before = self.page.url
+        control.click()
+        self._assert_filter_panel_opened(url_before)
+
+    def _assert_filter_panel_opened(self, url_before: str) -> None:
         assert_all_present(
             self.assertions,
             self.page,
@@ -852,6 +915,82 @@ class CandidateSearchBrowserDsl:
         rings = by_test_id(self.page, WALKING_RADIUS_RING)
         self.assertions.assertGreaterEqual(rings.count(), 1)
 
+    def assert_walking_radius_rings_have_legible_band_labels(self) -> None:
+        """徒歩圏の同心リングにはそれぞれ何分の範囲かを示す表示が添えられる
+        (TDR-CS-02, adr/0030 決定1).
+
+        reviews/audit-ring-labels-and-empty-guidance.md F1: an earlier
+        version of this check read each ring's own aria-label first and
+        returned as soon as it matched. But candidate.js sets that
+        aria-label from the very same ring.minutes value, on the very same
+        ring element, two lines away from RING_BAND_ATTRIBUTE -- so that
+        path only ever proved the machine-only attribute equals a string
+        copied from itself, never that anything is legible on screen. The
+        minutes an organizer actually sees are drawn as a *separate*
+        Leaflet marker layer (WALKING_RADIUS_RING_LABEL_SELECTOR), a DOM
+        sibling of the ring rather than a descendant of it, so a
+        ring.locator("*") descendant search could never reach it either.
+        This check no longer reads any ring's aria-label at all: it
+        collects the band minutes every ring declares via
+        RING_BAND_ATTRIBUTE and the minutes every *visible*
+        WALKING_RADIUS_RING_LABEL_SELECTOR element on the page actually
+        renders as text, and requires the two multisets to match exactly.
+        A ring with no matching visible label -- undrawn, blanked, or off
+        by one -- fails this check: adr/0030's own motivating incident
+        (bandAttribute present, nothing legible on screen).
+
+        Known gap this does not close: Playwright's visibility check does
+        not model on-screen occlusion (e.g. a candidate pin drawn on top of
+        a label), so a label hidden behind another marker but otherwise
+        rendered would still pass here.
+        """
+        self._current_proposal()
+        rings = wait_for_at_least_one(self.page, WALKING_RADIUS_RING)
+        ring_count = rings.count()
+        self.assertions.assertGreaterEqual(ring_count, 1)
+        ring_band_minutes: list[int] = []
+        for index in range(ring_count):
+            band_value = rings.nth(index).get_attribute(RING_BAND_ATTRIBUTE)
+            require(band_value, f"walking-radius ring {index} has no {RING_BAND_ATTRIBUTE}")
+            ring_band_minutes.append(int(band_value))
+        label_minutes = self._visible_walking_radius_ring_label_minutes()
+        self.assertions.assertEqual(
+            sorted(label_minutes),
+            sorted(ring_band_minutes),
+            "the visible walking-radius ring labels "
+            f"({WALKING_RADIUS_RING_LABEL_SELECTOR}, read minutes {sorted(label_minutes)}) do "
+            f"not match the set of ring {RING_BAND_ATTRIBUTE} values "
+            f"({sorted(ring_band_minutes)}) -- every ring's band must be shown by a legible, "
+            "actually-rendered label, not merely carried in a machine-only attribute or an "
+            "aria-label that only mirrors it",
+        )
+
+    def _visible_walking_radius_ring_label_minutes(self) -> list[int]:
+        """Leading-digit minutes read from every *visible*
+        WALKING_RADIUS_RING_LABEL_SELECTOR element currently on the page.
+
+        "Visible" is Playwright's own ``is_visible()`` (zero-size,
+        display:none, or visibility:hidden ancestors all count as not
+        visible) -- a label node that exists in the DOM but is not actually
+        rendered does not count, which is the whole point of bandLabel
+        (adr/0030's motivating incident was exactly that: an attribute
+        present, nothing legible on screen).
+        """
+        labels = self.page.locator(WALKING_RADIUS_RING_LABEL_SELECTOR)
+        minutes: list[int] = []
+        for index in range(labels.count()):
+            label = labels.nth(index)
+            try:
+                visible = label.is_visible()
+            except Exception:  # noqa: BLE001 - a detached/unstable node is simply not legible
+                visible = False
+            if not visible:
+                continue
+            leading = _leading_minutes(label.text_content())
+            if leading is not None:
+                minutes.append(leading)
+        return minutes
+
     def assert_walking_time_is_shown_as_an_estimate(self) -> None:
         """徒歩のめやす時間は推定であり、実際に歩いた経路を測った時間ではないことが分かる形で
         示される (TDR-CS-02, adr/0025 決定2).
@@ -892,21 +1031,40 @@ class CandidateSearchBrowserDsl:
         self._assert_all_other_cards_and_markers_unselected(candidate_ref)
 
     def select_first_marker_and_verify_card_highlighted(self) -> None:
-        markers = wait_for_at_least_one(self.page, MAP_MARKER)
-        marker = None
-        for index in range(markers.count()):
-            candidate = markers.nth(index)
-            try:
-                candidate.click(trial=True, timeout=1_000)
-            except PlaywrightTimeoutError:
-                continue
-            marker = candidate
-            break
-        if marker is None:
-            raise AssertionError("no displayed map marker is interactable")
+        """地図上の店舗を選ぶと対応する店舗カードが強調される
+        (TDR-CS-02, browserActions.selectMarker).
+
+        selectMarker's own requiredOutcome only names attribute values
+        (selectedMarkerAttribute/matchingCardAttribute/allOtherCardsAndMarkers)
+        for ``input: candidate-map-marker`` -- it says nothing about how a
+        marker must be reached, and the list/ribbon/sheet skeleton
+        (dining-radar/adr/0030 決定4 deliberately leaves ribbon/sheet
+        geometry out of this contract's scope) draws every synthetic
+        candidate's marker within a few pixels of each other around the
+        search origin inside the default 88px map ribbon, so a
+        coordinate-based click aimed at one marker's own center is very
+        often answered by a different, more-tightly-stacked sibling marker
+        instead (confirmed empirically: none of the markers passed a
+        Playwright trial click in this state). That is an occlusion problem
+        in the same family as the pre-existing candidate-origin-marker/ring
+        one this DSL already solves with dispatch_event, not a defect this
+        contract's own Must is about -- dispatch_event("click") fires the
+        click event on the *chosen* marker node itself, bypassing
+        hit-testing, so this proves that marker's own selectMarker
+        activation rather than whichever marker a coordinate click happens
+        to land on. The dedicated ribbon-to-sheet expand control a human
+        would use to spread pins apart before tapping one carries no
+        contract test id of its own (also left out of scope by adr/0030
+        決定4), so this DSL does not depend on it either -- confirmed
+        empirically that dispatch_event alone, with the ribbon still
+        collapsed, already drives the real selection handler (the target
+        marker's and its matching card's data-selection-state both flip to
+        selected), not just a bubbled no-op.
+        """
+        marker = wait_for_at_least_one(self.page, MAP_MARKER).first
         candidate_ref = marker.get_attribute("data-candidate-ref")
         self.assertions.assertTrue(candidate_ref)
-        marker.click()
+        marker.dispatch_event("click")
         expect(marker).to_have_attribute("data-selection-state", "selected")
         card = self.page.locator(f'[data-testid="{CARD}"][data-candidate-ref="{candidate_ref}"]')
         expect(card).to_have_attribute("data-selection-state", "selected")
