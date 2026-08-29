@@ -33,3 +33,8 @@ credentials.json
 # DBはログ本文をそのまま含む——閲覧したページ由来のメールアドレスや開発用の資格情報が写り込む
 *.db
 .claude/session-index.db
+
+# ローカルで画面を確かめるためだけの設定とDB。リポジトリに入れない。
+# orchestrator が同じスライスで2回コミットに混入させたため、機械で止める（2026-08-29）。
+projects/*/src/*/settings_localdemo.py
+projects/*/localdemo.sqlite3
