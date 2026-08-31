@@ -438,3 +438,107 @@ principles: [P-02, P-07]
 - 補足2: 本件の成果物はリポジトリの担当外（人間の個人用ツール）だが、**工程の踏み方は
   このリポジトリの主題そのもの**であるため台帳に載せる。範囲外の作業だから手順を省いてよい、
   という判断自体が原因の一部だった。
+
+---
+
+## FR-012: 役割agentがEditツールをRead未実行のファイルに対して呼び、16セッション・46回はねられていた
+
+```yaml
+id: FR-012
+date: 2026-08-31
+found_at: AI
+slice: 収穫ループの横断モードによる棚卸し（週次）
+agents: [tester, reviewer, developer, designer]
+cause_category: ツール前提条件の伝達不足
+cause_key: edit-before-read-violation
+pushed_to: []
+status: 未対応
+principles: [P-04]
+```
+
+- 事象: セッションログの横断走査で、`<tool_use_error>File has not been read yet. Read it
+  first before writing to it.</tool_use_error>` が**16セッション・46回**出ていた。Editツール自身の
+  前提（対象ファイルを同じ会話内でReadしてから編集する）を役割agentが満たせずにいる。台帳51件の
+  どこにも記録されていなかった。
+- 原因の仮説: 役割agentはorchestratorのブリーフや前段の成果物（設計原本・契約・他agentの出力）を
+  読んで対象ファイルの中身を**知っているつもりで**Editを呼んでいる。だが「知っている」と「そのagent
+  自身のツール実行コンテキストでReadした」は別で、Editツールの前提は後者を要求する。役割agentは
+  subagentとして毎回新しいコンテキストで起動するため、この取り違えが起きやすい。
+- 押し込み先: まだ決めていない。候補は (1) 各役割contract（`.claude/agents/*.md`）に「Editの前に
+  必ず対象ファイルをそのagent自身でReadする」を明記する、(2) orchestratorのブリーフ雛形に
+  「編集対象ファイルの絶対パスを列挙し、Read→Edit の順を明示する」を足す。どちらも人間の判断待ち。
+- 補足: FR-010（設計原本を読まずに実装が落ちた）と根が近い——**「他者の要約で足りると思い込み、
+  自分でファイルを読まない」という同じ機構**が、片方は設計内容の欠落、もう片方はツール前提違反として
+  出ている。cause_keyは分けた（技術的な現れ方が違い、Editツールのエラーメッセージという機械的な
+  検出手段があるため）が、根本原因の議論では合わせて扱う価値がある。
+
+---
+
+## FR-013: EditのString to replaceが実ファイルと食い違い、12セッション・24回はねられていた
+
+```yaml
+id: FR-013
+date: 2026-08-31
+found_at: AI
+slice: 収穫ループの横断モードによる棚卸し（週次）
+agents: [developer, tester]
+cause_category: 検証の不足（編集直前の再読み欠落）
+cause_key: edit-target-content-drift
+pushed_to: []
+status: 未対応
+principles: [P-04]
+```
+
+- 事象: セッションログの横断走査で、`<tool_use_error>String to replace not found in
+  file.</tool_use_error>` が**12セッション・24回**出ていた。Editに渡した`old_string`が実際の
+  ファイル内容と一致しない。台帳51件のどこにも記録されていなかった。
+- 事象の内訳: 抜粋を見ると2パターンある。(1) 対象ファイルの内容が**直前の別編集や別agentの作業で
+  既に変わっていた**のに、古い記憶のまま`old_string`を組んでいた（例: 2026-07-15、
+  `AGENTS.md`の未整備チェックリストを対象にした編集）。(2) **エスケープの形が合わない**
+  （`\uXXXX`エスケープと実文字の食い違いなど）——ツール自身のエラーメッセージが
+  「Edit also tried swapping \uXXXX escapes and their characters; neither form matched」と
+  自己診断している例が複数あった。
+- 原因の仮説: FR-012と表裏である。FR-012は「一度もReadしていない」、本件は「Readはしたが、
+  その後の状態変化やエンコーディングの違いを踏まえずに`old_string`を組んだ」。編集直前の
+  再読み込みタイミングの欠落、またはマルチバイト・エスケープを含む文字列の扱いに関する
+  役割agent側の手順が定まっていない。
+- 押し込み先: まだ決めていない。候補は各役割contractに「連続編集の間で対象ファイルが他の操作で
+  変わりうる場合は直前に再Readする」「エスケープを含む文字列は最小限の一意な断片に絞って
+  `old_string`を組む」を足すこと。人間の判断待ち。
+
+---
+
+## FR-014: プロジェクトを跨ぐcd付きBashコマンドが、17セッション・34回一律に権限拒否されていた
+
+```yaml
+id: FR-014
+date: 2026-08-31
+found_at: AI
+slice: 収穫ループの横断モードによる棚卸し（週次）
+agents: [developer, orchestrator]
+cause_category: 権限設計とワークフローの不整合
+cause_key: cross-directory-bash-denied-by-cd-prefix
+pushed_to: []
+status: 未対応
+principles: []
+```
+
+- 事象: セッションログの横断走査で、`cd <path> && ...` の形のBashコマンドが権限拒否される
+  イベントが**17セッション・34回**出ていた。台帳51件のどこにも記録されていなかった。
+- 事象の内訳: 抜粋を見ると共通点がある——**現在の作業ディレクトリとは別のプロジェクト**
+  （`stock-screener`、`reservation-frontend`、`toyama-dining-radar`等）へ`cd`してから
+  `cat`・`ls`・`env`のような**素朴な調査コマンド**を実行しようとして拒否されている例が大半。
+  一部（初出の1件）は`git branch -D && git reset --hard`のような破壊的操作を含んでおり、
+  そちらは拒否が妥当。
+- 原因の仮説: 本セッションのシステム指示にも「`cd <current-directory>` を先頭に付けない、
+  `git`は既にワーキングツリーで動く」という趣旨の注意があるが、これは**カレントディレクトリへの
+  無意味なcd**を指しており、**別プロジェクトへの越境調査**は別の話である。役割agentは
+  別プロジェクトの`.env.example`や設定を覗きたいときに`cd`付きコマンドを組むが、権限システムは
+  `cd`を含むコマンド全体を一律に人間確認対象にしており、単純な読み取り調査であっても
+  毎回はねられている。越境調査そのものを禁止する規程は無く、単に権限プロンプトの摩擦として
+  17セッションに渡って繰り返し出ている。
+- 押し込み先: まだ決めていない。候補は (1) 別プロジェクトの読み取り専用調査に限定した許可
+  ルールを`.claude/settings.json`に足す（`fewer-permission-prompts`スキルの対象）、
+  (2) 役割contractに「別プロジェクトを調べる必要があるときはBashのcdではなく当該ファイルを
+  絶対パスでRead/Globする」という代替手順を明記する。後者はcdを完全に避けられる分、権限設計を
+  変えずに済む。人間の判断待ち。
