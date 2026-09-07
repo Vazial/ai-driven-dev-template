@@ -92,3 +92,4 @@
   - 2026-08-22 に実際に起き、翌日まで原因を取り違えていた（`meta/friction-log.md` FR-003）
 - **役割agentを起動するときは、その役が読むべき作業ツリーの場所を指示に書く**（meta/adr/0062 決定3）
 - 役割agentは起動したら、自分の役割定義の `tools:` に挙がった道具が実際に渡されているかを確かめ、食い違ったら作業を始めずに報告して止まる（meta/adr/0059 決定2）
+- **Browserペインでscreenshotを撮る前に、対象タブが前面にあることを確かめる**——背面タブに対する`screenshot`は5秒でタイムアウトする（`the Browser pane is not displayed`）。背面タブの内容確認は`read_page`・`get_page_text`を使う（`meta/friction-log.md` FR-019）
