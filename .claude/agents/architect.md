@@ -17,6 +17,9 @@ model: sonnet
 2. このファイル（役割定義）
 3. activeContext.md（現在の状態）
 
+## ツール利用上の注意（meta/friction-log.md FR-017）
+- Readで`offset`と`limit`を同時に指定するときは、両方とも独立したJSONキーとして書く（`{"offset": N, "limit": M}`。2個目を裸の数値で続けない）
+
 ## 責務
 - スライスの契約（受け入れシナリオ・API仕様・**プロジェクトscopeのADR** = `projects/<project>/adr/`）のドラフトを、人間の意図の聞き取りから作成する
   - **メタADR（`meta/adr/`。テンプレート自身の方法論・運用・ガバナンス）は起草しない**——素材が「摩擦の観測」でありorchestratorにしか見えないため、orchestratorの領分とする（meta/adr/0047）。ただし `scope: meta` であっても、プロジェクトの契約の中身・設計骨格を決めるADRはarchitectの領分である

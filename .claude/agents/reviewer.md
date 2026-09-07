@@ -18,6 +18,10 @@ model: sonnet
 3. activeContext.md（現在の状態）
 4. 監査対象: steps/ dsl/ の差分、対応するシナリオ
 
+## ツール利用上の注意（meta/friction-log.md FR-016・FR-017）
+- Bash経由でPythonのワンライナー/ヒアドキュメントを呼ぶときは、`python3`ではなく`python`を使う（`python3`はヒアドキュメント入力と組み合わせると`Exit code 49`で落ちる）
+- Readで`offset`と`limit`を同時に指定するときは、両方とも独立したJSONキーとして書く（`{"offset": N, "limit": M}`。2個目を裸の数値で続けない）
+
 ## 独立性（この役割の核心）
 - **testerの意図説明・コメント・コミットメッセージを判断材料にしない。コードだけを読む**
 - あなたがコードから読み取った「実際にやっていること」とシナリオの間にズレがあれば、それはtesterの誤解の兆候（agents.md 3節）

@@ -581,3 +581,140 @@ principles: [P-05, P-10]
 - 併発した検査の失敗: 削る過程で「はみ出した要素は0件」という検査を書いて一度**偽の合格**を
   出した。そのときページは構文エラーで真っ白で、0件の要素を0件と数えていた。以後、
   **描画された要素数が0でないこと**を併せて確認する（ADR-0066 帰結）。
+
+---
+
+## FR-016: `python3` へのヒアドキュメント渡しが一貫して`Exit code 49`で落ちていた
+
+```yaml
+id: FR-016
+date: 2026-09-07
+found_at: AI
+slice: 収穫ループの横断モードによる棚卸し（週次）
+agents: [designer, developer, reviewer, tester]
+cause_category: 道具の選び方
+cause_key: python3-heredoc-exit-49-on-windows
+pushed_to: [.claude/agents/developer.md, .claude/agents/tester.md, .claude/agents/reviewer.md, .claude/agents/designer.md]
+status: 対応済み
+principles: [P-04]
+```
+
+- 事象: セッションログの横断走査で`Exit code 49`が**9セッション・21回**出ていた。生のインデックスを
+  掘って個々の呼び出しを見ると、中身（何を検査・置換しているか）はセッションごとにバラバラだが、
+  **呼び出しの形だけが一貫して同一**——`python3 - <<'EOF' ... EOF`または`<<'PY' ... PY`という
+  ヒアドキュメント渡しをBash経由で`python3`に対して行っている。出力は毎回`"Python"`という一行
+  だけで、スクリプトの中身に応じたエラーメッセージすら出ていない。台帳51件のどこにも記録されて
+  いなかった。
+- 原因の仮説: 中身の複雑さと無関係に同じ形で落ちていることから、原因はスクリプトの内容ではなく
+  **`python3`という呼び名とヒアドキュメント入力の組み合わせ自体**にある可能性が高い（このWindows
+  環境では`python`コマンドが実体で、`python3`はPython Launcher経由のエイリアスになっており、
+  標準入力の受け方が異なるとみられる）。FR-006（`shell-indirection-mangles-escapes`）と同じ
+  「シェル経由でインタプリタに渡す」という道具選びの系譜だが、症状（バックスラッシュの2段解釈）が
+  違うためcause_keyは分けた。
+- 押し込み先: 全役割contract（`.claude/agents/*.md`）に「Bash経由でPythonのワンライナー/ヒア
+  ドキュメントを呼ぶときは、`python3`ではなく`python`を使う」を1行追記した。ヒアドキュメント自体を
+  避ける手順までは踏み込まず、まず最小の変更（コマンド名の変更）で直るか様子を見る。
+
+---
+
+## FR-017: `Read`の`offset`+`limit`指定が壊れたJSONになり、8セッション・28回はねられていた
+
+```yaml
+id: FR-017
+date: 2026-09-07
+found_at: AI
+slice: 収穫ループの横断モードによる棚卸し（週次）
+agents: [architect, developer, reviewer, tester]
+cause_category: ツール呼び出しの形式ミス
+cause_key: read-offset-limit-json-malformed
+pushed_to: [.claude/agents/developer.md, .claude/agents/tester.md, .claude/agents/reviewer.md, .claude/agents/architect.md]
+status: 対応済み
+principles: [P-04]
+```
+
+- 事象: セッションログの横断走査で`<tool_use_error>InputValidationError: Read was called with
+  input that could not be parsed as JSON.`が**8セッション・28回**出ていた。台帳51件のどこにも
+  記録されていなかった。
+- 事象の内訳: 全件で壊れ方が同一パターンである——`offset`と`limit`を両方指定しようとして、
+  2個目の数値に`"limit":`というキー名を付け忘れ、`{"offset": 195, 260}`のような**位置引数のような
+  JSON**を送っている。ほぼ全て`developer`役割が対象で、`toyama-dining-radar`/`dining-radar`の
+  実装ファイルを読もうとした場面に集中している。
+- 原因の仮説: `offset`だけを指定する呼び出しでは起きておらず、**`offset`と`limit`を同時に指定する
+  場面に限って**同じ書き間違いが繰り返されている。単発のタイプミスではなく、Readツールの
+  パラメータ形式（`limit`は独立したキー）についての理解が役割agent間で一貫して揺れている
+  ことを示す。
+- 押し込み先: `developer.md`・`tester.md`・`reviewer.md`・`architect.md`（Readで範囲を絞る場面が
+  ある役割）に「Readで`offset`と`limit`を同時に指定するときは、両方とも独立したJSONキーとして
+  書く（`{"offset": N, "limit": M}`。2個目を裸の数値で続けない）」を1行追記した。8セッションに
+  渡って全く同じ間違い方をしていたため、注意書き1つで直る見込みが高いと判断した。
+
+---
+
+## FR-018: 自動モード分類器が、危険でない通常の開発操作まで一律に拒否していた
+
+```yaml
+id: FR-018
+date: 2026-09-07
+found_at: AI
+slice: 収穫ループの横断モードによる棚卸し（週次）
+agents: [orchestrator, reviewer, tester]
+cause_category: 権限設計とワークフローの不整合
+cause_key: auto-mode-classifier-overblocks-routine-ops
+pushed_to: []
+status: 未対応
+principles: []
+```
+
+- 事象: セッションログの横断走査で`Permission for this action was denied by the Claude Code
+  auto mode classifier`が**10セッション・21回**出ていた。台帳51件のどこにも記録されていなかった。
+  ほとんどはorchestrator（メインセッション）で起きており、`reviewer`・`tester`としての実行も一部
+  混じっている。
+- 事象の内訳: 抜粋を見ると2種類が混在する。(1) **拒否が妥当なもの**——`podman machine rm -f`の
+  ような、人間が名指ししていない既存VMの破壊的削除。(2) **拒否が過剰に見えるもの**——別worktree内
+  での`python meta/tools/govlint.py`実行、`.claude/settings.json`のEdit、ADR本文をsedで直して
+  コミットする一連の操作、`candidate.js`の通常のコード編集など、**危険性の乏しい通常の実装・lint・
+  設定編集**まで`Blocked by classifier`という理由なしの拒否を受けている。
+- 原因の仮説: 分類器は`cd`や`sed`・`Edit(.claude/settings.json)`のような**特定のコマンド形**に
+  反応して危険度を判定していると見られ、実際の操作対象（別worktree内の読み取り安全な検証、
+  ADR本文の訂正）との対応が粗い。既存の`cross-directory-bash-denied-by-cd-prefix`（FR-014）は
+  「人間への許可プロンプト」が対象だが、本件は**分類器による自動拒否**であり別の機構のため
+  cause_keyを分けた。
+- 押し込み先: **未対応のまま残す。** この分類器はリポジトリの外側（Claude Code本体のランタイム）に
+  あり、`meta/`配下の規程・設定では直接強制できない。役割contractに「分類器に拒否されやすい操作
+  パターンを避ける」ような対症療法を書くと、対象がClaude Code側の実装詳細に依存し**規約が
+  すぐ陳腐化する**（P-04が禁じる「ルール化できないものを文章で書く」の裏返り）。人間による
+  Claude Code側へのフィードバック、または拒否理由が付かない場合の扱いの判断待ち。
+
+---
+
+## FR-019: Browserペインが前面に無い状態でscreenshotを呼び、6セッション・10回タイムアウトしていた
+
+```yaml
+id: FR-019
+date: 2026-09-07
+found_at: AI
+slice: 収穫ループの横断モードによる棚卸し（週次）
+agents: [orchestrator]
+cause_category: ツール呼び出し前の前提未確認
+cause_key: screenshot-called-without-fronted-tab
+pushed_to: [meta/guardrails.md]
+status: 対応済み
+principles: [P-04]
+```
+
+- 事象: セッションログの横断走査で`screenshot failed: Screenshot timed out after 5s: the
+  Browser pane is not displayed, so the page is not compositing frames.`が**6セッション・
+  10回**出ていた。全てメインセッション（orchestrator）での呼び出しで、台帳51件のどこにも
+  記録されていなかった。
+- 事象の内訳: 全件で原因のメッセージ自体が一致しており、`mcp__Claude_Browser__computer`の
+  `screenshot`アクションを、Browserペインが表示されていない（前面にない、または裏タブの）
+  状態で呼んでいる。5秒待ってタイムアウトするだけで、その後リトライして直った形跡もある。
+- 原因の仮説: `preview_start`や`navigate`でタブを開いた後、そのタブを前面化（`tabs_select`）
+  しないままscreenshotを呼んでいる。バックグラウンドタブは`read_page`や`get_page_text`では
+  問題なく読めるため、screenshotだけが前面表示を要求するという前提の違いに気づかないまま
+  呼んでいると見られる。
+- 押し込み先: `meta/guardrails.md`「4. セッション・コンテキスト」に「Browserペインでscreenshotを
+  撮る前に、対象タブが前面にあることを確かめる（背面タブの内容確認は`read_page`/`get_page_text`を
+  使う）」を1行追記した。この摩擦は役割agentではなくorchestrator（メインセッション）自身の
+  振る舞いのため、役割contractではなくorchestratorも参照する運用ガードレール規程に置いた。
+  `CLAUDE.md`は「ここに規程を複製しない」と自身に課しているため対象から外した。
