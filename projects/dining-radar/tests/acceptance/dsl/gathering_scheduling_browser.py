@@ -31,6 +31,7 @@ import secrets
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlparse
 
 from django.test import SimpleTestCase
 from playwright.sync_api import Locator, Page, Response, expect
@@ -92,7 +93,8 @@ OPEN_SHOP_PREVIEW_ITEM = "gathering-open-shop-preview-item"
 OPEN_SHOP_PREVIEW_ITEM_NAME = "gathering-open-shop-preview-item-name"
 
 # organizerDashboard.shortlistSelection / shortlistedShopVotes / finalize
-# (TDR-GTH-26..33/35/36, adr/0042 -- shop shortlisting, D7 replace, finalize).
+# (TDR-GTH-26..33/35/36, adr/0042 -- shop shortlisting, D7 replace, finalize;
+# three-tier tally attributes and map/detail fields added adr/0044, TDR-GTH-38/40).
 SHOP_ID_ATTR = "data-shop-id"
 OPEN_SHOP_LIST = "gathering-open-shop-list"
 OPEN_SHOP_LIST_ITEM = "gathering-open-shop-list-item"
@@ -101,21 +103,49 @@ OPEN_SHOP_SELECT = "gathering-open-shop-select"
 SHORTLIST_SUBMIT = "gathering-shortlist-submit"
 SHORTLISTED_SHOP_LIST = "gathering-shortlisted-shop-list"
 SHORTLISTED_SHOP_ITEM = "gathering-shortlisted-shop-item"
-APPROVAL_COUNT_ATTR = "data-approval-count"
+# Three-tier tally attributes (adr/0044, replacing the retired single
+# data-approval-count): WANT_TO_GO_COUNT_ATTR/OK_TO_GO_COUNT_ATTR are new;
+# NOT_GOING_COUNT_ATTR/RESPONDED_COUNT_ATTR below reuse the exact same
+# attribute-name strings CandidateDate/ShortlistedShop already share.
+WANT_TO_GO_COUNT_ATTR = "data-want-to-go-count"
+OK_TO_GO_COUNT_ATTR = "data-ok-to-go-count"
 SHORTLIST_OPEN = "gathering-shortlist-open"
 FINALIZE_SHOP_SELECT = "gathering-finalize-shop-select"
 FINALIZE_SELECTED_ATTR = "data-finalize-selected"
 FINALIZE_SUBMIT = "gathering-finalize-submit"
 
-# participantAnswer.shopVoteQuestion / finalizedView (TDR-GTH-28..30/34, adr/0042).
+# organizerDashboard.shortlistSelection.list's map and per-shop detail fields
+# (TDR-GTH-38, adr/0044). PickFive.dc.html's checklist only -- deliberately
+# not shortlistedShopVotes' tally view (this contract's own asymmetry note).
+OPEN_SHOP_MAP = "gathering-open-shop-map"
+OPEN_SHOP_MAP_MARKER = "gathering-open-shop-map-marker"
+OPEN_SHOP_LIST_ITEM_WALKING_TIME = "gathering-open-shop-list-item-walking-time"
+OPEN_SHOP_LIST_ITEM_CAPACITY_TIER = "gathering-open-shop-list-item-capacity-tier"
+OPEN_SHOP_LIST_ITEM_NON_SMOKING = "gathering-open-shop-list-item-non-smoking"
+OPEN_SHOP_LIST_ITEM_DINNER_BUDGET = "gathering-open-shop-list-item-dinner-budget"
+OPEN_SHOP_LIST_ITEM_PROVIDER_PAGE_LINK = "gathering-open-shop-list-item-provider-page-link"
+
+# participantAnswer.shopVoteQuestion / finalizedView (TDR-GTH-28..30/34,
+# adr/0042; restructured to three tiers, map/detail fields, and search-origin
+# marker adr/0044/0045, TDR-GTH-37/39/41).
 SHOP_VOTE_QUESTION = "gathering-shop-vote-question"
-YOUR_APPROVAL_ATTR = "data-your-approval"
-SHOP_VOTE_SELECT = "gathering-shop-vote-select"
+YOUR_VOTE_ATTR = "data-your-vote"
+SHOP_VOTE_OPTION = "gathering-shop-vote-option"
+VOTE_VALUE_ATTR = "data-vote-value"
 SHOP_VOTE_TALLY = "gathering-shop-vote-tally"
 PARTICIPANT_PROGRESS = "gathering-participant-progress"
 PARTICIPANT_DECISION = "gathering-participant-decision"
 YOUR_SCHEDULE_RESPONSE_ATTR = "data-your-schedule-response"
-PARTICIPANT_DECISION_APPROVED_SHOP = "gathering-participant-decision-approved-shop"
+PARTICIPANT_DECISION_SHOP_VOTE = "gathering-participant-decision-shop-vote"
+VOTE_STATUS_ATTR = "data-vote-status"
+SHOP_VOTE_MAP = "gathering-shop-vote-map"
+SHOP_VOTE_MAP_MARKER = "gathering-shop-vote-map-marker"
+SEARCH_ORIGIN_MARKER = "gathering-search-origin-marker"
+SHOP_VOTE_QUESTION_WALKING_TIME = "gathering-shop-vote-question-walking-time"
+SHOP_VOTE_QUESTION_CAPACITY_TIER = "gathering-shop-vote-question-capacity-tier"
+SHOP_VOTE_QUESTION_NON_SMOKING = "gathering-shop-vote-question-non-smoking"
+SHOP_VOTE_QUESTION_DINNER_BUDGET = "gathering-shop-vote-question-dinner-budget"
+SHOP_VOTE_QUESTION_PROVIDER_PAGE_LINK = "gathering-shop-vote-question-provider-page-link"
 
 # organizerGatheringList / organizerGatheringCreate test ids / attributes
 # (gathering-scheduling-browser-interface.yaml v0.3, adr/0038).
@@ -157,6 +187,12 @@ PARTICIPANT_NAME_INPUT = "gathering-participant-name-input"
 PARTICIPANT_NAME_SUBMIT = "gathering-participant-name-submit"
 PARTICIPANT_LINK_ERROR = "gathering-participant-link-error"
 LINK_ERROR_CODE_ATTR = "data-link-error-code"
+# unexpectedLoadFailureOutcome / loadFailure (browser-interface.yaml v0.8.0,
+# adr/0047, TDR-GTH-42). No attribute is defined for this element -- unlike
+# linkError's data-link-error-code, the contract fixes no failure taxonomy
+# here, only that the element exists and every other participant surface
+# does not.
+PARTICIPANT_LOAD_ERROR = "gathering-participant-load-error"
 
 # unavailableControls (both namespaces; gathering-scheduling-browser-interface.yaml).
 # Mirrors candidate_search_browser.py's ALLOWED_CONTROL_PURPOSES /
@@ -331,6 +367,24 @@ class GatheringSchedulingBrowserDsl:
             headers={"Content-Type": "application/json"},
         )
         assert_no_content(self.assertions, response, "seedRateLimitedParticipantLink")
+
+    def seed_participant_link_server_error(self, link: dict[str, str]) -> None:
+        """test-support-api.yaml 1.5.4's seedParticipantLinkServerError
+        (adr/0047 decision 4): makes the *next* getParticipantView call for
+        this token return an HTTP 500 that matches none of linkError's four
+        recognized ProblemResponse codes -- the state
+        unexpectedLoadFailureOutcome (TDR-GTH-42) requires, and one the
+        public boundary alone cannot produce (same exception class as
+        seed_expired_participant_link/seed_rate_limited_participant_link
+        above).
+        """
+        response = self.support.request(
+            "POST",
+            "/test-support/gathering-scheduling/participant-links/server-error",
+            data=json.dumps({"token": link["token"]}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        assert_no_content(self.assertions, response, "seedParticipantLinkServerError")
 
     # Sign-in (shared root entry point, same as candidate_search_browser.py) -
 
@@ -532,6 +586,31 @@ class GatheringSchedulingBrowserDsl:
     def assert_candidate_date_list_is_ordered_by_going_count_descending(self) -> None:
         going_counts = [date["going"] for date in self._read_candidate_dates()]
         self.assertions.assertEqual(going_counts, sorted(going_counts, reverse=True))
+
+    def capture_candidate_date_order(self) -> list[str]:
+        return [date["id"] for date in self._read_candidate_dates()]
+
+    def _expected_candidate_date_order(self, start_at_isos: list[str]) -> list[str]:
+        return [self._candidate_date_id_by_start_at[iso] for iso in sorted(start_at_isos)]
+
+    def assert_candidate_date_order_matches_start_at_order(self, start_at_isos: list[str]) -> None:
+        """candidateDateList.orderingInvariant's tie-break (adr/0048, TDR-GTH-43):
+        every candidate date here ties at goingCount 0 (nobody has answered
+        yet), so the whole order collapses to startAt ascending. Checked
+        against the chronological order of the exact ISO strings this
+        scenario's own Given supplied -- not mere self-consistency against
+        the API's own claimed order the way TDR-GTH-08/37's near-order
+        checks work (this suite cannot recompute geography, but startAt is
+        data this suite itself chose, so it can independently recompute the
+        expected order).
+        """
+        self.assertions.assertEqual(
+            self.capture_candidate_date_order(),
+            self._expected_candidate_date_order(start_at_isos),
+        )
+
+    def assert_candidate_date_order_unchanged(self, before: list[str]) -> None:
+        self.assertions.assertEqual(self.capture_candidate_date_order(), before)
 
     def assert_candidate_date_tally(
         self, candidate_date_id: str, *, going: int, maybe: int, not_going: int
@@ -1220,9 +1299,9 @@ class GatheringSchedulingBrowserDsl:
 
     def assert_no_shortlist_recorded_yet(self) -> None:
         """Proves gathering-open-shop-select's activation is pending-only (no
-        network call) -- unlike the participant's shop-vote checkbox
-        (toggle_shop_vote below), which calls setShopVotes immediately on every
-        activation. Both models are individually documented in
+        network call) -- unlike the participant's shop-vote options
+        (answer_shop_vote_question below), which call setShopVotes immediately
+        on every activation. Both models are individually documented in
         gathering-scheduling-browser-interface.yaml's renderModel; this
         asserts the organizer side of that documented asymmetry actually holds.
         """
@@ -1243,7 +1322,9 @@ class GatheringSchedulingBrowserDsl:
             result.append(
                 {
                     "shopId": node.get_attribute(SHOP_ID_ATTR),
-                    "approvalCount": int(node.get_attribute(APPROVAL_COUNT_ATTR)),
+                    "wantToGoCount": int(node.get_attribute(WANT_TO_GO_COUNT_ATTR)),
+                    "okToGoCount": int(node.get_attribute(OK_TO_GO_COUNT_ATTR)),
+                    "notGoingCount": int(node.get_attribute(NOT_GOING_COUNT_ATTR)),
                     "respondedCount": int(node.get_attribute(RESPONDED_COUNT_ATTR)),
                 }
             )
@@ -1253,16 +1334,105 @@ class GatheringSchedulingBrowserDsl:
         actual_ids = {item["shopId"] for item in self._read_shortlisted_shop_items()}
         self.assertions.assertEqual(actual_ids, set(expected_ids))
 
-    def assert_shortlisted_shop_tally(self, shop_id: str, *, approval: int, responded: int) -> None:
+    def assert_shortlisted_shop_tally(
+        self, shop_id: str, *, want_to_go: int, ok_to_go: int, not_going: int, responded: int
+    ) -> None:
+        """Fixed 2026-09-05 (adr/0044 decision 1/3): three-tier tally, replacing
+        the retired single approvalCount. wantToGoCount + okToGoCount +
+        notGoingCount must always equal respondedCount (gathering-scheduling-
+        api.yaml's ShortlistedShop own invariant) -- checked here too, not
+        only trusted.
+        """
         items = {item["shopId"]: item for item in self._read_shortlisted_shop_items()}
         item = require(items.get(shop_id), f"shortlisted shop {shop_id} not shown")
-        self.assertions.assertEqual(item["approvalCount"], approval)  # type: ignore[index]
+        self.assertions.assertEqual(item["wantToGoCount"], want_to_go)  # type: ignore[index]
+        self.assertions.assertEqual(item["okToGoCount"], ok_to_go)  # type: ignore[index]
+        self.assertions.assertEqual(item["notGoingCount"], not_going)  # type: ignore[index]
         self.assertions.assertEqual(item["respondedCount"], responded)  # type: ignore[index]
+        self.assertions.assertEqual(
+            item["wantToGoCount"] + item["okToGoCount"] + item["notGoingCount"],  # type: ignore[operator]
+            item["respondedCount"],
+        )
+
+    def assert_shortlisted_shop_list_is_ordered_by_combined_tier_descending(self) -> None:
+        """TDR-GTH-40: 店は「行きたい」と「行ってもいい」の合計が多い順に並ぶ
+        (adr/0044 decision 3, replacing the retired single wantToGoCount-only
+        order an in-progress draft had used).
+        """
+        combined = [
+            item["wantToGoCount"] + item["okToGoCount"]  # type: ignore[operator]
+            for item in self._read_shortlisted_shop_items()
+        ]
+        self.assertions.assertEqual(combined, sorted(combined, reverse=True))
 
     def assert_shop_not_offered_in_open_shop_list(self, shop_id: str) -> None:
         wait_for_at_least_one(self.page, OPEN_SHOP_LIST)
         ids = {item["shopId"] for item in self._read_open_shop_list_items()}
         self.assertions.assertNotIn(shop_id, ids)
+
+    def fetch_confirmed_date_open_shop_preview(self) -> dict:
+        """Full previewOpenShopsForCandidateDate payload (not just the shopId
+        list fetch_confirmed_date_open_shop_ids above already returns) -- used
+        by TDR-GTH-38 to compare a rendered provider-page link's href against
+        OpenShopPreviewItem.providerPageUrl's own exact value.
+        """
+        gathering = require(self.gathering, "no gathering exists")
+        candidate_date_id = require(
+            gathering["confirmedCandidateDateId"],  # type: ignore[index]
+            "no candidate date is confirmed",
+        )
+        response = self._api(
+            "GET",
+            f"/gatherings/{self.gathering_id}/candidate-dates/{candidate_date_id}/open-shop-preview",
+        )
+        self._assert_api_ok(response, 200, "previewOpenShopsForCandidateDate (detail read)")
+        return response.payload
+
+    def assert_open_shop_list_shows_map_and_shop_details(self) -> None:
+        """TDR-GTH-38 (adr/0044): shortlistSelection.list's map
+        (gathering-open-shop-map) shows one marker per currently rendered
+        gathering-open-shop-list-item, correlated by data-shop-id, and every
+        item exposes the detail-field test ids the contract requires. This
+        contract does not fix a data-value-state attribute for these fields
+        (unlike candidate-search-browser-interface.yaml's cardDataAttributes,
+        shortlistSelection.list.item.detailFields.requirement's own note), so
+        this only asserts presence -- except providerPageLink, the one field
+        the contract does fix an exact value for (href equals
+        OpenShopPreviewItem.providerPageUrl).
+        """
+        wait_for_at_least_one(self.page, OPEN_SHOP_LIST)
+        items = self._read_open_shop_list_items()
+        preview = self.fetch_confirmed_date_open_shop_preview()
+        shops_by_id = {shop["shopId"]: shop for shop in preview["previewShops"]}
+        assert_present(self.assertions, self.page, OPEN_SHOP_MAP)
+        marker_nodes = wait_for_at_least_one(self.page, OPEN_SHOP_MAP_MARKER)
+        marker_ids = [
+            marker_nodes.nth(index).get_attribute(SHOP_ID_ATTR)
+            for index in range(marker_nodes.count())
+        ]
+        item_ids = [item["shopId"] for item in items]
+        # Reviewer audit Major#1 (candidate_search_browser.py's
+        # assert_cards_and_map_show_current_proposal precedent): a set
+        # comparison alone cannot tell a duplicated marker plus a missing one
+        # apart from a correct 1-to-1 correlation, nor detect a marker count
+        # that simply differs from the item count -- sorted-list equality
+        # catches both, and the explicit no-duplicates check catches the rest.
+        self.assertions.assertEqual(sorted(marker_ids), sorted(item_ids))
+        self.assertions.assertEqual(len(marker_ids), len(set(marker_ids)))
+        for item in items:
+            shop_id = item["shopId"]
+            row = self._open_shop_list_item_locator(shop_id)
+            assert_present(self.assertions, row, OPEN_SHOP_LIST_ITEM_WALKING_TIME)
+            assert_present(self.assertions, row, OPEN_SHOP_LIST_ITEM_CAPACITY_TIER)
+            assert_present(self.assertions, row, OPEN_SHOP_LIST_ITEM_NON_SMOKING)
+            assert_present(self.assertions, row, OPEN_SHOP_LIST_ITEM_DINNER_BUDGET)
+            link = assert_present(self.assertions, row, OPEN_SHOP_LIST_ITEM_PROVIDER_PAGE_LINK)
+            expected_shop = require(
+                shops_by_id.get(shop_id), f"shop {shop_id} not in preview payload"
+            )
+            self.assertions.assertEqual(
+                link.get_attribute("href"), expected_shop["providerPageUrl"]
+            )  # type: ignore[index]
 
     def attempt_set_shortlisted_shops_via_api(self, shop_ids: list[str]) -> CapturedApiResponse:
         return self._api(
@@ -1400,6 +1570,33 @@ class GatheringSchedulingBrowserDsl:
         candidate_date_id = question.get_attribute(CANDIDATE_DATE_ID_ATTR)
         self.answer_schedule_question(candidate_date_id, status)
         return candidate_date_id
+
+    def first_reachable_schedule_question_candidate_date_id(self) -> str:
+        return wait_for_at_least_one(self.page, SCHEDULE_QUESTION).first.get_attribute(
+            CANDIDATE_DATE_ID_ATTR
+        )
+
+    def assert_first_reachable_schedule_question_matches_start_at_order(
+        self, start_at_isos: list[str]
+    ) -> None:
+        """participantAnswer.scheduleQuestion.orderingInvariant (adr/0048,
+        TDR-GTH-43): the reported production defect was this element
+        intermittently not found at all, because the one-at-a-time render
+        depends on scheduleQuestions' order being deterministic to reliably
+        reach a specific candidate date's question first
+        (gathering-scheduling-api.yaml's own scheduleQuestions description).
+        Same independent-recomputation rationale as
+        assert_candidate_date_order_matches_start_at_order above.
+        """
+        expected_first = self._expected_candidate_date_order(start_at_isos)[0]
+        self.assertions.assertEqual(
+            self.first_reachable_schedule_question_candidate_date_id(), expected_first
+        )
+
+    def assert_first_reachable_schedule_question_unchanged(self, before: str) -> None:
+        self.assertions.assertEqual(
+            self.first_reachable_schedule_question_candidate_date_id(), before
+        )
 
     def given_participant_link_with_one_answer(
         self, status: str = "GOING"
@@ -1550,35 +1747,139 @@ class GatheringSchedulingBrowserDsl:
         assert_all_present(self.assertions, self.page, [PARTICIPANT_HEADER, SCHEDULE_QUESTION])
         assert_absent(self.assertions, self.page, PARTICIPANT_LINK_ERROR)
 
-    # Shop-vote / finalized-decision (participant UI, TDR-GTH-28/29/30/34,
-    # adr/0042) --------------------------------------------------------------
+    # unexpectedLoadFailureOutcome / loadFailure (TDR-GTH-42, adr/0047) -----
+
+    def assert_participant_load_failure_notice_is_shown(self) -> None:
+        """browserControlSurface.participantAnswer.loadFailure.requirement:
+        gathering-participant-load-error is present and carries some visible
+        text (the contract deliberately does not fix the exact Japanese
+        wording, only its meaning -- "loading failed, reopening later may
+        work" -- which is not itself mechanically checkable; see this
+        round's report).
+        """
+        notice = assert_present(self.assertions, self.page, PARTICIPANT_LOAD_ERROR)
+        self.assertions.assertNotEqual(notice.inner_text().strip(), "")
+
+    def assert_participant_load_failure_hides_questions(self) -> None:
+        """TDR-GTH-42 Then#2: "日程や店についての設問は示されない" --
+        unexpectedLoadFailureOutcome.absent lists both
+        gathering-schedule-question and gathering-shop-vote-question.
+        """
+        assert_all_absent(self.assertions, self.page, [SCHEDULE_QUESTION, SHOP_VOTE_QUESTION])
+
+    def assert_participant_load_failure_has_no_retry_control(self) -> None:
+        """TDR-GTH-42 Then#3: "やり直すための操作は示されない" ==
+        browserControlSurface.participantAnswer.loadFailure.noRetryControl
+        (human ruling 2026-09-06, presented alongside a rejected "add a
+        retry button" alternative): no purpose-declared control exists at
+        all. This is a stronger, scenario-specific check than
+        assert_gathering_screen_has_no_forbidden_surfaces' general "every
+        present control declares an allowed purpose" scan -- that scan would
+        only catch a retry control that omits data-gathering-control-purpose
+        entirely, not one that borrows an existing allowed purpose (e.g.
+        gathering-participant-link-recopy's) to slip past it. This instead
+        asserts the fact the contract actually states: the loadFailure
+        screen carries *no* operational control, full stop.
+        """
+        self.assertions.assertEqual(self.page.locator(GATHERING_FORM_CONTROL_SELECTOR).count(), 0)
+
+    def assert_participant_load_failure_is_exclusive_of_other_outcomes(self) -> None:
+        """browserEntry.participantAnswer.unexpectedLoadFailureOutcome
+        (adr/0047): validLinkOutcome, invalidLinkOutcome, and this outcome
+        are declared mutually exclusive and, together with each element's
+        own presenceRule, exhaustive -- opening a participant link always
+        yields exactly one of the three. This asserts every element the
+        other two outcomes require is absent whenever loadFailure applies:
+        the header and name-open control (validLinkOutcome/
+        invalidLinkOutcome), linkError itself (invalidLinkOutcome), and the
+        finalized decision summary (a fourth, decision-dependent surface
+        this contract's presenceRule chain could otherwise leave standing).
+        Mirrors assert_participant_link_error's own absence list for the
+        sibling invalidLinkOutcome, extended to cover the additional
+        surfaces this newer, broader exclusion names.
+        """
+        assert_all_absent(
+            self.assertions,
+            self.page,
+            [
+                PARTICIPANT_HEADER,
+                PARTICIPANT_NAME_OPEN,
+                PARTICIPANT_LINK_ERROR,
+                PARTICIPANT_DECISION,
+            ],
+        )
+
+    def assert_participant_load_failure_discloses_no_technical_detail(self) -> None:
+        """loadFailure.requirement's disclosure discipline (adr/0047): "It
+        must not disclose any technical or internal detail -- an HTTP
+        status code, an exception message or stack trace, a request/trace
+        identifier, a hostname, or any of
+        profiles.localAcceptance.syntheticDisclosureCanaries' values". The
+        canary-value half of this is already exercised by
+        assert_gathering_screen_has_no_forbidden_surfaces (reused by every
+        TDR-GTH-42 test alongside this call); this method exercises the
+        remainder, which no existing gathering-scheduling check covers.
+        The HTTP-status check is necessarily a heuristic (a bare 3-digit
+        4xx/5xx-shaped number in the visible text) rather than a proof that
+        no status code could ever leak in some other format -- the
+        contract's own wording ("an HTTP status code") does not define a
+        stricter observable than this.
+        """
+        notice = assert_present(self.assertions, self.page, PARTICIPANT_LOAD_ERROR)
+        visible_text = notice.inner_text()
+        self.assertions.assertNotRegex(visible_text, r"\b[45]\d{2}\b")
+        forbidden_substrings = [
+            "Traceback",
+            "traceback",
+            "Exception",
+            "exception",
+            "stack trace",
+            "Stack Trace",
+            "trace-id",
+            "traceId",
+            "trace_id",
+            "request-id",
+            "requestId",
+            "request_id",
+            "correlation-id",
+        ]
+        for forbidden in forbidden_substrings:
+            self.assertions.assertNotIn(forbidden, visible_text)
+        host = urlparse(self.base_url).hostname
+        if host:
+            self.assertions.assertNotIn(host, visible_text)
+
+    # Shop-vote / finalized-decision (participant UI, TDR-GTH-28/29/30/34/37/
+    # 39/41, adr/0042/0044/0045 -- three-tier vote, near-first stable order,
+    # map/detail fields, search-origin marker) -------------------------------
 
     def _shop_vote_question_locator(self, shop_id: str) -> Locator:
         return self.page.locator(
             f'[data-testid="{SHOP_VOTE_QUESTION}"][{SHOP_ID_ATTR}="{shop_id}"]'
         )
 
-    def toggle_shop_vote(self, shop_id: str) -> None:
-        """gathering-shop-vote-select's requiredOutcome: unlike the organizer's
-        shortlist checkbox, this calls setShopVotes immediately on every
-        activation (no separate submit control, Vote.dc.html's "選ぶとその場で
-        保存されます").
+    def answer_shop_vote_question(self, shop_id: str, status: str) -> None:
+        """gathering-shop-vote-select's requiredOutcome (adr/0044, restructured
+        2026-09-05 from a single toggling checkbox to three sibling options,
+        mirroring scheduleQuestion.responseOptions' own shape): calls
+        setShopVotes immediately on every activation (no separate submit
+        control, Vote.dc.html's "選ぶとその場で保存されます").
         """
         question = self._shop_vote_question_locator(shop_id)
         expect(question).to_be_attached()
-        before = question.get_attribute(YOUR_APPROVAL_ATTR)
-        by_test_id(question, SHOP_VOTE_SELECT).click()
-        expect(question).to_have_attribute(
-            YOUR_APPROVAL_ATTR, "false" if before == "true" else "true"
+        option = question.locator(
+            f'[data-testid="{SHOP_VOTE_OPTION}"][{VOTE_VALUE_ATTR}="{status}"]'
         )
+        option.click()
+        expect(question).to_have_attribute(YOUR_VOTE_ATTR, status)
 
-    def vote_for_shops(self, shop_ids: list[str]) -> None:
-        for shop_id in shop_ids:
-            self.toggle_shop_vote(shop_id)
+    def answer_shop_vote_questions(self, votes: dict[str, str]) -> None:
+        for shop_id, status in votes.items():
+            self.answer_shop_vote_question(shop_id, status)
 
-    def assert_shop_vote_your_approval(self, shop_id: str, expected: str) -> None:
+    def assert_shop_vote_your_vote(self, shop_id: str, expected: str) -> None:
         expect(self._shop_vote_question_locator(shop_id)).to_have_attribute(
-            YOUR_APPROVAL_ATTR, expected
+            YOUR_VOTE_ATTR, expected
         )
 
     def assert_shop_vote_tally_absent(self, shop_id: str) -> None:
@@ -1587,12 +1888,34 @@ class GatheringSchedulingBrowserDsl:
             question.locator(f'[data-testid="{SHOP_VOTE_TALLY}"]').count(), 0
         )
 
-    def assert_shop_vote_tally(self, shop_id: str, *, approval: int, responded: int) -> None:
+    def assert_shop_vote_tally(
+        self, shop_id: str, *, want_to_go: int, ok_to_go: int, not_going: int, responded: int
+    ) -> None:
+        """Fixed 2026-09-05 (adr/0044): three-tier tally, replacing the retired
+        single data-approval-count -- mirrors this same shop's organizer-
+        facing ShortlistedShop tally exactly (gathering-scheduling-api.yaml's
+        own invariant). wantToGoCount + okToGoCount + notGoingCount must
+        always equal respondedCount, same invariant its twin
+        assert_shortlisted_shop_tally already checks here too, not only
+        trusted (reviewer audit Minor#1).
+        """
         question = self._shop_vote_question_locator(shop_id)
         tally = question.locator(f'[data-testid="{SHOP_VOTE_TALLY}"]')
         expect(tally).to_have_count(1)
-        self.assertions.assertEqual(tally.get_attribute(APPROVAL_COUNT_ATTR), str(approval))
-        self.assertions.assertEqual(tally.get_attribute(RESPONDED_COUNT_ATTR), str(responded))
+        actual_want_to_go = tally.get_attribute(WANT_TO_GO_COUNT_ATTR)
+        actual_ok_to_go = tally.get_attribute(OK_TO_GO_COUNT_ATTR)
+        actual_not_going = tally.get_attribute(NOT_GOING_COUNT_ATTR)
+        actual_responded = tally.get_attribute(RESPONDED_COUNT_ATTR)
+        self.assertions.assertEqual(actual_want_to_go, str(want_to_go))
+        self.assertions.assertEqual(actual_ok_to_go, str(ok_to_go))
+        self.assertions.assertEqual(actual_not_going, str(not_going))
+        self.assertions.assertEqual(actual_responded, str(responded))
+        self.assertions.assertEqual(
+            int(require(actual_want_to_go, "want-to-go count missing"))
+            + int(require(actual_ok_to_go, "ok-to-go count missing"))
+            + int(require(actual_not_going, "not-going count missing")),
+            int(require(actual_responded, "responded count missing")),
+        )
 
     def attempt_set_schedule_response_via_api(
         self, link: dict[str, str], candidate_date_id: str, status: str
@@ -1604,26 +1927,133 @@ class GatheringSchedulingBrowserDsl:
         )
 
     def attempt_set_shop_votes_via_api(
-        self, link: dict[str, str], approved_shop_ids: list[str]
+        self, link: dict[str, str], votes: dict[str, str]
     ) -> CapturedApiResponse:
+        """votes: shopId -> ShopVoteStatus (adr/0044's SetShopVotesRequest.votes,
+        replacing the retired boolean approvedShopIds array).
+        """
         return self._api(
             "PUT",
             f"/participant-links/{link['token']}/shop-votes",
-            {"approvedShopIds": approved_shop_ids},
+            {"votes": [{"shopId": shop_id, "status": status} for shop_id, status in votes.items()]},
         )
+
+    def fetch_participant_view_via_api(self, link: dict[str, str]) -> dict:
+        """Full getParticipantView payload -- used by TDR-GTH-37/39 to compare
+        the DOM against the API's own claimed shopVoteQuestions order/fields
+        without assuming a page reload changes anything this contract does
+        not otherwise require.
+        """
+        response = self._api("GET", f"/participant-links/{link['token']}")
+        self._assert_api_ok(response, 200, "getParticipantView")
+        return response.payload
+
+    # Map / shop-detail fields (TDR-GTH-39, adr/0044) and the search-origin
+    # marker (TDR-GTH-41, adr/0045) ------------------------------------------
+
+    def assert_shop_vote_question_list_shows_map_and_shop_details(
+        self, link: dict[str, str]
+    ) -> None:
+        """TDR-GTH-39: shopVoteMap (gathering-shop-vote-map) shows one marker
+        per currently rendered gathering-shop-vote-question, correlated by
+        data-shop-id, and every question exposes the detail-field test ids
+        the contract requires. Same "presence only, except providerPageLink's
+        href" convention as assert_open_shop_list_shows_map_and_shop_details
+        (this contract does not fix a data-value-state attribute here either).
+        """
+        nodes = wait_for_at_least_one(self.page, SHOP_VOTE_QUESTION)
+        participant_view = self.fetch_participant_view_via_api(link)
+        options_by_id = {
+            option["shopId"]: option for option in participant_view["shopVoteQuestions"]
+        }
+        assert_present(self.assertions, self.page, SHOP_VOTE_MAP)
+        marker_nodes = wait_for_at_least_one(self.page, SHOP_VOTE_MAP_MARKER)
+        marker_ids = [
+            marker_nodes.nth(index).get_attribute(SHOP_ID_ATTR)
+            for index in range(marker_nodes.count())
+        ]
+        question_ids = [
+            nodes.nth(index).get_attribute(SHOP_ID_ATTR) for index in range(nodes.count())
+        ]
+        # Reviewer audit Major#1 (same fix as
+        # assert_open_shop_list_shows_map_and_shop_details above): sorted-list
+        # equality plus an explicit no-duplicates check, matching
+        # candidate_search_browser.py's assert_cards_and_map_show_current_
+        # proposal precedent -- a set comparison alone would pass even if a
+        # marker were duplicated while a different shop's marker were missing.
+        self.assertions.assertEqual(sorted(marker_ids), sorted(question_ids))
+        self.assertions.assertEqual(len(marker_ids), len(set(marker_ids)))
+        for index in range(nodes.count()):
+            question = nodes.nth(index)
+            shop_id = question.get_attribute(SHOP_ID_ATTR)
+            assert_present(self.assertions, question, SHOP_VOTE_QUESTION_WALKING_TIME)
+            assert_present(self.assertions, question, SHOP_VOTE_QUESTION_CAPACITY_TIER)
+            assert_present(self.assertions, question, SHOP_VOTE_QUESTION_NON_SMOKING)
+            assert_present(self.assertions, question, SHOP_VOTE_QUESTION_DINNER_BUDGET)
+            link_node = assert_present(
+                self.assertions, question, SHOP_VOTE_QUESTION_PROVIDER_PAGE_LINK
+            )
+            expected_option = require(
+                options_by_id.get(shop_id), f"shop {shop_id} not in participant view"
+            )
+            self.assertions.assertEqual(
+                link_node.get_attribute("href"),
+                expected_option["providerPageUrl"],  # type: ignore[index]
+            )
+
+    def assert_shop_vote_map_shows_search_origin_marker(self) -> None:
+        """TDR-GTH-41 (adr/0045): 地図には検索基点の位置も示される. This contract
+        does not fix which data attribute, if any, carries the coordinate
+        value (mirrors candidate-origin-marker's own precedent) -- presence
+        alone is the Must.
+        """
+        assert_present(self.assertions, self.page, SHOP_VOTE_MAP)
+        assert_present(self.assertions, self.page, SEARCH_ORIGIN_MARKER)
+
+    # Near-order stability (TDR-GTH-37, adr/0044) ----------------------------
+
+    def capture_shop_vote_question_order(self) -> list[str]:
+        nodes = wait_for_at_least_one(self.page, SHOP_VOTE_QUESTION)
+        return [nodes.nth(index).get_attribute(SHOP_ID_ATTR) for index in range(nodes.count())]
+
+    def assert_shop_vote_question_order_matches_participant_view(
+        self, link: dict[str, str]
+    ) -> None:
+        """TDR-GTH-37's own "近い順である" clause is checked the same way
+        TDR-GTH-08's own near-order clause already is: self-consistency
+        against the API's own claimed order (gathering-scheduling-api.yaml's
+        ParticipantView.shopVoteQuestions, itself nearest-first by contract),
+        not an independent geographic recomputation -- this suite cannot read
+        src/** or the synthetic population's coordinates, the same
+        structural limit already recorded for TDR-GTH-08 (activeContext.md).
+        """
+        participant_view = self.fetch_participant_view_via_api(link)
+        expected_ids = [option["shopId"] for option in participant_view["shopVoteQuestions"]]
+        self.assertions.assertEqual(self.capture_shop_vote_question_order(), expected_ids)
+
+    def assert_shop_vote_question_order_unchanged(self, before: list[str]) -> None:
+        """TDR-GTH-37's own "投票しても変わらない" clause -- fully verifiable
+        without needing the population's real coordinates, unlike the
+        near-order clause above.
+        """
+        self.assertions.assertEqual(self.capture_shop_vote_question_order(), before)
+
+    # Finalized decision (TDR-GTH-34, adr/0041/0044/0046) --------------------
 
     def _read_participant_decision(self) -> dict[str, object]:
         node = assert_present(self.assertions, self.page, PARTICIPANT_DECISION)
-        approved_nodes = self.page.locator(f'[data-testid="{PARTICIPANT_DECISION_APPROVED_SHOP}"]')
-        approved_ids = [
-            approved_nodes.nth(index).get_attribute(SHOP_ID_ATTR)
-            for index in range(approved_nodes.count())
-        ]
+        vote_nodes = self.page.locator(f'[data-testid="{PARTICIPANT_DECISION_SHOP_VOTE}"]')
+        shop_votes = {
+            vote_nodes.nth(index).get_attribute(SHOP_ID_ATTR): vote_nodes.nth(index).get_attribute(
+                VOTE_STATUS_ATTR
+            )
+            for index in range(vote_nodes.count())
+        }
         return {
             "confirmedCandidateDate": node.get_attribute(GATHERING_CONFIRMED_CANDIDATE_DATE_ATTR),
             "shopId": node.get_attribute(SHOP_ID_ATTR),
             "yourScheduleResponse": node.get_attribute(YOUR_SCHEDULE_RESPONSE_ATTR),
-            "approvedShopIds": approved_ids,
+            "shopVotes": shop_votes,
         }
 
     def assert_participant_decision(
@@ -1632,20 +2062,25 @@ class GatheringSchedulingBrowserDsl:
         confirmed_candidate_date: str,
         shop_id: str,
         your_schedule_response: str,
-        approved_shop_ids: list[str],
+        shop_votes: dict[str, str],
     ) -> None:
+        """shop_votes: shopId -> expected data-vote-status (adr/0044's
+        WANT_TO_GO/OK_TO_GO/NOT_GOING, or "UNANSWERED" for a shop this
+        participant never voted on -- adr/0046 open item 3, 2026-09-05: such
+        a shop is now included with a null status rather than omitted).
+        """
         decision = self._read_participant_decision()
         self.assertions.assertEqual(decision["confirmedCandidateDate"], confirmed_candidate_date)
         self.assertions.assertEqual(decision["shopId"], shop_id)
         self.assertions.assertEqual(decision["yourScheduleResponse"], your_schedule_response)
-        self.assertions.assertEqual(set(decision["approvedShopIds"]), set(approved_shop_ids))  # type: ignore[arg-type]
+        self.assertions.assertEqual(decision["shopVotes"], shop_votes)
 
     def assert_participant_question_surfaces_are_replaced(self) -> None:
         """replacesQuestionSurfaces (adr/0042): once ParticipantView.decision is
         non-null, the per-candidate-date/per-shop breakdowns are fully replaced
         by the flat decision summary above -- this is also how "他の参加者の
         回答や投票は示されない" (TDR-GTH-34) is enforced structurally, not only
-        by decision.yourApprovedShops' own content.
+        by decision.yourShopVotes' own content.
         """
         assert_all_absent(
             self.assertions,

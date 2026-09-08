@@ -23,7 +23,12 @@ from django.contrib.auth.base_user import AbstractBaseUser
 from django.db import transaction
 from django.utils import timezone
 
-from dining_radar.recommendation.pipeline import NormalizedCandidate, Origin, open_shop_population
+from dining_radar.recommendation.pipeline import (
+    NormalizedCandidate,
+    Origin,
+    distance_meters,
+    open_shop_population,
+)
 from dining_radar.suggestions import acceptance_state
 from dining_radar.suggestions.errors import CandidateSourceUnavailableError
 from dining_radar.suggestions.hotpepper_source import fetch_real_candidates
@@ -36,6 +41,7 @@ from .models import (
     ParticipantLink,
     ScheduleResponse,
     ScheduleResponseStatus,
+    ShopVoteStatus,
     ShopVoteSubmission,
     ShortlistedShop,
 )
@@ -113,6 +119,14 @@ class LinkRateLimitedError(Exception):
     """``LINK_RATE_LIMITED``: this token exceeded the allowed request frequency."""
 
 
+class ParticipantLinkServerErrorSeededError(Exception):
+    """Acceptance-only: ``seedParticipantLinkServerError`` (adr/0047) consumed
+    this one-shot flag on the very next ``getParticipantView`` call. Carries no
+    ``ProblemResponse`` code -- it models a failure this product's own code
+    cannot itself produce (this is why it is not one of the ``Link*Error``
+    classes above, none of which corresponds to it)."""
+
+
 class GatheringFinalizedError(Exception):
     """``GATHERING_FINALIZED``: no further schedule response is accepted."""
 
@@ -179,12 +193,18 @@ def get_gathering(organizer: AbstractBaseUser, gathering_id: object) -> Gatherin
 
 
 def list_gatherings(organizer: AbstractBaseUser) -> list[Gathering]:
-    """``listGatherings`` (adr/0038): every gathering this organizer organizes, createdAt降順.
+    """``listGatherings`` (adr/0038): every gathering this organizer organizes, createdAt降順,
+    ties broken by ``id`` ascending (adr/0048).
 
     Includes every phase, including FINALIZED -- there is no delete
-    operation (ADR-0035 decision 1's D4).
+    operation (ADR-0035 decision 1's D4). Two gatherings created at the
+    exact same instant (a rare but not impossible race, since
+    ``create_gathering`` places no uniqueness constraint on ``created_at``)
+    would otherwise sort arbitrarily on every read -- ``order_by`` is
+    explicit about both keys rather than relying on ``Gathering.Meta
+    .ordering``.
     """
-    return list(Gathering.objects.filter(organizer=organizer).order_by("-created_at"))
+    return list(Gathering.objects.filter(organizer=organizer).order_by("-created_at", "id"))
 
 
 def count_in_progress_gatherings(organizer: AbstractBaseUser) -> int:
@@ -263,7 +283,9 @@ def issue_participant_links(
 def list_participant_links(
     organizer: AbstractBaseUser, gathering_id: object
 ) -> tuple[Gathering, list[ParticipantLink]]:
-    """``listParticipantLinks``: every link issued for this gathering, 発行順."""
+    """``listParticipantLinks``: every link issued for this gathering, 発行順 (``issued_at``
+    ascending), ties broken by ``id`` ascending (adr/0048, ``ParticipantLink.Meta.ordering``).
+    """
     gathering = _get_owned_gathering(organizer, gathering_id)
     return gathering, list(gathering.participant_links.all())
 
@@ -307,13 +329,20 @@ class CandidateDateTally:
 
 
 def candidate_dates_with_tallies(gathering: Gathering) -> list[CandidateDateTally]:
-    """``Gathering.candidateDates``, ordered goingCount descending.
+    """``Gathering.candidateDates``, ordered goingCount descending, ties broken by
+    ``startAt`` ascending (adr/0048).
 
-    The tie-break (implementation-chosen, the contract does not fix one) is
-    creation order: ``Gathering.candidate_dates`` is already ordered by
-    ``created_at`` ascending (``CandidateDate.Meta.ordering``), and Python's
-    ``list.sort`` is stable (including under ``reverse=True``), so members
-    tied on ``going_count`` keep that creation order.
+    This previously relied on Python's ``list.sort`` being stable
+    (including under ``reverse=True``) plus ``Gathering.candidate_dates``
+    already being ordered by ``created_at`` ascending
+    (``CandidateDate.Meta.ordering``) to keep tied members in creation
+    order. That was found in production to be non-deterministic in
+    practice: every candidate date submitted in the same ``createGathering``
+    call can share one identical ``auto_now_add`` value at this database's
+    timestamp resolution, so there was nothing stable for the stable sort to
+    preserve. The sort key below is explicit instead -- ``(-going_count,
+    start_at)`` -- and no longer depends on the queryset's own iteration
+    order at all.
     """
     candidate_dates = list(gathering.candidate_dates.all())
     counts: dict[uuid.UUID, Counter] = defaultdict(Counter)
@@ -332,7 +361,7 @@ def candidate_dates_with_tallies(gathering: Gathering) -> list[CandidateDateTall
         )
         for candidate_date in candidate_dates
     ]
-    tallies.sort(key=lambda tally: tally.going_count, reverse=True)
+    tallies.sort(key=lambda tally: (-tally.going_count, tally.candidate_date.start_at))
     return tallies
 
 
@@ -415,11 +444,21 @@ def open_shop_population_for_candidate_date(
 
 def preview_open_shops_for_candidate_date(
     organizer: AbstractBaseUser, gathering_id: object, candidate_date_id: object
-) -> tuple[CandidateDate, list[NormalizedCandidate]]:
-    """``previewOpenShopsForCandidateDate``. Never advances gathering phase."""
+) -> tuple[CandidateDate, list[NormalizedCandidate], Origin | None]:
+    """``previewOpenShopsForCandidateDate``. Never advances gathering phase.
+
+    Also returns the private search origin the population was computed from
+    (``None`` only on a provider outage) so the caller can project each
+    ``OpenShopPreviewItem.location``/``walkingTimeMinutes`` (adr/0044) --
+    resolved once here and reused for every item, rather than re-resolving
+    per item.
+    """
     gathering = _get_owned_gathering(organizer, gathering_id)
     candidate_date = _get_candidate_date(gathering, candidate_date_id)
-    return candidate_date, open_shop_population_for_candidate_date(candidate_date)
+    source = resolve_population_source()
+    population = open_shop_population_for_candidate_date(candidate_date, source)
+    origin = source[1] if source is not None else None
+    return candidate_date, population, origin
 
 
 def shop_lookup_for_gathering(
@@ -515,59 +554,105 @@ def finalize_gathering(
 
 @dataclass(frozen=True)
 class ShortlistedShopTally:
-    """One ``ShortlistedShop`` plus its D7 per-shop vote tallies."""
+    """One ``ShortlistedShop`` plus its D7 per-shop three-tier vote tallies (adr/0044)."""
 
     shortlisted_shop: ShortlistedShop
-    approval_count: int
+    want_to_go_count: int
+    ok_to_go_count: int
+    not_going_count: int
     responded_participant_count: int
 
 
-def shortlisted_shops_with_tallies(gathering: Gathering) -> list[ShortlistedShopTally]:
-    """``Gathering.shortlistedShops``, ordered ``approvalCount`` descending.
+def shortlisted_shops_with_tallies(
+    gathering: Gathering,
+    shop_lookup: dict | None = None,
+    origin: Origin | None = None,
+) -> list[ShortlistedShopTally]:
+    """``Gathering.shortlistedShops``, ordered ``wantToGoCount + okToGoCount`` descending,
+    ties broken by distance from ``origin`` ascending (near-first), then ``shop_id``
+    ascending (adr/0048).
+
+    Changed 2026-09-04 (adr/0044 decision 3, human decision: 行ける人が多い順
+    means the sum of the two positive tiers, not either alone) from the
+    retired single ``approvalCount`` descending.
 
     D7's per-shop denominator: a participant counts toward a given shop's
-    ``respondedParticipantCount``/``approvalCount`` only if their most recent
-    ``setShopVotes`` submission was sent at or after that shop's own
-    ``added_at`` -- a shop just added by a shortlist replacement starts with
-    both counts at 0 even if every participant already voted on the
-    previous shortlist. The tie-break on equal ``approval_count`` is
-    ``added_at`` ascending (``ShortlistedShop.Meta.ordering``, preserved by
-    Python's stable sort), mirroring ``candidate_dates_with_tallies``'s own
-    creation-order tie-break.
+    ``respondedParticipantCount`` only if their most recent ``setShopVotes``
+    submission was sent at or after that shop's own ``added_at`` **and**
+    that submission's ``votes`` mapping actually names this shop -- a shop
+    present in the mapping's key set but with no entry for this specific
+    shop is "not yet answered" for this shop alone (SetShopVotesRequest's
+    own per-shop, not per-submission, omission rule), so a participant may
+    count toward one shop's denominator while not counting toward
+    another's, even from the same submission. A shop just added by a
+    shortlist replacement starts every count at 0 even if every participant
+    already voted on the previous shortlist.
+
+    The tie-break on an equal sum was previously ``added_at`` ascending
+    (``ShortlistedShop.Meta.ordering``, preserved by Python's stable sort),
+    mirroring ``candidate_dates_with_tallies``'s own (then-)creation-order
+    tie-break -- found in production to have the same non-determinism:
+    every shop set by the same ``setShortlistedShops`` call shares one
+    identical ``added_at`` value at this database's timestamp resolution.
+    ``shop_lookup``/``origin`` are optional (``None``/omitted when the
+    caller has no live population resolved, e.g. because this gathering has
+    no shortlisted shops yet) -- omitting them collapses the distance
+    tie-break to always-``None``, leaving only the final ``shop_id``
+    safety net.
     """
+    shop_lookup = shop_lookup or {}
     shops = list(gathering.shortlisted_shops.all())
     submissions = list(
         ShopVoteSubmission.objects.filter(participant_link__gathering=gathering).values_list(
-            "submitted_at", "approved_shop_ids"
+            "submitted_at", "votes"
         )
     )
-    tallies = [
-        ShortlistedShopTally(
-            shortlisted_shop=shop,
-            approval_count=sum(
-                1
-                for submitted_at, approved_shop_ids in submissions
-                if submitted_at >= shop.added_at and shop.shop_id in (approved_shop_ids or [])
-            ),
-            responded_participant_count=sum(
-                1
-                for submitted_at, _approved_shop_ids in submissions
-                if submitted_at >= shop.added_at
-            ),
+    tallies = []
+    for shop in shops:
+        counts: Counter = Counter()
+        responded = 0
+        for submitted_at, votes in submissions:
+            if submitted_at < shop.added_at:
+                continue
+            status = (votes or {}).get(shop.shop_id)
+            if status is None:
+                continue
+            counts[status] += 1
+            responded += 1
+        tallies.append(
+            ShortlistedShopTally(
+                shortlisted_shop=shop,
+                want_to_go_count=counts[ShopVoteStatus.WANT_TO_GO],
+                ok_to_go_count=counts[ShopVoteStatus.OK_TO_GO],
+                not_going_count=counts[ShopVoteStatus.NOT_GOING],
+                responded_participant_count=responded,
+            )
         )
-        for shop in shops
-    ]
-    tallies.sort(key=lambda tally: tally.approval_count, reverse=True)
+
+    def _sort_key(tally: ShortlistedShopTally) -> tuple:
+        distance = _shop_distance_or_none(tally.shortlisted_shop, shop_lookup, origin)
+        return (
+            -(tally.want_to_go_count + tally.ok_to_go_count),
+            distance is None,
+            distance if distance is not None else 0.0,
+            tally.shortlisted_shop.shop_id,
+        )
+
+    tallies.sort(key=_sort_key)
     return tallies
 
 
-def set_shop_votes(token: str, approved_shop_ids: Sequence[str]) -> ParticipantLink:
-    """``setShopVotes`` ("行ってもいい店をぜんぶ選ぶ", adr/0040).
+def set_shop_votes(token: str, votes: Sequence[tuple[str, str]]) -> ParticipantLink:
+    """``setShopVotes`` (三段階「行きたい／行ってもいい／むり」, adr/0040, moved to a
+    three-tier model by adr/0044).
 
-    Replaces this participant's entire vote in one call (not a per-shop
-    toggle); may be empty. Rejected with ``ShopVotingNotStartedError`` while
-    ``shortlistedShops`` is empty, and with ``GatheringFinalizedError`` once
-    ``phase`` is FINALIZED (reusing the existing code, adr/0040).
+    Replaces this participant's entire per-shop answer set in one call (not
+    a per-shop toggle); may be empty. A shop id omitted from ``votes``
+    is left "not yet answered" (``yourVote: null``) for this participant --
+    the same meaning omission already had under the prior boolean model.
+    Rejected with ``ShopVotingNotStartedError`` while ``shortlistedShops``
+    is empty, and with ``GatheringFinalizedError`` once ``phase`` is
+    FINALIZED (reusing the existing code, adr/0040).
     """
     link = _get_participant_link_by_token(token)
     _authorize_participant_link(link)
@@ -577,52 +662,158 @@ def set_shop_votes(token: str, approved_shop_ids: Sequence[str]) -> ParticipantL
         raise ShopVotingNotStartedError
     if gathering.phase == GatheringPhase.FINALIZED:
         raise GatheringFinalizedError
-    deduped_ids = list(dict.fromkeys(approved_shop_ids))
-    if len(deduped_ids) != len(approved_shop_ids):
+    shop_ids = [shop_id for shop_id, _status in votes]
+    if len(set(shop_ids)) != len(shop_ids):
         raise InvalidShopSelectionError
-    if not set(deduped_ids) <= current_shop_ids:
+    if not set(shop_ids) <= current_shop_ids:
         raise InvalidShopSelectionError
     ShopVoteSubmission.objects.update_or_create(
-        participant_link=link, defaults={"approved_shop_ids": deduped_ids}
+        participant_link=link, defaults={"votes": dict(votes)}
     )
     return link
 
 
+def _shop_distance_or_none(
+    shop: ShortlistedShop, shop_lookup: dict, origin: Origin | None
+) -> float | None:
+    """The shop's raw distance from ``origin``, or ``None`` if unresolvable.
+
+    ``None`` covers two distinct causes this function does not distinguish
+    further -- the private population source could not be resolved at all
+    (``origin`` itself is ``None``, e.g. a provider outage), or this
+    specific shop id is no longer present in a fresh refetch of the live
+    population (ADR-0034 decision 6 never persists a shop's coordinates, so
+    a shop's continued presence at all can change between reads). Both are
+    genuinely rare, unmeasured edge cases no TDR-GTH scenario exercises;
+    callers push a ``None`` distance to the end of the nearest-first order,
+    breaking any tie among such shops by ``shop_id`` ascending (adr/0048)
+    rather than fabricate a plausible-looking distance.
+    """
+    if origin is None:
+        return None
+    candidate = shop_lookup.get(shop.shop_id)
+    if candidate is None:
+        return None
+    return distance_meters(origin, candidate)
+
+
+def shortlisted_shops_nearest_first(
+    gathering: Gathering, shop_lookup: dict, origin: Origin | None
+) -> list[ShortlistedShop]:
+    """``Gathering.shortlistedShops``, ordered nearest-first from ``origin`` (adr/0044 decision 2),
+    a tie in the raw distance itself broken by ``shop_id`` ascending (adr/0048).
+
+    Shared by ``participant_shop_vote_options`` (``ParticipantView.
+    shopVoteQuestions``) and ``participant_decision_shop_votes``
+    (``ParticipantView.decision.yourShopVotes``, which the contract requires
+    to carry the same nearest-first order the shops had at the moment of
+    finalization) so the two call sites can never silently diverge on the
+    ordering basis. A shop's distance from the search origin depends only on
+    its own location and the origin -- never on vote counts -- which is what
+    lets this order stay stable as votes are cast (the production defect
+    ADR-0044 fixes: the participant list had previously reused the
+    organizer-facing, vote-count-ordered list instead).
+
+    Every unresolvable shop (``_shop_distance_or_none`` returning ``None``)
+    still sorts to the end, but any tie -- among resolvable shops sharing an
+    identical raw distance, *and* among unresolvable shops sharing ``None``
+    -- is now broken by ``shop_id`` ascending rather than relying on
+    Python's stable sort to preserve ``added_at`` ascending order: every
+    shop set by the same ``setShortlistedShops`` call shares one identical
+    ``added_at`` value at this database's timestamp resolution, the same
+    class of gap adr/0048 closes elsewhere in this module.
+    """
+    shops = list(gathering.shortlisted_shops.all())
+    decorated = [(shop, _shop_distance_or_none(shop, shop_lookup, origin)) for shop in shops]
+    decorated.sort(
+        key=lambda pair: (
+            pair[1] is None,
+            pair[1] if pair[1] is not None else 0.0,
+            pair[0].shop_id,
+        )
+    )
+    return [shop for shop, _distance in decorated]
+
+
 @dataclass(frozen=True)
 class ParticipantShopVoteOption:
-    """One shortlisted shop from one participant's own point of view (D7)."""
+    """One shortlisted shop from one participant's own point of view (D7, adr/0044)."""
 
     shortlisted_shop: ShortlistedShop
-    approval_count: int
+    want_to_go_count: int
+    ok_to_go_count: int
+    not_going_count: int
     responded_participant_count: int
-    your_approval: bool | None
+    your_vote: str | None
 
 
-def participant_shop_vote_options(link: ParticipantLink) -> list[ParticipantShopVoteOption]:
-    """``ParticipantView.shopVoteQuestions`` entries, ordered like the organizer's list.
+def participant_shop_vote_options(
+    link: ParticipantLink, shop_lookup: dict, origin: Origin | None
+) -> list[ParticipantShopVoteOption]:
+    """``ParticipantView.shopVoteQuestions`` entries, ordered nearest-first (adr/0044 decision 2).
 
-    ``your_approval`` is ``None`` ("まだ答えていません", D7) exactly when
-    this participant has never submitted ``setShopVotes``, or their most
-    recent submission predates the shop's own ``added_at`` -- a shop added
-    by a later shortlist replacement, after this participant last voted.
+    ``your_vote`` is ``None`` ("まだ答えていません", D7) exactly when this
+    participant has never submitted ``setShopVotes``, their most recent
+    submission predates the shop's own ``added_at`` (a shop added by a later
+    shortlist replacement, after this participant last voted), or that
+    submission's ``votes`` mapping simply omits this shop id (this
+    participant answered other shops but not this one yet).
     """
+    tallies_by_shop_id = {
+        tally.shortlisted_shop.shop_id: tally
+        for tally in shortlisted_shops_with_tallies(link.gathering, shop_lookup, origin)
+    }
     submission = ShopVoteSubmission.objects.filter(participant_link=link).first()
     options = []
-    for tally in shortlisted_shops_with_tallies(link.gathering):
-        shop = tally.shortlisted_shop
+    for shop in shortlisted_shops_nearest_first(link.gathering, shop_lookup, origin):
+        tally = tallies_by_shop_id[shop.shop_id]
         if submission is None or submission.submitted_at < shop.added_at:
-            your_approval = None
+            your_vote = None
         else:
-            your_approval = shop.shop_id in submission.approved_shop_ids
+            your_vote = (submission.votes or {}).get(shop.shop_id)
         options.append(
             ParticipantShopVoteOption(
                 shortlisted_shop=shop,
-                approval_count=tally.approval_count,
+                want_to_go_count=tally.want_to_go_count,
+                ok_to_go_count=tally.ok_to_go_count,
+                not_going_count=tally.not_going_count,
                 responded_participant_count=tally.responded_participant_count,
-                your_approval=your_approval,
+                your_vote=your_vote,
             )
         )
     return options
+
+
+@dataclass(frozen=True)
+class ParticipantDecisionShopVote:
+    """One ``ParticipantDecisionShopVote`` entry (``ParticipantView.decision.yourShopVotes``)."""
+
+    shortlisted_shop: ShortlistedShop
+    status: str | None
+
+
+def participant_decision_shop_votes(
+    link: ParticipantLink, shop_lookup: dict, origin: Origin | None
+) -> list[ParticipantDecisionShopVote]:
+    """Every shop among ``Gathering.shortlistedShops`` at finalization, nearest-first.
+
+    Includes a shop this participant never voted on (``status: None``,
+    "答えないまま締まりました") -- changed 2026-09-05, human chat decision,
+    adr/0046 open item 3: the prior revision omitted such a shop from this
+    array entirely. Ordered the same way ``shopVoteQuestions`` was ordered
+    (nearest-first, adr/0044) via the same ``shortlisted_shops_nearest_first``
+    helper ``participant_shop_vote_options`` uses, so the two orderings can
+    never diverge.
+    """
+    submission = ShopVoteSubmission.objects.filter(participant_link=link).first()
+    votes = []
+    for shop in shortlisted_shops_nearest_first(link.gathering, shop_lookup, origin):
+        if submission is None or submission.submitted_at < shop.added_at:
+            status = None
+        else:
+            status = (submission.votes or {}).get(shop.shop_id)
+        votes.append(ParticipantDecisionShopVote(shortlisted_shop=shop, status=status))
+    return votes
 
 
 def _get_participant_link_by_token(token: str) -> ParticipantLink:
@@ -653,8 +844,23 @@ def _authorize_participant_link(link: ParticipantLink) -> None:
 
 
 def get_participant_view(token: str) -> ParticipantLink:
-    """``getParticipantView``."""
+    """``getParticipantView``.
+
+    Checks the acceptance-only ``server_error_once`` seed (adr/0047) before
+    ``_authorize_participant_link``'s revoked/expired/rate-limited checks --
+    it models a failure this product's own code cannot itself produce (the
+    seam's own doc: "a transport-level failure ... not a change to the
+    link's own status"), so it takes priority over every real, durable link
+    state rather than being folded into that shared helper (contrast with
+    rate_limited_once, which participant_link's docstring already gates
+    through _authorize_participant_link because every one of the three
+    participant-facing operations may consume it).
+    """
     link = _get_participant_link_by_token(token)
+    if link.server_error_once:
+        link.server_error_once = False
+        link.save(update_fields=["server_error_once"])
+        raise ParticipantLinkServerErrorSeededError
     _authorize_participant_link(link)
     return link
 
@@ -726,3 +932,14 @@ def seed_rate_limited_participant_link(token: str) -> None:
         raise LinkNotFoundError from error
     link.rate_limited_once = True
     link.save(update_fields=["rate_limited_once"])
+
+
+def seed_participant_link_server_error(token: str) -> None:
+    """``seedParticipantLinkServerError`` (adr/0047). Rejects an unknown token
+    like the public API would."""
+    try:
+        link = ParticipantLink.objects.get(token=token)
+    except ParticipantLink.DoesNotExist as error:
+        raise LinkNotFoundError from error
+    link.server_error_once = True
+    link.save(update_fields=["server_error_once"])

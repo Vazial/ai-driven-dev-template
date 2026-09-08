@@ -38,6 +38,25 @@ class ScheduleResponseStatus(models.TextChoices):
     NOT_GOING = "NOT_GOING"
 
 
+class ShopVoteStatus(models.TextChoices):
+    """``components.schemas.ShopVoteStatus`` (gathering-scheduling-api.yaml, adr/0044).
+
+    Deliberately a distinct enum from ``ScheduleResponseStatus`` above, both
+    in values and in the display wording it carries (行きたい／行ってもいい／
+    むり, not 行ける／たぶん／むり) -- a shop vote expresses preference for a
+    shop, not schedule availability (ADR-0044 decision 1, 2026-09-04 human
+    decision). Replaces the retired boolean approve-any-number-of-shops model
+    this project shipped from adr/0040 until this decision; the prior
+    ``ShopVoteSubmission.approved_shop_ids`` data is not migrated (human
+    decision, ADR-0044 decision 5: production carried essentially no real
+    votes under that model, so no conversion is worth designing).
+    """
+
+    WANT_TO_GO = "WANT_TO_GO"
+    OK_TO_GO = "OK_TO_GO"
+    NOT_GOING = "NOT_GOING"
+
+
 class Gathering(models.Model):
     """One ランチ会. Owned by exactly one organizer (product-brief.md §5)."""
 
@@ -105,13 +124,24 @@ class CandidateDate(models.Model):
         Gathering, on_delete=models.CASCADE, related_name="candidate_dates"
     )
     start_at = models.DateTimeField()
-    # Not part of the public schema; used only for a stable creation-order
-    # tie-break under Gathering.candidateDates' goingCount-descending sort
-    # (the contract leaves the tie-break to implementation discretion).
+    # Not part of the public schema. Retained for audit only -- it is no
+    # longer an ordering key (adr/0048): every candidate date submitted in
+    # the same createGathering call can share one identical `auto_now_add`
+    # value at this database's timestamp resolution, which a production
+    # defect exposed as a non-deterministic Gathering.candidateDates tie-
+    # break (services.candidate_dates_with_tallies now sorts explicitly by
+    # (going_count descending, start_at ascending) instead of relying on
+    # this field plus Python's stable sort).
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ["created_at"]
+        # Ties on the contract's own tie-break (start_at) do not occur in
+        # practice -- add_candidate_date/create_gathering both reject a
+        # second candidate date sharing an exact start_at on the same
+        # gathering (DuplicateCandidateDateError) -- but this ordering is
+        # cosmetic/query-default only; the actual API-facing order is always
+        # produced by services.candidate_dates_with_tallies' explicit sort.
+        ordering = ["start_at"]
 
 
 class ParticipantLink(models.Model):
@@ -146,9 +176,24 @@ class ParticipantLink(models.Model):
     # regardless of which of the three participant-facing operations it is
     # (adr/0037). Never set by any public operation.
     rate_limited_once = models.BooleanField(default=False)
+    # test-support-api.yaml's seedParticipantLinkServerError (adr/0047,
+    # 1.5.4): a one-shot flag consumed by the very next getParticipantView
+    # call for this token only -- narrower than rate_limited_once above,
+    # which applies to any of the three participant-facing operations
+    # (this seam's own operationId summary: "Force the next
+    # getParticipantView call ... to fail unrecognizably"). Never set by
+    # any public operation.
+    server_error_once = models.BooleanField(default=False)
 
     class Meta:
-        ordering = ["issued_at"]
+        # `id` ascending breaks a tie on `issued_at` (adr/0048) -- a single
+        # issue_participant_links call with count > 1 gives every link it
+        # creates one identical auto_now_add value at this database's
+        # timestamp resolution, the same class of gap adr/0048 closes for
+        # CandidateDate/ShortlistedShop/Gathering. list_participant_links
+        # relies on this Meta.ordering (a plain `.all()`, no explicit
+        # order_by) rather than an explicit service-layer sort.
+        ordering = ["issued_at", "id"]
 
     @property
     def has_responded(self) -> bool:
@@ -202,10 +247,18 @@ class ShortlistedShop(models.Model):
     shop_id = models.CharField(max_length=500)
     # ShortlistedShop.addedAt: reset to "now" whenever this shop id is newly
     # added or re-added after removal (adr/0040). The basis for D7's
-    # per-shop denominator (respondedParticipantCount).
+    # per-shop denominator (respondedParticipantCount). Not an ordering key
+    # (adr/0048) -- every shop set by the same setShortlistedShops call
+    # shares one identical value at this database's timestamp resolution;
+    # services.shortlisted_shops_with_tallies/shortlisted_shops_nearest_first
+    # both sort explicitly (distance ascending, then shop_id ascending)
+    # instead.
     added_at = models.DateTimeField()
 
     class Meta:
+        # Cosmetic/query-default only, same caveat as CandidateDate.Meta
+        # above -- the API-facing order always comes from the explicit sorts
+        # in services.py.
         ordering = ["added_at"]
         constraints = [
             models.UniqueConstraint(
@@ -215,23 +268,29 @@ class ShortlistedShop(models.Model):
 
 
 class ShopVoteSubmission(models.Model):
-    """One participant's most recent, complete shop-vote submission (adr/0040).
+    """One participant's most recent, complete shop-vote submission (adr/0040/0044).
 
     ``setShopVotes`` replaces this participant's entire vote in one call (not
     a per-shop toggle, product-brief.md §2), so one row per
     ``ParticipantLink`` is enough -- there is no history of earlier
-    submissions to keep. ``approved_shop_ids`` stores raw shop id strings
-    (not a many-to-many to ``ShortlistedShop``) so a submission remains valid
-    even after the organizer removes and later re-adds the same shop id
-    under a new ``ShortlistedShop`` row (see that model's own docstring).
+    submissions to keep. ``votes`` is a ``{shopId: ShopVoteStatus}`` mapping
+    (adr/0044, replacing the retired boolean ``approved_shop_ids`` list --
+    not migrated, per ADR-0044 decision 5) storing raw shop id strings as
+    keys (not a many-to-many to ``ShortlistedShop``) so a submission remains
+    valid even after the organizer removes and later re-adds the same shop
+    id under a new ``ShortlistedShop`` row (see that model's own docstring).
+    A shop id absent from this mapping means "not yet answered" for that
+    shop specifically -- the same meaning absence from the prior
+    ``approved_shop_ids`` list had, now made explicit per-shop rather than
+    collapsing into a single boolean.
     """
 
     participant_link = models.OneToOneField(
         ParticipantLink, on_delete=models.CASCADE, related_name="shop_vote_submission"
     )
-    approved_shop_ids = models.JSONField(default=list)
+    votes = models.JSONField(default=dict)
     # Compared against ShortlistedShop.added_at to derive
-    # ParticipantShopVoteOption.yourApproval's "not yet answered" (null)
+    # ParticipantShopVoteOption.yourVote's "not yet answered" (null)
     # state (D7) -- updated (via auto_now) on every setShopVotes call,
     # including one that resubmits the same content.
     submitted_at = models.DateTimeField(auto_now=True)

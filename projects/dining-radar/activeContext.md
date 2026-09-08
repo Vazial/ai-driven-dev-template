@@ -1744,9 +1744,45 @@ Verification, all re-run by orchestrator: L0 govlint, ruff and format, L1–L3 (
      確定後の名前変更操作の不在が未検査／エラーコード2つと`INVALID_SHOP_SELECTION`の残り誘発条件が
      未検査）をtesterが反映し、実画面への欠陥注入で検出も確認。
 
-   **次**: 統合PRのマージ（＝契約・ADR-0040〜0043・実装の承認）→ 本番デプロイ→人間の実機確認。
+   統合PRは **PR #184 のマージで承認済み・本番デプロイ済み（2026-09-04）**。
+
+   **人間の実機フィードバック3点（2026-09-04）と、それへの対応（2026-09-04〜06）**:
+   人間が本番の会フローを通しで触り、(1)「行ってもいい店選ぶたびにソートがかかってるぽい？動作
+   キモいね」(2)「やっぱり店舗はちゃんとマップとか情報みて選びたいかも」(3)「店も日程みたいに
+   三段階あるといいかも」。
+
+   - **(1)は契約由来の不具合だった**——`ParticipantView.shopVoteQuestions` の説明文が
+     「幹事側と同じ approvalCount 降順」と明記しており、実装はそのとおりに動いていた。designer が
+     指摘（orchestrator は当初ブラウザ契約しか見ておらず「契約は参加者側の並びを定めていない」と
+     誤認した）。**直す場所は契約**。人間裁定で**近い順**へ——距離は投票結果に依存しないので
+     「答えても動かない」も自動的に満たす。
+   - **人間裁定 Q1〜Q6・P追加分（2026-09-04〜06、選択肢UI）**: 参加者の並び＝近い順／**参加者の
+     地図に基点を出す**（ADR-0025 の「認証済み画面に限る」境界を広げるため `adr/0045` で脅威モデルの
+     変化を記録）／既存の二値票は移行しない／幹事の並び＝「行きたい＋行ってもいい」の合算降順／
+     呼び名＝**行きたい／行ってもいい／むり**／選択の見せ方は日程と同じ（緑）／**確定後は自分が
+     答えなかった店も「答えないまま締まりました」と出す**（P5に忠実な側）／**読み込みに失敗したら
+     短いお知らせを出す**（やり直すボタンは置かない）。
+   - **契約**: api v0.8.0（三段階 `WANT_TO_GO`/`OK_TO_GO`/`NOT_GOING`、店の情報は**会に永続化せず
+     表示のたびに引き直す生きた投影**＝ADR-0034決定6の維持、確定後は未回答も含む全件）／
+     browser-interface v0.8.0／feature `TDR-GTH-37`〜`42`／test-support v1.5.4
+     （`seedParticipantLinkServerError`——公開境界だけでは作れない状態のため新設）／
+     `adr/0044`〜`0047`。
+   - **合流検証**: L4 全65件が緑。ただし**1回目の実行で6件が失敗**——すべて日程回答まわりの既存
+     シナリオで、症状は「参加者画面に設問要素が現れない」。developer が5回再現を試みて再現せず
+     （うち1回は別テストで別症状のフレーク）、**環境要因（負荷による待ち時間切れ）と判断**。
+     再実行で緑を確認。**この調査で本物の弱点が1つ見つかった**——参加者用JSにエラー処理が無く、
+     サーバ側で何か起きると**画面が真っ白**（設問もエラーも出ない）。人間裁定を経て `adr/0047` で
+     契約化し、実装した。
+   - **reviewer監査**（`reviews/audit-gathering-three-tier-steps.md`）: **Blocker 0**・Major 1・
+     Minor 3。核心の約束（近い順の安定・合算降順・三段階と未回答の区別・確定後のUNANSWERED・
+     基点マーカー）は「緩められずに正しく検査されている」。**FR-030 で2回続けて指摘されていた
+     横断検査の呼び忘れは、今回は起きなかった**（依頼文に最初から条件として明記した効果）。
+     Major（地図のマーカー対応が集合一致だけで、重複や件数のずれを見逃す）は姉妹契約の既存先例
+     （並び順一致＋重複なし）に揃えて解消し、欠陥注入で検出も実証した。
+
+   **次**: 統合PRのマージ（＝契約・`adr/0044`〜`0047`・実装の承認）→ 本番デプロイ→人間の実機確認。
    残る未決: 会データの保持期間・削除方針／トークン期限90日・レート制限の見直し時期／
-   会一覧の「名前」のdata属性は契約化済み（v0.5）だが検査は未（次に`tests/acceptance/**`を触る人が拾う）。
+   会一覧の「名前」のdata属性は契約化済みだが検査は未（次に`tests/acceptance/**`を触る人が拾う）。
 
 12. **入口追補（会の一覧・作成・インライン候補日フォーム・ヘッダー導線）とdeck見た目3件を実装した
    （2026-09-02、developer、ブランチ`impl/gathering-entry`）**。契約（`gathering-scheduling-api.yaml`
@@ -1913,6 +1949,196 @@ Verification, all re-run by orchestrator: L0 govlint, ruff and format, L1–L3 (
    `gathering.js`・`gathering_create.js`・`gathering_list.js`のキャッシュ回避文字列を更新した
    （FR-025）。
 
+14. **参加者画面の読み込み失敗に短いお知らせを実装した（2026-09-06、developer、`adr/0047`・
+    `TDR-GTH-42`）。** ブランチ`impl/participant-load-failure`、基点は
+    `origin/integrate/gathering-three-tier`（`8d57607`）。契約（`gathering-scheduling-browser-
+    interface.yaml` v0.8.0の`unexpectedLoadFailureOutcome`/`loadFailure`、`test-support-api.yaml`
+    v1.5.4の`seedParticipantLinkServerError`）・ADR-0047・`gathering-scheduling.feature`の
+    `TDR-GTH-42`はいずれも既に本ブランチの基点に合流済みで、architectが用意した契約に沿って実装した
+    だけであり、今回は契約変更を伴っていない。
+
+    **バグの実体**: `participant.js`の`requestJson`が`fetch().then(r => r.json())`のみで、
+    `response.json()`のreject（本文が空・非JSON）にも`fetch()`自体のreject（ネットワーク断）にも
+    `.catch`が無かった。`loadView()`の`.then`が一度も呼ばれないため`applyResult`/`render()`が発火
+    せず、画面はサーバが最初に返した空のマウント要素のまま——ADR-0047が報告した「真っ白」の直接原因。
+
+    **実装**: `requestJson`をpromiseが決して reject しない形に直した（`response.json()`のreject→
+    `{status, body: null}`、`fetch()`のreject→`{status: null, body: null}`のsentinelへ正規化）。
+    `loadView()`を新設し、結果を`validLinkOutcome`（200）／`invalidLinkOutcome`（`linkError`の4つの
+    既知コードのいずれか）／`unexpectedLoadFailureOutcome`（それ以外すべて）の3つへ排他的に分類、
+    `state.loadFailure`を立てる。`render()`は`state.loadFailure`を最初に分岐し、真なら
+    `gathering-participant-load-error`だけを描画して即returnする（他の要素は一切構築しない——
+    設問・エラー面・名前操作のいずれも出ない）。可視文言は「うまく読み込めませんでした。時間を
+    おいて開き直してください。」（ADR-0047の趣旨どおり、正確な日本語は裁量）。操作は置いていない
+    （`data-gathering-control-purpose`無し、`<button>`無し——人間裁定どおり）。技術的な内部情報
+    （HTTPステータス・例外・トレースID・ホスト名）は表示ロジックが失敗レスポンスの中身を一切読まない
+    構造にしたことで構造的に漏れない。
+
+    **サーバ側**: `ParticipantLink.server_error_once`（一発flag、`rate_limited_once`と同型だが
+    `getParticipantView`だけに効く——seamの仕様どおり）をマイグレーション`0004`で追加。
+    `services.get_participant_view`が消費・`services.seed_participant_link_server_error`が新設。
+    `views.participant_view`は`ParticipantLinkServerErrorSeededError`を裸の`HTTP 500`（本文なし、
+    `ProblemResponse`ではない——意図的に`linkError`の4コードのいずれとも一致しない形）で返す。
+    `test_support/views.py`/`urls.py`に`seedParticipantLinkServerError`のエンドポイントを、既存2
+    seamと同じ`_acceptance_only()`ガード方式で新設した。
+
+    **検証（すべてdeveloperが実行）**: L1（ruff check/format緑、単体637件+98 subtests緑
+    ［`-k "not acceptance"`］、カバレッジ96%［`coverage report --fail-under=90`通過、
+    `test_support/views.py`の未到達行は既存2seamの400分岐と同型の既存ギャップで今回の後退ではない
+    ことを行番号で確認済み］、`manage.py makemigrations --check`差分なし）。mutation testingは
+    Windowsの既知の制約（`WinError 206`、コマンドライン長超過——`tests/test_gathering.py`
+    フル+`tests/test_test_support.py`を同時に渡すと発生）に当たったため、変更ファイル単位で分割して
+    実行した: `services.py`+`views.py`を対象に`tests/test_gathering.py`単体で271/271ゼロ生存
+    （100%）、`test_support/views.py`を対象に関連クラス（`ParticipantViewApiTests`・
+    `TestSupportGatheringApiTests`・`ParticipantEndpointGuardTests`）+`tests/test_test_support.py`
+    で78/78ゼロ生存（100%）——`tools/check_mutation_score.py`は100.00%（必要80.00%）と報告。
+    L2（構造13件+17 subtests）/L3（境界181件、`manage.py check`×3——`settings_test`・
+    `settings_acceptance`・`settings`（`DJANGO_SECRET_KEY`付与）のいずれも「0 silenced」）緑。
+    L4（`manage.py test tests.acceptance`）は**既存65件全緑のまま**（767秒、tester領分の
+    `TDR-GTH-42`のstepは本ブランチに無い——契約どおり）。L5（`tests/ui_invariants`）は14件+10
+    subtests全緑（candidate.js無変更）。`participant.js`のキャッシュ回避文字列を`?v=20260906-
+    load-failure-notice`へ更新した（FR-025）。
+
+    **実測（Playwright、使い捨てスクリプトでコミット前に削除）**: 有効なリンクを開く→ヘッダーが
+    出る（ベースライン）→`seedParticipantLinkServerError`を叩く（204）→同じリンクを開き直す→
+    `gathering-participant-load-error`が出現し可視文言は「うまく読み込めませんでした。時間を
+    おいて開き直してください。」→`gathering-participant-header`/`-schedule-question`/
+    `-name-open`/`-link-error`/`-shop-vote-question`/`-decision`のいずれも0件（DOM上に存在しない）
+    →お知らせの中に`<button>`は0個→お知らせ要素自身の`outerHTML`に`500`/`Traceback`/`Exception`/
+    `trace`/`hostname`/両canary文字列のいずれも含まれない→もう一度同じリンクを開くとヘッダーが
+    正常に戻る（一発flagの消費を確認）。
+
+    **契約との食い違い（FR-028）**: 無し。契約・ADR・feature本文のとおりに実装できた。
+
+15. **受け入れテストの間欠失敗（`gathering-schedule-question`が現れない）の真因を特定し修正した
+    （2026-09-06、developer、ブランチ`fix/intermittent-schedule-question`）。** 直前のスライス13
+    （2026-09-02、上のログの「合流検証」段落）で「1回目の実行で6件が失敗、developerが5回再現を
+    試みて再現せず、**環境要因（負荷による待ち時間切れ）と判断**」と記録されていたのは誤りだった
+    ——orchestratorが後日、他エージェントを止めた無負荷状態でも失敗することを確認して「負荷」説を
+    否定しており、今回はその依頼を受けて再調査した。
+
+    **捕まえた証拠**: Playwright越しの実失敗を14往復以上の全件実行で待ったが一度も再現しなかった
+    （このマシンではヒット率が低い）。かわりに、ブラウザを介さない**使い捨ての並行アクセス検査**
+    （`urllib`で`GET /participant-links/{token}`と`PUT .../responses/{id}`を30スレッドから同時に
+    叩くだけ、コミット前に削除）を書いて`settings_acceptance`の実際のライブサーバに向けたところ、
+    数回に1回、`django.request`ロガーへ次のトレースバックが出て**素の非JSON HTTP 500**が返ることを
+    直接再現した: `django.db.utils.DatabaseError: not an error`（`connection.savepoint_commit`内、
+    `services.set_schedule_response`の`ScheduleResponse.objects.update_or_create(...)`から）。
+
+    **真因**: 受け入れテストだけが使う`settings_acceptance`のsqlite `:memory:`データベースが原因
+    だった。Django自身の`LiveServerTestCase._make_connections_override`（`django/test/testcases.py`）
+    は`conn.is_in_memory_db()`のときに限り、開いている**唯一の接続オブジェクト**をThreadedWSGIServer
+    が起こす**すべてのリクエスト処理スレッドに共有**する（`:memory:`は接続ごとに別データベースに
+    なってしまうため）。この共有こそが壊れる——2つのリクエストが2つのスレッドで同時に処理され、
+    どちらも（`update_or_create`が内部で使う）SAVEPOINTを同じ接続上で開閉すると、片方の
+    savepointスタックがもう片方に壊される。返ってきた素の500（`linkError`の4コードのいずれとも
+    一致しない非JSON本文）は、まさに`browserControlSurface.participantAnswer`の
+    `unexpectedLoadFailureOutcome`（`adr/0047`）が契約どおり要求する分類——`participant.js`の
+    `loadView`は正しく`gathering-participant-load-error`だけを描き`gathering-schedule-question`
+    を一切組み立てない。つまり**参加者用JSの読み込み失敗処理（`adr/0047`）にもサーバ側の
+    `services.py`/`views.py`にもバグは無い**——本番はPostgreSQL（`settings.py`）でこの競合自体が
+    起きない。原因はこの受け入れ専用プロファイルが選んだsqlite設定そのものだった。
+
+    **修正**: `settings_acceptance.py`の`DATABASES["default"]["TEST"]["NAME"]`（Djangoのテスト
+    ランナーが実際に読むキーで、素朴に上書きした最初の版はトップレベルの`NAME`を直しただけで
+    効かず、同じ検査で再確認した）に、プロセスIDを含む一時ディレクトリ上の実ファイルパスを設定
+    した。実ファイルは`is_in_memory_db()`が偽になるため、`LiveServerTestCase`は接続共有を一切
+    行わず、各リクエストスレッドが独立した接続を持つ（Djangoの通常のスレッドローカル接続管理）。
+    実ファイル化だけだと今度はsqliteのfsync-per-commitでスイート全体が大幅に遅くなった（CPU時間は
+    低いまま数分間ブロック）ため、`OPTIONS`に`timeout: 30`（既定5秒の余裕を確保）と
+    `init_command: "PRAGMA synchronous=OFF;"`（テスト専用・毎回破棄するDBにクラッシュ耐性は不要）
+    も加えた。`settings_test.py`本体・`manage.py test tests`（L1単体）・本番`settings.py`は
+    無変更（このバグが起きるのは`StaticLiveServerTestCase`を使う受け入れプロファイルだけ）。
+
+    **検証（すべてdeveloperが実行）**: 修正後、`manage.py test tests.acceptance
+    --settings=dining_radar.settings_acceptance`を**間を空けずに3回連続実行し、3回とも66件
+    全緑**（785.2秒・785.9秒・788.2秒——修正前の`:memory:`基準と同等の所要時間、性能後退なし）。
+    上記の並行アクセス検査も同じ修正後設定で再実行し、致命的な破損（`not an error`／
+    `no such savepoint`）が0件になったことを確認（残るのは検査自身が意図的に起こす極端な同一行
+    多重書き込みでの通常の`database is locked`のみ——実際の受け入れスイートのシーケンシャルな
+    DSLフローでは起こりえない負荷）。L1（ruff check/format緑、単体666件緑、カバレッジ98%
+    ［`--fail-under=90`通過。`settings_acceptance.py`は0%のままだが本スライス以前から単体テストの
+    対象外で後退ではない］）。L2（`tests.test_structure`が上記666件に含まれ緑）。L3
+    （`manage.py check`×3——`settings_test`・`settings_acceptance`・`settings`のいずれも
+    「0 silenced」）。L5（`tests.ui_invariants`14件緑、JS/テンプレート無変更のため再確認のみ）。
+    JS/テンプレートを変更していないためキャッシュ回避文字列の更新（FR-025）は不要。mutation
+    testingは変更がsettings辞書リテラルのみ（分岐なし）で対象外と判断し実行していない。
+
+    **契約との食い違い**: 無し。`tests/acceptance/**`・`contracts/**`は一切変更していない
+    （読むのみ）。真因が「参加者の設問の並びが得票に依存する」（orchestratorの未確認の観察）
+    ではなかったため、その観察について契約変更の要否は判断していない——別途の検討課題として残す。
+
+16. **残っている間欠失敗の真因を2つ特定し修正した（2026-09-06、developer、ブランチ
+    `fix/participant-render-race`。項目15のDB修正後もorchestratorが67件中3件の失敗を実測——
+    症状は`gathering-schedule-question`が現れない系統[TDR-GTH-20・43相当]と、
+    `gathering-participant-name-status`が書き込み成功後も"false"のまま残る系統[TDR-GTH-16
+    相当]の2種類）。**
+
+    **真因A（参加者画面の応答の入れ違い）**: `page.route`で、schedule-response PUTを
+    「サーバへは即座に到達・処理させるが応答の返送だけを1.2秒遅らせる」よう細工し、待たずに直後へ
+    display-name PUTを撃つ使い捨てスクリプトを書いたところ、`gathering-participant-name-status`の
+    `data-participant-named`が確定的に`false`のまま固まることを再現した（自然発生の反復——40回・
+    200回——は一度も再現せず、この環境の低再現率は項目15と同じ）。`participant.js`の`applyResult`/
+    `loadView`は、複数の参加者向けリクエストの応答を発行順ではなく**到着順**にそのまま`state.view`
+    へ上書きしていた——display-name PUTの応答（新しい書き込みを含む）が先に届いて正しく描画された
+    後、より早く発行されていたschedule-response PUTの応答（display-name書き込みより前の状態を
+    反映）が遅れて届き、無条件に`state.view`を上書きしていた。**修正**: 全ての参加者向け呼び出し
+    （`loadView`/`answerScheduleQuestion`/`selectShopVote`/`submitDisplayName`）に世代番号ガード
+    （`requestSequence`/`beginRequest`/`isStaleResponse`）を追加し、発行時点より新しいリクエストが
+    既に発行されていれば、その応答を`state.view`/`render()`へ一切適用しない——`gathering.js`の
+    `tentativelySelectCandidateDate`が既に同じ形の場当たり的ガードを1箇所だけ持っていたので、それを
+    一般化した。修正後、同じ細工スクリプトで`named='true'`のまま保たれることを確認した。
+
+    **真因B（前任のDB修正が実際には効いていなかった）**: `manage.py test`を明示`--settings`無しで
+    実行する呼び方（=CIの`l4-acceptance`ジョブ本体・pytestの`DJANGO_SETTINGS_MODULE`既定値と同一）
+    では`settings_test.py`が使われる。ところが項目15のsqlite修正は`settings_acceptance.py`という
+    別モジュールにしか入っておらず、**そのモジュールは`manage.py`自身のルーティング（明示
+    `--settings`が無ければ`settings_test`を選ぶ）にもpytestの設定にも一度も選ばれない、実質使われて
+    いないファイルだった**——項目15の診断自体（LiveServerTestCaseがメモリsqliteの接続をスレッド間で
+    共有しsavepointスタックが壊れる）は正しかったが、直した場所が実際に実行される経路と食い違って
+    おり、CIや素の`manage.py test tests.acceptance`実行では何も直っていなかった。実測で確認: 修正前の
+    `settings_test.py`のまま`python manage.py test tests --settings=dining_radar.settings_test`を
+    実行し、`getParticipantView`からの素の非JSON HTTP 500（項目15が記録したのと同一の
+    `django.db.utils.DatabaseError: not an error`系トレースバック）を実際に再現した。**修正**:
+    sqlite強化設定（`TEST.NAME`を実ファイル・pid付きパスへ、`timeout=30`、
+    `init_command: "PRAGMA synchronous=OFF;"`）を`settings_test.py`側へ移し、`settings_acceptance.py`
+    は`settings_test`を再エクスポートするだけの薄いエイリアスにした（`--settings=dining_radar.
+    settings_acceptance`という呼び方が万一どこかに残っていても同じ修正済み設定を受け取るようにする
+    ため、削除はしなかった）。
+
+    **検証（すべてdeveloperが実行）**: L1（ruff check/format緑、CIが指定する12ファイルへの
+    `pytest`実行666件緑・6.45秒、カバレッジ98%［`--fail-under=90`通過。`settings_acceptance.py`は
+    薄いエイリアスのため0%のままだが後退ではない］）。JS単体テストとして新規
+    `tests/js_unit/participant_request_sequencer.test.js`を追加した——Node組み込みの`node:test`/
+    `node:assert`のみ（追加依存無し）で、`participant.js`が実際に出荷する該当ブロックを
+    `request-sequencer:start`/`:end`マーカーで検証時に逐語抽出して実行する4件が緑
+    （`node --test tests/js_unit/participant_request_sequencer.test.js`——手打ちで再実装した別コード
+    ではなく出荷コードそのものを検査する）。これは`adr/0014`が定めるcandidate.js向けの本格的な
+    jsdom単体検証層（未着手）を代替・拡張するものではなく、その層の対象外で自己完結する追加と
+    位置づけている。L2（`tests.test_structure`13件緑）。L3（`manage.py check`×3——
+    `settings_test`・`settings_acceptance`・`settings`のいずれも「0 silenced」）。L5
+    （`tests.ui_invariants`14件+10 subtests緑）。mutation testingは変更がJS
+    （`participant.js`、Python対象外）とsettings辞書リテラル（分岐なし）のみのため対象外と判断し
+    実行していない（項目15の同種判断を踏襲。Windows環境の既知の制約`WinError 206`も同様に再現し、
+    フル対象では実行不能なことも確認済み）。**CIと同一の呼び方
+    （`python manage.py test tests.acceptance --verbosity 1`、明示`--settings`無し）を、間を空けず
+    5回連続で実行し、5回とも66件全緑**（各回780〜783秒。1回目はさらに別プロセスで同じコマンドを
+    もう一系統同時に走らせ、2系統が競合する状態でも両方66件緑——orchestratorが報告した「主ツリー
+    では高頻度で失敗（直近5回中4回）」という負荷条件を模す意図）。JS/テンプレートを変更したため
+    キャッシュ回避文字列を更新した（`participant.js?v=20260906-stale-response-guard`、FR-025）。
+
+    **契約との食い違い**: 無し。`contracts/**`・`tests/acceptance/**`（`dsl/`・`steps/`含む）は
+    一切変更していない（読むのみ）。真因A・真因Bはいずれも実装・テスト基盤側の問題であり、契約の
+    記述と矛盾しない。
+
+    **気づいたが今回は対応しなかったこと**: `gathering.js`（幹事側画面）にも同種の「応答の到着順で
+    状態を上書きする」書き方をした関数が複数ある（`loadGathering`・`copyParticipantLink`・
+    `confirmDate`・`loadParticipantLinksOnly`・`fetchOpenShopListForShortlist`）。今回の実測で
+    参加者側（`participant.js`）にのみ確定的な不具合を再現・特定できたため、`gathering.js`側は
+    対象を広げず現状維持とした——推測で直すと予防的な変更の正しさの根拠が実測ではなく類推になる
+    （P-01の精神）と判断した。将来、幹事側で同種の間欠症状が観測された場合、同じ`requestSequence`
+    パターンを移植することを推奨する。
+
 11. **ローカルで画面を確かめる手順**（このスライスで何度も踏んだので残す）。
     - `python manage.py runserver 127.0.0.1:8741 --settings=dining_radar.settings_localdemo --noreload --insecure`
     - `settings_localdemo.py` と `localdemo.sqlite3` は**リポジトリに入れない**（`.gitignore` 済み、FR-027）。
@@ -1928,7 +2154,7 @@ Verification, all re-run by orchestrator: L0 govlint, ruff and format, L1–L3 (
 
 - Email delivery and SSO remain deferred; accounts stay invite-only and local. The custom-domain question is closed — a Route 53 subdomain fronts the service, recorded in ADR-0021's 2026-08-14 addendum.
 - Whether the "approved screen drives the test-infrastructure control-surface contract" pattern (ADR-0011, ADR-0013) should be generalized into a meta ADR beside `meta/adr/0023`, since other UI projects can hit the same friction. Architect raised this; drafting a meta ADR belongs to orchestrator (`meta/adr/0047`).
-- One L4 run failed intermittently and was never explained. Developer's hypothesis (concurrent file edits during the run) was never confirmed. It has not recurred.
+- One L4 run failed intermittently and was never explained. Developer's hypothesis (concurrent file edits during the run) was never confirmed; it may or may not be the same class of failure as the confirmed-and-fixed one below (Current state item 15) — never confirmed either way, and this specific incident has not recurred since.
 - Whether ADR-0020's harness should be generalized to the meta layer (a shared `meta/verification.md` revision and/or a reusable harness for other UI projects). ADR-0020 decision 10 deliberately scopes itself to this project as the human's chosen proving ground, and defers the generalization judgment to orchestrator once enough evidence accumulates (`meta/adr/0047`). The first evidence is in: the gate caught a real keyboard-activation defect on the slice that introduced it. Note that a meta-layer move would also have to answer how the same invariants reach `reservation-frontend`, whose stack (Playwright/TypeScript) differs from this project's (Playwright/Python), and that `meta/tools/**` is locked by `meta/adr/0046` so a shared harness there needs a human unlock.
 - **新規（2026-08-24、architect）**: 輪と徒歩の上限の連動を将来契約化するなら、フィルタチップの「選択中」状態を機械観測する属性（`data-selected` 相当）をこの契約に新設する設計判断が先に要る（`filterPanel.constraints` は現状これを散文でしか述べていない）。地図リボンの高さ・役割を将来契約化するなら、人間のリボン有り無し比較の結果と、それに応じた `ADR-0020` の対象拡張が先に要る。
 - **新規（2026-08-27、reviewer再監査）**: 徒歩圏の輪の分数ラベル（`bandLabel`）の検査は、**可視ラベルの分数の集合と輪の `data-walking-radius-minutes` の集合が一致すること**までしか証明していない（F1b、Medium）。値の集合が保たれたまま**輪とラベルの対応だけが入れ替わる欠陥**（5分の輪に「15分」と出る等）は検出できない。現在の実装は同一ループ内で半径とラベル文言を同じ変数から生成しているため発現しにくく、reviewerはマージ前必須のブロッカーとはしていない。**恒久的に閉じるには実装と契約の両方が要る**: ラベル要素に輪と相関する属性（`bandAttribute` と同名の値）を持たせ、それを `bandLabel` の Must として契約に載せる。architect の判断が要る。

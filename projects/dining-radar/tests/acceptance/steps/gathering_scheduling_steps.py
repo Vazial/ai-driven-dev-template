@@ -1,4 +1,4 @@
-"""Thin Gherkin-to-DSL mappings for TDR-GTH-01 through TDR-GTH-36."""
+"""Thin Gherkin-to-DSL mappings for TDR-GTH-01 through TDR-GTH-43."""
 
 from __future__ import annotations
 
@@ -137,6 +137,9 @@ class GatheringSchedulingSteps:
     def link_is_seeded_as_rate_limited(self, link: dict[str, str]) -> None:
         self.dsl.seed_rate_limited_participant_link(link)
 
+    def link_is_seeded_to_fail_unexpectedly(self, link: dict[str, str]) -> None:
+        self.dsl.seed_participant_link_server_error(link)
+
     def participant_attempts_to_answer_expecting_rate_limit(
         self, candidate_date_id: str, status: str
     ) -> None:
@@ -245,6 +248,28 @@ class GatheringSchedulingSteps:
     def candidate_dates_are_ordered_by_going_count_descending(self) -> None:
         self.dsl.assert_candidate_date_list_is_ordered_by_going_count_descending()
 
+    def candidate_date_order_snapshot(self) -> list[str]:
+        return self.dsl.capture_candidate_date_order()
+
+    def candidate_date_order_matches_start_at_order(self, candidate_date_isos: list[str]) -> None:
+        self.dsl.assert_candidate_date_order_matches_start_at_order(candidate_date_isos)
+
+    def candidate_date_order_is_unchanged(self, before: list[str]) -> None:
+        self.dsl.assert_candidate_date_order_unchanged(before)
+
+    def first_reachable_schedule_question_matches_start_at_order(
+        self, candidate_date_isos: list[str]
+    ) -> None:
+        self.dsl.assert_first_reachable_schedule_question_matches_start_at_order(
+            candidate_date_isos
+        )
+
+    def first_reachable_schedule_question_candidate_date(self) -> str:
+        return self.dsl.first_reachable_schedule_question_candidate_date_id()
+
+    def first_reachable_schedule_question_is_unchanged(self, before: str) -> None:
+        self.dsl.assert_first_reachable_schedule_question_unchanged(before)
+
     def unanswered_summary_is(
         self, *, total_issued: int, revoked: int, active_issued: int, unanswered: int
     ) -> None:
@@ -307,6 +332,21 @@ class GatheringSchedulingSteps:
 
     def screen_has_no_forbidden_controls_or_disclosures(self) -> None:
         self.dsl.assert_gathering_screen_has_no_forbidden_surfaces()
+
+    def participant_sees_a_load_failure_notice(self) -> None:
+        self.dsl.assert_participant_load_failure_notice_is_shown()
+
+    def load_failure_hides_the_schedule_and_shop_questions(self) -> None:
+        self.dsl.assert_participant_load_failure_hides_questions()
+
+    def load_failure_has_no_retry_control(self) -> None:
+        self.dsl.assert_participant_load_failure_has_no_retry_control()
+
+    def load_failure_is_exclusive_of_other_outcomes(self) -> None:
+        self.dsl.assert_participant_load_failure_is_exclusive_of_other_outcomes()
+
+    def load_failure_discloses_no_technical_detail(self) -> None:
+        self.dsl.assert_participant_load_failure_discloses_no_technical_detail()
 
     def participant_token_is_not_persisted(self, link: dict[str, str]) -> None:
         self.dsl.assert_participant_token_not_persisted(link)
@@ -375,8 +415,22 @@ class GatheringSchedulingSteps:
     def shortlisted_shops_match(self, expected_ids: list[str]) -> None:
         self.dsl.assert_shortlisted_shop_ids(expected_ids)
 
-    def shortlisted_shop_tally_is(self, shop_id: str, *, approval: int, responded: int) -> None:
-        self.dsl.assert_shortlisted_shop_tally(shop_id, approval=approval, responded=responded)
+    def shortlisted_shop_tally_is(
+        self, shop_id: str, *, want_to_go: int, ok_to_go: int, not_going: int, responded: int
+    ) -> None:
+        self.dsl.assert_shortlisted_shop_tally(
+            shop_id,
+            want_to_go=want_to_go,
+            ok_to_go=ok_to_go,
+            not_going=not_going,
+            responded=responded,
+        )
+
+    def shortlisted_shop_list_is_ordered_by_combined_tier_descending(self) -> None:
+        self.dsl.assert_shortlisted_shop_list_is_ordered_by_combined_tier_descending()
+
+    def open_shop_list_shows_map_and_shop_details(self) -> None:
+        self.dsl.assert_open_shop_list_shows_map_and_shop_details()
 
     def shop_is_not_offered_in_the_shortlist(self, shop_id: str) -> None:
         self.dsl.assert_shop_not_offered_in_open_shop_list(shop_id)
@@ -399,22 +453,47 @@ class GatheringSchedulingSteps:
     def rejected_because_gathering_finalized(self, response: object) -> None:
         self.dsl.assert_rejected_because_gathering_finalized(response)  # type: ignore[arg-type]
 
-    # Participant shop-vote / finalized decision (TDR-GTH-28/29/30/34) ------
+    # Participant shop-vote / finalized decision (TDR-GTH-28/29/30/34/37/39/41,
+    # three-tier vote model, near-first stable order, map/detail fields,
+    # search-origin marker -- adr/0044/0045/0046) ---------------------------
 
-    def participant_votes_for_shops(self, shop_ids: list[str]) -> None:
-        self.dsl.vote_for_shops(shop_ids)
+    def participant_answers_shop_vote(self, shop_id: str, status: str) -> None:
+        self.dsl.answer_shop_vote_question(shop_id, status)
 
-    def participant_toggles_shop_vote(self, shop_id: str) -> None:
-        self.dsl.toggle_shop_vote(shop_id)
+    def participant_answers_shop_votes(self, votes: dict[str, str]) -> None:
+        self.dsl.answer_shop_vote_questions(votes)
 
-    def shop_vote_your_approval_is(self, shop_id: str, expected: str) -> None:
-        self.dsl.assert_shop_vote_your_approval(shop_id, expected)
+    def shop_vote_your_vote_is(self, shop_id: str, expected: str) -> None:
+        self.dsl.assert_shop_vote_your_vote(shop_id, expected)
 
     def shop_vote_tally_is_absent(self, shop_id: str) -> None:
         self.dsl.assert_shop_vote_tally_absent(shop_id)
 
-    def shop_vote_tally_is(self, shop_id: str, *, approval: int, responded: int) -> None:
-        self.dsl.assert_shop_vote_tally(shop_id, approval=approval, responded=responded)
+    def shop_vote_tally_is(
+        self, shop_id: str, *, want_to_go: int, ok_to_go: int, not_going: int, responded: int
+    ) -> None:
+        self.dsl.assert_shop_vote_tally(
+            shop_id,
+            want_to_go=want_to_go,
+            ok_to_go=ok_to_go,
+            not_going=not_going,
+            responded=responded,
+        )
+
+    def shop_vote_question_list_shows_map_and_shop_details(self, link: dict[str, str]) -> None:
+        self.dsl.assert_shop_vote_question_list_shows_map_and_shop_details(link)
+
+    def shop_vote_map_shows_search_origin_marker(self) -> None:
+        self.dsl.assert_shop_vote_map_shows_search_origin_marker()
+
+    def shop_vote_question_order_snapshot(self) -> list[str]:
+        return self.dsl.capture_shop_vote_question_order()
+
+    def shop_vote_question_order_matches_participant_view(self, link: dict[str, str]) -> None:
+        self.dsl.assert_shop_vote_question_order_matches_participant_view(link)
+
+    def shop_vote_question_order_is_unchanged(self, before: list[str]) -> None:
+        self.dsl.assert_shop_vote_question_order_unchanged(before)
 
     def participant_attempts_to_answer_via_api(
         self, link: dict[str, str], candidate_date_id: str, status: str
@@ -422,9 +501,9 @@ class GatheringSchedulingSteps:
         return self.dsl.attempt_set_schedule_response_via_api(link, candidate_date_id, status)
 
     def participant_attempts_to_vote_via_api(
-        self, link: dict[str, str], approved_shop_ids: list[str]
+        self, link: dict[str, str], votes: dict[str, str]
     ) -> object:
-        return self.dsl.attempt_set_shop_votes_via_api(link, approved_shop_ids)
+        return self.dsl.attempt_set_shop_votes_via_api(link, votes)
 
     def participant_decision_is(
         self,
@@ -432,13 +511,13 @@ class GatheringSchedulingSteps:
         confirmed_candidate_date: str,
         shop_id: str,
         your_schedule_response: str,
-        approved_shop_ids: list[str],
+        shop_votes: dict[str, str],
     ) -> None:
         self.dsl.assert_participant_decision(
             confirmed_candidate_date=confirmed_candidate_date,
             shop_id=shop_id,
             your_schedule_response=your_schedule_response,
-            approved_shop_ids=approved_shop_ids,
+            shop_votes=shop_votes,
         )
 
     def participant_question_surfaces_are_replaced(self) -> None:

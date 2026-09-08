@@ -32,9 +32,11 @@ from dining_radar.gathering.models import (
     ParticipantLink,
     ScheduleResponse,
     ScheduleResponseStatus,
+    ShopVoteStatus,
     ShopVoteSubmission,
     ShortlistedShop,
 )
+from dining_radar.recommendation.pipeline import NormalizedCandidate, Origin
 from dining_radar.suggestions import acceptance_state
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -322,12 +324,57 @@ class CandidateDateTalliesServiceTests(TestCase):
         self.assertEqual(tallies[0].going_count, 2)
         self.assertEqual(tallies[1].going_count, 1)
 
-    def test_ties_keep_creation_order(self):
+    def test_ties_are_broken_by_start_at_ascending_not_creation_order(self):
+        """adr/0048: the tie-break is startAt ascending, not "creation order".
+
+        ``self.low``/``self.high`` are created in start_at-ascending order in
+        ``setUp`` (so this alone would not distinguish the two bases). Here a
+        third, later-created candidate date has an *earlier* start_at than
+        both, and a fourth, earliest-created one has the *latest* start_at --
+        proving the observed order tracks start_at, not creation sequence.
+        """
+        earliest_start_but_created_last = CandidateDate.objects.create(
+            gathering=self.gathering, start_at=self.low.start_at - timedelta(days=10)
+        )
+        latest_start_but_created_first = CandidateDate.objects.create(
+            gathering=self.gathering, start_at=self.high.start_at + timedelta(days=10)
+        )
+
         tallies = services.candidate_dates_with_tallies(self.gathering)
 
         self.assertEqual(
-            [tally.candidate_date.id for tally in tallies], [self.low.id, self.high.id]
+            [tally.candidate_date.id for tally in tallies],
+            [
+                earliest_start_but_created_last.id,
+                self.low.id,
+                self.high.id,
+                latest_start_but_created_first.id,
+            ],
         )
+
+    def test_ties_are_deterministic_even_when_created_at_collides(self):
+        """The production defect adr/0048 fixes: every candidate date created in
+        the same ``createGathering`` call can share one identical
+        ``auto_now_add`` value at this database's timestamp resolution, which
+        left the prior creation-order tie-break with nothing stable to sort
+        by. Forcing an exact collision here and re-running the same query
+        twice must still produce the same, startAt-ascending order both
+        times.
+        """
+        CandidateDate.objects.filter(gathering=self.gathering).update(created_at=timezone.now())
+        self.assertEqual(len({cd.created_at for cd in self.gathering.candidate_dates.all()}), 1)
+
+        first_run = [
+            tally.candidate_date.id
+            for tally in services.candidate_dates_with_tallies(self.gathering)
+        ]
+        second_run = [
+            tally.candidate_date.id
+            for tally in services.candidate_dates_with_tallies(self.gathering)
+        ]
+
+        self.assertEqual(first_run, [self.low.id, self.high.id])
+        self.assertEqual(first_run, second_run)
 
     def test_counts_every_status_independently(self):
         link_going = self._link()
@@ -499,6 +546,32 @@ class ParticipantLinkLifecycleServiceTests(TestCase):
         self.assertEqual(len(links), 2)
         self.assertLessEqual(links[0].issued_at, links[1].issued_at)
 
+    def test_ties_are_broken_by_id_ascending(self):
+        """adr/0048: a single issueParticipantLinks call with count > 1 (headroom
+        this contract has never exercised via the approved screen, ADR-0048's
+        own words) can give every link it creates one identical ``issued_at``
+        value at this database's timestamp resolution -- deterministic,
+        repeatable ordering must still hold even when that tie is forced
+        explicitly rather than left to the database's own clock resolution
+        (coarse enough on some platforms to collide on its own, fine enough
+        on others -- e.g. Linux's higher-resolution clock -- that
+        ``bulk_create``'s per-row ``auto_now_add`` calls land on distinct
+        values instead; see ``ParticipantLink.Meta.ordering``'s own note).
+        """
+        _gathering, links = services.issue_participant_links(self.user, self.gathering.id, 3)
+        ParticipantLink.objects.filter(pk__in=[link.pk for link in links]).update(
+            issued_at=links[0].issued_at
+        )
+        tied_links = ParticipantLink.objects.filter(pk__in=[link.pk for link in links])
+        self.assertEqual(len({link.issued_at for link in tied_links}), 1)
+        expected_order = sorted(link.id for link in links)
+
+        _g1, first_run = services.list_participant_links(self.user, self.gathering.id)
+        _g2, second_run = services.list_participant_links(self.user, self.gathering.id)
+
+        self.assertEqual([link.id for link in first_run], expected_order)
+        self.assertEqual([link.id for link in first_run], [link.id for link in second_run])
+
 
 # --- services: gathering list / in-progress count (adr/0038) ----------------
 
@@ -526,6 +599,27 @@ class ListGatheringsServiceTests(TestCase):
         result = services.list_gatherings(self.user)
 
         self.assertEqual([gathering.id for gathering in result], [second.id, first.id])
+
+    def test_ties_are_broken_by_id_ascending(self):
+        """adr/0048: two gatherings sharing an identical ``created_at`` (the
+        same collision ``test_ordered_by_created_at_descending`` above must
+        route around) still sort deterministically, and the same way across
+        repeated reads.
+        """
+        now = timezone.now()
+        first = services.create_gathering(self.user, "1つめ", [now])
+        second = services.create_gathering(self.user, "2つめ", [now])
+        Gathering.objects.filter(pk__in=[first.pk, second.pk]).update(created_at=now)
+        self.assertEqual(
+            len({g.created_at for g in Gathering.objects.filter(pk__in=[first.pk, second.pk])}), 1
+        )
+        expected_order = sorted([first.id, second.id])
+
+        first_run = [gathering.id for gathering in services.list_gatherings(self.user)]
+        second_run = [gathering.id for gathering in services.list_gatherings(self.user)]
+
+        self.assertEqual(first_run, expected_order)
+        self.assertEqual(first_run, second_run)
 
     def test_includes_a_finalized_gathering(self):
         gathering = services.create_gathering(self.user, "会", [timezone.now()])
@@ -609,6 +703,33 @@ class ParticipantAccessServiceTests(TestCase):
 
         # A one-shot flag: the *next* request must succeed again.
         services.get_participant_view(self.link.token)
+
+    def test_server_error_seeded_link_is_rejected_exactly_once(self):
+        """adr/0047: ``seedParticipantLinkServerError`` mirrors
+        ``seedRateLimitedParticipantLink``'s one-shot shape, but only for
+        ``getParticipantView`` (this seam's own scope)."""
+        services.seed_participant_link_server_error(self.link.token)
+
+        with self.assertRaises(services.ParticipantLinkServerErrorSeededError):
+            services.get_participant_view(self.link.token)
+
+        # A one-shot flag: the *next* request must succeed again.
+        services.get_participant_view(self.link.token)
+
+    def test_server_error_seed_takes_priority_over_a_durable_link_state(self):
+        """The seeded one-shot failure fires even for a token that is also
+        durably expired -- it is consumed first, so the durable state only
+        surfaces on the *next* call (mirrors _authorize_participant_link's
+        own revoked-before-expired-before-rate-limited ordering rationale:
+        each check is independent and does not suppress the others)."""
+        services.seed_expired_participant_link(self.link.token)
+        services.seed_participant_link_server_error(self.link.token)
+
+        with self.assertRaises(services.ParticipantLinkServerErrorSeededError):
+            services.get_participant_view(self.link.token)
+
+        with self.assertRaises(services.LinkExpiredError):
+            services.get_participant_view(self.link.token)
 
     def test_set_schedule_response_records_the_answer(self):
         services.set_schedule_response(
@@ -700,6 +821,10 @@ class TestSupportSeamServiceTests(TestCase):
         with self.assertRaises(services.LinkNotFoundError):
             services.seed_rate_limited_participant_link("unknown-token")
 
+    def test_seed_participant_link_server_error_rejects_an_unknown_token(self):
+        with self.assertRaises(services.LinkNotFoundError):
+            services.seed_participant_link_server_error("unknown-token")
+
 
 # --- open-shop preview (shares test-support-api.yaml's population seam) -----
 
@@ -716,12 +841,13 @@ class OpenShopPreviewServiceTests(GatheringOrganizerTestCase):
         gathering = Gathering.objects.get(id=gathering_payload["id"])
         candidate_date = gathering.candidate_dates.first()
 
-        candidate_date_obj, population = services.preview_open_shops_for_candidate_date(
+        candidate_date_obj, population, origin = services.preview_open_shops_for_candidate_date(
             self.user, gathering.id, candidate_date.id
         )
 
         self.assertEqual(candidate_date_obj.id, candidate_date.id)
         self.assertEqual(len(population), 5)  # Monday: only the 月 candidate excluded
+        self.assertIsNotNone(origin)
 
     def test_preview_never_advances_the_gathering_phase(self):
         gathering_payload = self.create_gathering_via_api()
@@ -744,6 +870,18 @@ class OpenShopPreviewServiceTests(GatheringOrganizerTestCase):
 # shops are open on a Monday (only the 月曜-closed one is excluded) --
 # OpenShopPreviewServiceTests establishes the same fact above.
 _A_MONDAY_START_AT = "2026-09-07T12:00:00+09:00"
+
+
+def _want_to_go(*shop_ids: str) -> list[tuple[str, str]]:
+    """``votes`` entries naming every ``shop_ids`` as WANT_TO_GO (adr/0044).
+
+    A convenience shorthand for tests migrated from the retired boolean
+    approve-any-number-of-shops model, where "approving" a shop is now most
+    directly analogous to answering it WANT_TO_GO -- this helper does not
+    itself assert anything about OK_TO_GO/NOT_GOING, which other tests below
+    exercise directly with explicit ``(shop_id, status)`` tuples.
+    """
+    return [(shop_id, ShopVoteStatus.WANT_TO_GO.value) for shop_id in shop_ids]
 
 
 def _backdate_shortlisted_shop(gathering: Gathering, shop_id: str, seconds: int = 1) -> None:
@@ -799,6 +937,20 @@ class GatheringSelectingShopServiceTestCase(TestCase):
     def issue_link(self) -> ParticipantLink:
         _gathering, links = services.issue_participant_links(self.user, self.gathering.id, 1)
         return links[0]
+
+    def shop_lookup_and_origin(self):
+        """A fresh ``(shop_lookup, origin)`` pair for the confirmed candidate date.
+
+        ``participant_shop_vote_options``/``participant_decision_shop_votes``
+        need both explicitly (services no longer resolves them internally --
+        the caller resolves the population source once per request and
+        reuses it, mirroring ``serializers.serialize_participant_view``'s
+        own convention).
+        """
+        population_source = services.resolve_population_source()
+        shop_lookup = services.shop_lookup_for_gathering(self.gathering, population_source)
+        origin = population_source[1] if population_source is not None else None
+        return shop_lookup, origin
 
 
 class ShopLookupForGatheringServiceTests(GatheringSelectingShopServiceTestCase):
@@ -932,7 +1084,7 @@ class SetShortlistedShopsServiceTests(GatheringSelectingShopServiceTestCase):
     def test_re_adding_a_removed_shop_is_a_brand_new_entry(self):
         link = self.issue_link()
         services.set_shortlisted_shops(self.user, self.gathering.id, [self.open_shop_ids[0]])
-        services.set_shop_votes(link.token, [self.open_shop_ids[0]])
+        services.set_shop_votes(link.token, _want_to_go(self.open_shop_ids[0]))
         first_id = ShortlistedShop.objects.get(
             gathering=self.gathering, shop_id=self.open_shop_ids[0]
         ).id
@@ -950,7 +1102,9 @@ class SetShortlistedShopsServiceTests(GatheringSelectingShopServiceTestCase):
         )
         self.assertNotEqual(re_added.id, first_id)
         tally = services.shortlisted_shops_with_tallies(self.gathering)[0]
-        self.assertEqual(tally.approval_count, 0)
+        self.assertEqual(tally.want_to_go_count, 0)
+        self.assertEqual(tally.ok_to_go_count, 0)
+        self.assertEqual(tally.not_going_count, 0)
         self.assertEqual(tally.responded_participant_count, 0)
 
 
@@ -990,8 +1144,8 @@ class FinalizeGatheringServiceTests(GatheringSelectingShopServiceTestCase):
         services.set_shortlisted_shops(self.user, self.gathering.id, self.open_shop_ids[0:2])
         popular_link = self.issue_link()
         other_link = self.issue_link()
-        services.set_shop_votes(popular_link.token, [self.open_shop_ids[0]])
-        services.set_shop_votes(other_link.token, [self.open_shop_ids[0]])
+        services.set_shop_votes(popular_link.token, _want_to_go(self.open_shop_ids[0]))
+        services.set_shop_votes(other_link.token, _want_to_go(self.open_shop_ids[0]))
         # open_shop_ids[1] has zero votes, yet the organizer may still choose it.
 
         gathering = services.finalize_gathering(self.user, self.gathering.id, self.open_shop_ids[1])
@@ -1019,14 +1173,16 @@ class SetShopVotesServiceTests(GatheringSelectingShopServiceTestCase):
         link = self.issue_link()
 
         with self.assertRaises(services.InvalidShopSelectionError):
-            services.set_shop_votes(link.token, [self.open_shop_ids[0], self.open_shop_ids[0]])
+            services.set_shop_votes(
+                link.token, _want_to_go(self.open_shop_ids[0], self.open_shop_ids[0])
+            )
 
     def test_rejects_a_shop_not_currently_shortlisted(self):
         services.set_shortlisted_shops(self.user, self.gathering.id, [self.open_shop_ids[0]])
         link = self.issue_link()
 
         with self.assertRaises(services.InvalidShopSelectionError):
-            services.set_shop_votes(link.token, [self.open_shop_ids[1]])
+            services.set_shop_votes(link.token, _want_to_go(self.open_shop_ids[1]))
 
     def test_empty_selection_is_a_valid_answer(self):
         services.set_shortlisted_shops(self.user, self.gathering.id, [self.open_shop_ids[0]])
@@ -1035,17 +1191,56 @@ class SetShopVotesServiceTests(GatheringSelectingShopServiceTestCase):
         services.set_shop_votes(link.token, [])
 
         submission = ShopVoteSubmission.objects.get(participant_link=link)
-        self.assertEqual(submission.approved_shop_ids, [])
+        self.assertEqual(submission.votes, {})
 
     def test_replaces_the_entire_vote_rather_than_toggling(self):
         services.set_shortlisted_shops(self.user, self.gathering.id, self.open_shop_ids[0:2])
         link = self.issue_link()
-        services.set_shop_votes(link.token, [self.open_shop_ids[0], self.open_shop_ids[1]])
+        services.set_shop_votes(
+            link.token, _want_to_go(self.open_shop_ids[0], self.open_shop_ids[1])
+        )
 
-        services.set_shop_votes(link.token, [self.open_shop_ids[1]])
+        services.set_shop_votes(link.token, _want_to_go(self.open_shop_ids[1]))
 
         submission = ShopVoteSubmission.objects.get(participant_link=link)
-        self.assertEqual(submission.approved_shop_ids, [self.open_shop_ids[1]])
+        self.assertEqual(submission.votes, {self.open_shop_ids[1]: ShopVoteStatus.WANT_TO_GO.value})
+
+    def test_records_each_of_the_three_tiers(self):
+        services.set_shortlisted_shops(self.user, self.gathering.id, self.open_shop_ids[0:3])
+        link = self.issue_link()
+
+        services.set_shop_votes(
+            link.token,
+            [
+                (self.open_shop_ids[0], ShopVoteStatus.WANT_TO_GO.value),
+                (self.open_shop_ids[1], ShopVoteStatus.OK_TO_GO.value),
+                (self.open_shop_ids[2], ShopVoteStatus.NOT_GOING.value),
+            ],
+        )
+
+        submission = ShopVoteSubmission.objects.get(participant_link=link)
+        self.assertEqual(
+            submission.votes,
+            {
+                self.open_shop_ids[0]: ShopVoteStatus.WANT_TO_GO.value,
+                self.open_shop_ids[1]: ShopVoteStatus.OK_TO_GO.value,
+                self.open_shop_ids[2]: ShopVoteStatus.NOT_GOING.value,
+            },
+        )
+
+    def test_a_shop_omitted_from_votes_is_left_not_yet_answered(self):
+        services.set_shortlisted_shops(self.user, self.gathering.id, self.open_shop_ids[0:2])
+        link = self.issue_link()
+
+        services.set_shop_votes(link.token, _want_to_go(self.open_shop_ids[0]))
+
+        shop_lookup, origin = self.shop_lookup_and_origin()
+        options = {
+            option.shortlisted_shop.shop_id: option
+            for option in services.participant_shop_vote_options(link, shop_lookup, origin)
+        }
+        self.assertEqual(options[self.open_shop_ids[0]].your_vote, ShopVoteStatus.WANT_TO_GO.value)
+        self.assertIsNone(options[self.open_shop_ids[1]].your_vote)
 
     def test_unknown_token_is_not_found(self):
         services.set_shortlisted_shops(self.user, self.gathering.id, [self.open_shop_ids[0]])
@@ -1069,41 +1264,83 @@ class ShortlistedShopsWithTalliesServiceTests(GatheringSelectingShopServiceTestC
         tallies = services.shortlisted_shops_with_tallies(self.gathering)
 
         self.assertEqual(len(tallies), 1)
-        self.assertEqual(tallies[0].approval_count, 0)
+        self.assertEqual(tallies[0].want_to_go_count, 0)
+        self.assertEqual(tallies[0].ok_to_go_count, 0)
+        self.assertEqual(tallies[0].not_going_count, 0)
         self.assertEqual(tallies[0].responded_participant_count, 0)
 
-    def test_counts_only_participants_whose_submission_approved_this_shop(self):
+    def test_counts_only_participants_whose_submission_answers_this_shop(self):
         services.set_shortlisted_shops(self.user, self.gathering.id, self.open_shop_ids[0:2])
-        approver = self.issue_link()
-        decliner = self.issue_link()
-        services.set_shop_votes(approver.token, [self.open_shop_ids[0]])
-        services.set_shop_votes(decliner.token, [self.open_shop_ids[1]])
+        wants_first = self.issue_link()
+        wants_second = self.issue_link()
+        services.set_shop_votes(wants_first.token, _want_to_go(self.open_shop_ids[0]))
+        services.set_shop_votes(wants_second.token, _want_to_go(self.open_shop_ids[1]))
 
         tallies = {
             tally.shortlisted_shop.shop_id: tally
             for tally in services.shortlisted_shops_with_tallies(self.gathering)
         }
 
-        self.assertEqual(tallies[self.open_shop_ids[0]].approval_count, 1)
-        self.assertEqual(tallies[self.open_shop_ids[0]].responded_participant_count, 2)
-        self.assertEqual(tallies[self.open_shop_ids[1]].approval_count, 1)
-        self.assertEqual(tallies[self.open_shop_ids[1]].responded_participant_count, 2)
+        self.assertEqual(tallies[self.open_shop_ids[0]].want_to_go_count, 1)
+        self.assertEqual(tallies[self.open_shop_ids[0]].responded_participant_count, 1)
+        self.assertEqual(tallies[self.open_shop_ids[1]].want_to_go_count, 1)
+        self.assertEqual(tallies[self.open_shop_ids[1]].responded_participant_count, 1)
+
+    def test_want_to_go_and_ok_to_go_are_counted_separately(self):
+        services.set_shortlisted_shops(self.user, self.gathering.id, [self.open_shop_ids[0]])
+        wants = self.issue_link()
+        ok_with = self.issue_link()
+        not_going = self.issue_link()
+        services.set_shop_votes(
+            wants.token, [(self.open_shop_ids[0], ShopVoteStatus.WANT_TO_GO.value)]
+        )
+        services.set_shop_votes(
+            ok_with.token, [(self.open_shop_ids[0], ShopVoteStatus.OK_TO_GO.value)]
+        )
+        services.set_shop_votes(
+            not_going.token, [(self.open_shop_ids[0], ShopVoteStatus.NOT_GOING.value)]
+        )
+
+        tally = services.shortlisted_shops_with_tallies(self.gathering)[0]
+
+        self.assertEqual(tally.want_to_go_count, 1)
+        self.assertEqual(tally.ok_to_go_count, 1)
+        self.assertEqual(tally.not_going_count, 1)
+        self.assertEqual(tally.responded_participant_count, 3)
+
+    def test_a_shop_omitted_from_a_submission_does_not_count_toward_its_tally(self):
+        # A participant who answers shop[0] but leaves shop[1] unanswered in
+        # the same setShopVotes call must not count toward shop[1]'s
+        # respondedParticipantCount -- omission is per-shop, not per-request
+        # (SetShopVotesRequest's own rule, distinct from the prior boolean
+        # model's per-submission gating).
+        services.set_shortlisted_shops(self.user, self.gathering.id, self.open_shop_ids[0:2])
+        link = self.issue_link()
+        services.set_shop_votes(link.token, _want_to_go(self.open_shop_ids[0]))
+
+        tallies = {
+            tally.shortlisted_shop.shop_id: tally
+            for tally in services.shortlisted_shops_with_tallies(self.gathering)
+        }
+
+        self.assertEqual(tallies[self.open_shop_ids[0]].responded_participant_count, 1)
+        self.assertEqual(tallies[self.open_shop_ids[1]].responded_participant_count, 0)
 
     def test_d7_replaced_shop_keeps_its_own_tally(self):
         services.set_shortlisted_shops(self.user, self.gathering.id, self.open_shop_ids[0:2])
         link = self.issue_link()
-        services.set_shop_votes(link.token, [self.open_shop_ids[0]])
+        services.set_shop_votes(link.token, _want_to_go(self.open_shop_ids[0]))
 
         services.set_shortlisted_shops(self.user, self.gathering.id, self.open_shop_ids[0:1])
 
         tallies = services.shortlisted_shops_with_tallies(self.gathering)
-        self.assertEqual(tallies[0].approval_count, 1)
+        self.assertEqual(tallies[0].want_to_go_count, 1)
         self.assertEqual(tallies[0].responded_participant_count, 1)
 
     def test_d7_newly_added_shop_starts_at_zero_even_if_everyone_already_voted(self):
         services.set_shortlisted_shops(self.user, self.gathering.id, [self.open_shop_ids[0]])
         link = self.issue_link()
-        services.set_shop_votes(link.token, [self.open_shop_ids[0]])
+        services.set_shop_votes(link.token, _want_to_go(self.open_shop_ids[0]))
 
         services.set_shortlisted_shops(self.user, self.gathering.id, self.open_shop_ids[0:2])
         # Guard against the newly added shop's added_at tying with the
@@ -1116,50 +1353,97 @@ class ShortlistedShopsWithTalliesServiceTests(GatheringSelectingShopServiceTestC
             tally.shortlisted_shop.shop_id: tally
             for tally in services.shortlisted_shops_with_tallies(self.gathering)
         }
-        self.assertEqual(tallies[self.open_shop_ids[1]].approval_count, 0)
+        self.assertEqual(tallies[self.open_shop_ids[1]].want_to_go_count, 0)
         self.assertEqual(tallies[self.open_shop_ids[1]].responded_participant_count, 0)
         # The pre-existing shop's own tally is unaffected by the addition.
-        self.assertEqual(tallies[self.open_shop_ids[0]].approval_count, 1)
+        self.assertEqual(tallies[self.open_shop_ids[0]].want_to_go_count, 1)
         self.assertEqual(tallies[self.open_shop_ids[0]].responded_participant_count, 1)
 
-    def test_ordered_by_approval_count_descending(self):
+    def test_ordered_by_want_to_go_plus_ok_to_go_descending(self):
+        # ADR-0044 decision 3: the sum of the two positive tiers, not either
+        # alone -- an "OK with it" vote for shop[1] outranks a "want to go"
+        # vote for shop[0] once shop[1] also has more total support.
         services.set_shortlisted_shops(self.user, self.gathering.id, self.open_shop_ids[0:2])
-        popular = self.issue_link()
-        services.set_shop_votes(popular.token, [self.open_shop_ids[1]])
+        wants_shop_0 = self.issue_link()
+        ok_with_shop_1 = self.issue_link()
+        also_wants_shop_1 = self.issue_link()
+        services.set_shop_votes(
+            wants_shop_0.token, [(self.open_shop_ids[0], ShopVoteStatus.WANT_TO_GO.value)]
+        )
+        services.set_shop_votes(
+            ok_with_shop_1.token, [(self.open_shop_ids[1], ShopVoteStatus.OK_TO_GO.value)]
+        )
+        services.set_shop_votes(
+            also_wants_shop_1.token, [(self.open_shop_ids[1], ShopVoteStatus.WANT_TO_GO.value)]
+        )
 
         tallies = services.shortlisted_shops_with_tallies(self.gathering)
 
         self.assertEqual(tallies[0].shortlisted_shop.shop_id, self.open_shop_ids[1])
+        self.assertEqual(tallies[0].want_to_go_count + tallies[0].ok_to_go_count, 2)
         self.assertEqual(tallies[1].shortlisted_shop.shop_id, self.open_shop_ids[0])
+        self.assertEqual(tallies[1].want_to_go_count + tallies[1].ok_to_go_count, 1)
 
 
 class ParticipantShopVoteOptionsServiceTests(GatheringSelectingShopServiceTestCase):
-    def test_your_approval_is_none_before_voting(self):
+    def test_your_vote_is_none_before_voting(self):
         services.set_shortlisted_shops(self.user, self.gathering.id, [self.open_shop_ids[0]])
         link = self.issue_link()
+        shop_lookup, origin = self.shop_lookup_and_origin()
 
-        options = services.participant_shop_vote_options(link)
+        options = services.participant_shop_vote_options(link, shop_lookup, origin)
 
         self.assertEqual(len(options), 1)
-        self.assertIsNone(options[0].your_approval)
+        self.assertIsNone(options[0].your_vote)
 
-    def test_your_approval_reflects_the_latest_submission(self):
+    def test_your_vote_reflects_the_latest_submission(self):
         services.set_shortlisted_shops(self.user, self.gathering.id, self.open_shop_ids[0:2])
         link = self.issue_link()
-        services.set_shop_votes(link.token, [self.open_shop_ids[0]])
+        services.set_shop_votes(
+            link.token,
+            [
+                (self.open_shop_ids[0], ShopVoteStatus.WANT_TO_GO.value),
+                (self.open_shop_ids[1], ShopVoteStatus.NOT_GOING.value),
+            ],
+        )
+        shop_lookup, origin = self.shop_lookup_and_origin()
 
         options = {
             option.shortlisted_shop.shop_id: option
-            for option in services.participant_shop_vote_options(link)
+            for option in services.participant_shop_vote_options(link, shop_lookup, origin)
         }
 
-        self.assertTrue(options[self.open_shop_ids[0]].your_approval)
-        self.assertFalse(options[self.open_shop_ids[1]].your_approval)
+        self.assertEqual(options[self.open_shop_ids[0]].your_vote, ShopVoteStatus.WANT_TO_GO.value)
+        self.assertEqual(options[self.open_shop_ids[1]].your_vote, ShopVoteStatus.NOT_GOING.value)
+
+    def test_ordered_nearest_first_and_stable_across_votes(self):
+        # ADR-0044 decision 2: the participant-facing order is nearest-first
+        # by distance from the search origin, and must not change when any
+        # vote is cast (the production defect this decision fixes).
+        services.set_shortlisted_shops(self.user, self.gathering.id, self.open_shop_ids)
+        link = self.issue_link()
+        shop_lookup, origin = self.shop_lookup_and_origin()
+
+        before = [
+            option.shortlisted_shop.shop_id
+            for option in services.participant_shop_vote_options(link, shop_lookup, origin)
+        ]
+        # The population itself is already nearest-first (see
+        # open_shop_population's own ordering guarantee), so it is the
+        # oracle this test compares against.
+        self.assertEqual(before, self.open_shop_ids)
+
+        services.set_shop_votes(link.token, _want_to_go(self.open_shop_ids[-1]))
+        after = [
+            option.shortlisted_shop.shop_id
+            for option in services.participant_shop_vote_options(link, shop_lookup, origin)
+        ]
+        self.assertEqual(after, before)
 
     def test_d7_a_shop_added_after_this_participants_last_vote_is_not_yet_answered(self):
         services.set_shortlisted_shops(self.user, self.gathering.id, [self.open_shop_ids[0]])
         link = self.issue_link()
-        services.set_shop_votes(link.token, [self.open_shop_ids[0]])
+        services.set_shop_votes(link.token, _want_to_go(self.open_shop_ids[0]))
         first_submitted_at = ShopVoteSubmission.objects.get(participant_link=link).submitted_at
 
         services.set_shortlisted_shops(self.user, self.gathering.id, self.open_shop_ids[0:2])
@@ -1173,22 +1457,143 @@ class ParticipantShopVoteOptionsServiceTests(GatheringSelectingShopServiceTestCa
             gathering=self.gathering, shop_id=self.open_shop_ids[1]
         ).update(added_at=first_submitted_at + timedelta(seconds=1))
 
+        shop_lookup, origin = self.shop_lookup_and_origin()
         options = {
             option.shortlisted_shop.shop_id: option
-            for option in services.participant_shop_vote_options(link)
+            for option in services.participant_shop_vote_options(link, shop_lookup, origin)
         }
-        self.assertIsNone(options[self.open_shop_ids[1]].your_approval)
+        self.assertIsNone(options[self.open_shop_ids[1]].your_vote)
 
         # Voting again resolves the "not yet answered" state.
-        services.set_shop_votes(link.token, [self.open_shop_ids[1]])
+        services.set_shop_votes(link.token, _want_to_go(self.open_shop_ids[1]))
         ShopVoteSubmission.objects.filter(participant_link=link).update(
             submitted_at=first_submitted_at + timedelta(seconds=2)
         )
         resolved = {
             option.shortlisted_shop.shop_id: option
-            for option in services.participant_shop_vote_options(link)
+            for option in services.participant_shop_vote_options(link, shop_lookup, origin)
         }
-        self.assertTrue(resolved[self.open_shop_ids[1]].your_approval)
+        self.assertEqual(resolved[self.open_shop_ids[1]].your_vote, ShopVoteStatus.WANT_TO_GO.value)
+
+
+class ShortlistedShopsNearestFirstServiceTests(GatheringSelectingShopServiceTestCase):
+    """The unresolvable-shop fallback ordering (developer discretion, FR-028;
+    the *ordering basis* for this fallback is adr/0048, shop_id ascending).
+
+    Covers ``_shop_distance_or_none``'s two ``None``-returning branches: no
+    resolved search origin at all (a provider outage), and a shop id no
+    longer present in a fresh population refetch -- both genuinely rare
+    edge cases no TDR-GTH scenario exercises (ADR-0034 decision 6's live
+    projection is never persisted).
+    """
+
+    def test_every_shop_pushed_to_the_end_ordered_by_shop_id_when_origin_is_none(self):
+        services.set_shortlisted_shops(self.user, self.gathering.id, self.open_shop_ids[0:3])
+        shop_lookup, _origin = self.shop_lookup_and_origin()
+        # All three shops share one identical added_at value (one
+        # setShortlistedShops call) -- confirming this is what makes the old
+        # "stable sort preserves added_at order" fallback meaningless, and
+        # exactly the class of gap adr/0048 closes.
+        self.assertEqual(
+            len(
+                {shop.added_at for shop in ShortlistedShop.objects.filter(gathering=self.gathering)}
+            ),
+            1,
+        )
+
+        ordered = services.shortlisted_shops_nearest_first(self.gathering, shop_lookup, None)
+
+        # Every shop is equally unresolvable (no origin to measure distance
+        # from at all) -- adr/0048: the tie-break is shop_id ascending, not
+        # whatever order the queryset happened to return.
+        self.assertEqual(
+            [shop.shop_id for shop in ordered],
+            sorted(self.open_shop_ids[0:3]),
+        )
+
+    def test_a_shop_missing_from_the_lookup_sorts_after_every_resolvable_shop(self):
+        services.set_shortlisted_shops(self.user, self.gathering.id, self.open_shop_ids[0:3])
+        shop_lookup, origin = self.shop_lookup_and_origin()
+        # Simulate open_shop_ids[1] having vanished from a fresh population
+        # refetch (a real provider-side change between calls) without
+        # touching the other two shops' own resolvable entries.
+        incomplete_lookup = dict(shop_lookup)
+        del incomplete_lookup[self.open_shop_ids[1]]
+
+        ordered = services.shortlisted_shops_nearest_first(
+            self.gathering, incomplete_lookup, origin
+        )
+
+        self.assertEqual(ordered[-1].shop_id, self.open_shop_ids[1])
+        self.assertEqual(
+            {shop.shop_id for shop in ordered[:-1]}, {self.open_shop_ids[0], self.open_shop_ids[2]}
+        )
+
+    def _dummy_candidate(
+        self, shop_id: str, latitude: float, longitude: float
+    ) -> NormalizedCandidate:
+        return NormalizedCandidate(
+            name="dummy",
+            genre="dummy",
+            description=None,
+            regular_holiday=None,
+            total_seats=None,
+            non_smoking_status=None,
+            card_payment_available=None,
+            budget_average=None,
+            latitude=latitude,
+            longitude=longitude,
+            provider_page_url=shop_id,
+        )
+
+    def test_a_true_distance_tie_is_broken_by_shop_id_ascending(self):
+        """adr/0048: two shops recorded at the exact same coordinates (raw
+        distance genuinely tied, not merely both unresolvable) are still
+        ordered deterministically.
+        """
+        services.set_shortlisted_shops(self.user, self.gathering.id, self.open_shop_ids[0:2])
+        origin = Origin(latitude=35.0, longitude=135.0)
+        shop_lookup = {
+            shop_id: self._dummy_candidate(shop_id, 35.001, 135.001)
+            for shop_id in self.open_shop_ids[0:2]
+        }
+
+        ordered = services.shortlisted_shops_nearest_first(self.gathering, shop_lookup, origin)
+
+        self.assertEqual([shop.shop_id for shop in ordered], sorted(self.open_shop_ids[0:2]))
+
+    def test_organizer_facing_tally_list_breaks_a_vote_tie_by_distance_then_shop_id(self):
+        """adr/0048 decision 3: Gathering.shortlistedShops' own tie-break (equal
+        wantToGoCount + okToGoCount) is distance ascending, then shop_id
+        ascending -- not addedAt, which every shop set by the same
+        setShortlistedShops call shares identically.
+        """
+        services.set_shortlisted_shops(self.user, self.gathering.id, self.open_shop_ids[0:2])
+        origin = Origin(latitude=35.0, longitude=135.0)
+        nearer, farther = sorted(self.open_shop_ids[0:2])
+        shop_lookup = {
+            nearer: self._dummy_candidate(nearer, 35.0001, 135.0001),
+            farther: self._dummy_candidate(farther, 35.01, 135.01),
+        }
+
+        tallies = services.shortlisted_shops_with_tallies(self.gathering, shop_lookup, origin)
+
+        self.assertEqual([tally.shortlisted_shop.shop_id for tally in tallies], [nearer, farther])
+
+    def test_organizer_facing_tally_list_true_distance_tie_falls_back_to_shop_id(self):
+        services.set_shortlisted_shops(self.user, self.gathering.id, self.open_shop_ids[0:2])
+        origin = Origin(latitude=35.0, longitude=135.0)
+        shop_lookup = {
+            shop_id: self._dummy_candidate(shop_id, 35.001, 135.001)
+            for shop_id in self.open_shop_ids[0:2]
+        }
+
+        tallies = services.shortlisted_shops_with_tallies(self.gathering, shop_lookup, origin)
+
+        self.assertEqual(
+            [tally.shortlisted_shop.shop_id for tally in tallies],
+            sorted(self.open_shop_ids[0:2]),
+        )
 
 
 # --- JSON API: organizer endpoints -------------------------------------------
@@ -1720,9 +2125,20 @@ class OpenShopPreviewApiTests(GatheringOrganizerTestCase):
         item = response.json()["previewShops"][0]
         self.assertEqual(
             set(item),
-            {"shopId", "name", "genre", "capacityTier", "nonSmokingStatus", "dinnerBudgetTier"},
+            {
+                "shopId",
+                "name",
+                "genre",
+                "capacityTier",
+                "nonSmokingStatus",
+                "dinnerBudgetTier",
+                "location",
+                "walkingTimeMinutes",
+                "providerPageUrl",
+            },
         )
         self.assertTrue(item["shopId"])
+        self.assertEqual(set(item["location"]), {"latitude", "longitude"})
 
 
 # --- JSON API: shop shortlisting, approval voting, finalization (adr/0040) --
@@ -1778,12 +2194,18 @@ class GatheringSelectingShopApiTestCase(GatheringOrganizerTestCase):
         )
 
     @staticmethod
-    def put_shop_votes(token: str, approved_shop_ids) -> object:
+    def put_shop_votes(token: str, votes) -> object:
+        """``votes``: a list of ``(shopId, status)`` tuples (adr/0044)."""
         return Client().put(
             reverse("gathering:shop-votes", kwargs={"token": token}),
-            data=json.dumps({"approvedShopIds": approved_shop_ids}),
+            data=json.dumps(
+                {"votes": [{"shopId": shop_id, "status": status} for shop_id, status in votes]}
+            ),
             content_type="application/json",
         )
+
+    def put_want_to_go(self, token: str, *shop_ids: str) -> object:
+        return self.put_shop_votes(token, _want_to_go(*shop_ids))
 
 
 class SetShortlistedShopsApiTests(GatheringSelectingShopApiTestCase):
@@ -1811,8 +2233,13 @@ class SetShortlistedShopsApiTests(GatheringSelectingShopApiTestCase):
                 "capacityTier",
                 "nonSmokingStatus",
                 "dinnerBudgetTier",
+                "location",
+                "walkingTimeMinutes",
+                "providerPageUrl",
                 "addedAt",
-                "approvalCount",
+                "wantToGoCount",
+                "okToGoCount",
+                "notGoingCount",
                 "respondedParticipantCount",
             },
         )
@@ -1958,7 +2385,7 @@ class FinalizeGatheringApiTests(GatheringSelectingShopApiTestCase):
     def test_never_auto_selects_the_top_voted_shop(self):
         self.put_shortlisted_shops(self.open_shop_ids[0:2])
         popular = self.issue_token()
-        self.put_shop_votes(popular, [self.open_shop_ids[0]])
+        self.put_want_to_go(popular, self.open_shop_ids[0])
 
         response = self.post_finalize(self.open_shop_ids[1])
 
@@ -2020,18 +2447,35 @@ class SetShopVotesApiTests(GatheringSelectingShopApiTestCase):
         self.put_shortlisted_shops(self.open_shop_ids[0:2])
         token = self.issue_token()
 
-        response = self.put_shop_votes(token, [self.open_shop_ids[0]])
+        response = self.put_shop_votes(
+            token,
+            [
+                (self.open_shop_ids[0], "WANT_TO_GO"),
+                (self.open_shop_ids[1], "NOT_GOING"),
+            ],
+        )
 
         self.assertEqual(response.status_code, 200)
         options = {o["shopId"]: o for o in response.json()["shopVoteQuestions"]}
-        self.assertTrue(options[self.open_shop_ids[0]]["yourApproval"])
-        self.assertFalse(options[self.open_shop_ids[1]]["yourApproval"])
+        self.assertEqual(options[self.open_shop_ids[0]]["yourVote"], "WANT_TO_GO")
+        self.assertEqual(options[self.open_shop_ids[1]]["yourVote"], "NOT_GOING")
+
+    def test_a_shop_omitted_from_votes_stays_unanswered(self):
+        self.put_shortlisted_shops(self.open_shop_ids[0:2])
+        token = self.issue_token()
+
+        response = self.put_want_to_go(token, self.open_shop_ids[0])
+
+        options = {o["shopId"]: o for o in response.json()["shopVoteQuestions"]}
+        self.assertEqual(options[self.open_shop_ids[0]]["yourVote"], "WANT_TO_GO")
+        self.assertIsNone(options[self.open_shop_ids[1]]["yourVote"])
+        self.assertIsNone(options[self.open_shop_ids[1]]["tally"])
 
     def test_shop_vote_question_has_exactly_the_contract_shape(self):
         self.put_shortlisted_shops([self.open_shop_ids[0]])
         token = self.issue_token()
 
-        response = self.put_shop_votes(token, [])
+        response = self.put_want_to_go(token, self.open_shop_ids[0])
 
         question = response.json()["shopVoteQuestions"][0]
         self.assertEqual(
@@ -2043,19 +2487,18 @@ class SetShopVotesApiTests(GatheringSelectingShopApiTestCase):
                 "capacityTier",
                 "nonSmokingStatus",
                 "dinnerBudgetTier",
-                "yourApproval",
+                "location",
+                "walkingTimeMinutes",
+                "providerPageUrl",
+                "yourVote",
                 "tally",
             },
         )
         self.assertIsNotNone(question["tally"])
-        self.assertEqual(set(question["tally"]), {"approvalCount", "respondedParticipantCount"})
-
-    def test_null_shop_vote_questions_before_voting_started(self):
-        token = self.issue_token()
-
-        response = Client().get(reverse("gathering:participant-view", kwargs={"token": token}))
-
-        self.assertIsNone(response.json()["shopVoteQuestions"])
+        self.assertEqual(
+            set(question["tally"]),
+            {"wantToGoCount", "okToGoCount", "notGoingCount", "respondedParticipantCount"},
+        )
 
     def test_tally_is_null_before_this_participant_answers(self):
         self.put_shortlisted_shops([self.open_shop_ids[0]])
@@ -2064,21 +2507,28 @@ class SetShopVotesApiTests(GatheringSelectingShopApiTestCase):
         response = Client().get(reverse("gathering:participant-view", kwargs={"token": token}))
 
         question = response.json()["shopVoteQuestions"][0]
+        self.assertIsNone(question["yourVote"])
         self.assertIsNone(question["tally"])
-        self.assertIsNone(question["yourApproval"])
+
+    def test_null_shop_vote_questions_before_voting_started(self):
+        token = self.issue_token()
+
+        response = Client().get(reverse("gathering:participant-view", kwargs={"token": token}))
+
+        self.assertIsNone(response.json()["shopVoteQuestions"])
 
     def test_answering_after_others_reveals_their_votes(self):
         self.put_shortlisted_shops([self.open_shop_ids[0]])
         first = self.issue_token()
         second = self.issue_token()
-        self.put_shop_votes(first, [self.open_shop_ids[0]])
+        self.put_want_to_go(first, self.open_shop_ids[0])
 
         before = (
             Client().get(reverse("gathering:participant-view", kwargs={"token": second})).json()
         )
         self.assertIsNone(before["shopVoteQuestions"][0]["tally"])
 
-        self.put_shop_votes(second, [])
+        self.put_shop_votes(second, [(self.open_shop_ids[0], "NOT_GOING")])
         after = Client().get(reverse("gathering:participant-view", kwargs={"token": second})).json()
 
         self.assertEqual(after["shopVoteQuestions"][0]["tally"]["respondedParticipantCount"], 2)
@@ -2105,7 +2555,7 @@ class SetShopVotesApiTests(GatheringSelectingShopApiTestCase):
         self.put_shortlisted_shops([self.open_shop_ids[0]])
         token = self.issue_token()
 
-        response = self.put_shop_votes(token, [self.open_shop_ids[1]])
+        response = self.put_want_to_go(token, self.open_shop_ids[1])
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["code"], "INVALID_SHOP_SELECTION")
@@ -2114,7 +2564,10 @@ class SetShopVotesApiTests(GatheringSelectingShopApiTestCase):
         self.put_shortlisted_shops([self.open_shop_ids[0]])
         token = self.issue_token()
 
-        response = self.put_shop_votes(token, [self.open_shop_ids[0], self.open_shop_ids[0]])
+        response = self.put_shop_votes(
+            token,
+            [(self.open_shop_ids[0], "WANT_TO_GO"), (self.open_shop_ids[0], "NOT_GOING")],
+        )
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["code"], "INVALID_SHOP_SELECTION")
@@ -2142,13 +2595,52 @@ class SetShopVotesApiTests(GatheringSelectingShopApiTestCase):
         self.assertEqual(response.status_code, 410)
         self.assertEqual(response.json()["code"], "LINK_REVOKED")
 
-    def test_non_list_approved_shop_ids_is_a_safe_400(self):
+    def test_non_list_votes_is_a_safe_400(self):
         self.put_shortlisted_shops([self.open_shop_ids[0]])
         token = self.issue_token()
 
         response = Client().put(
             reverse("gathering:shop-votes", kwargs={"token": token}),
-            data=json.dumps({"approvedShopIds": "not-a-list"}),
+            data=json.dumps({"votes": "not-a-list"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "REQUEST_REJECTED")
+
+    def test_a_votes_entry_missing_a_key_is_a_safe_400(self):
+        self.put_shortlisted_shops([self.open_shop_ids[0]])
+        token = self.issue_token()
+
+        response = Client().put(
+            reverse("gathering:shop-votes", kwargs={"token": token}),
+            data=json.dumps({"votes": [{"shopId": self.open_shop_ids[0]}]}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "REQUEST_REJECTED")
+
+    def test_a_non_string_shop_id_in_votes_is_a_safe_400(self):
+        self.put_shortlisted_shops([self.open_shop_ids[0]])
+        token = self.issue_token()
+
+        response = Client().put(
+            reverse("gathering:shop-votes", kwargs={"token": token}),
+            data=json.dumps({"votes": [{"shopId": 123, "status": "WANT_TO_GO"}]}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "REQUEST_REJECTED")
+
+    def test_an_invalid_status_value_is_a_safe_400(self):
+        self.put_shortlisted_shops([self.open_shop_ids[0]])
+        token = self.issue_token()
+
+        response = Client().put(
+            reverse("gathering:shop-votes", kwargs={"token": token}),
+            data=json.dumps({"votes": [{"shopId": self.open_shop_ids[0], "status": "MAYBE"}]}),
             content_type="application/json",
         )
 
@@ -2161,7 +2653,7 @@ class SetShopVotesApiTests(GatheringSelectingShopApiTestCase):
 
         response = Client().put(
             reverse("gathering:shop-votes", kwargs={"token": token}),
-            data=json.dumps({"approvedShopIds": [], "extra": True}),
+            data=json.dumps({"votes": [], "extra": True}),
             content_type="application/json",
         )
 
@@ -2199,12 +2691,23 @@ class FinalizedParticipantViewApiTests(GatheringSelectingShopApiTestCase):
         decision = response.json()["decision"]
         self.assertEqual(
             set(decision),
-            {"confirmedCandidateDate", "shop", "yourScheduleResponse", "yourApprovedShops"},
+            {"confirmedCandidateDate", "shop", "yourScheduleResponse", "yourShopVotes"},
         )
         self.assertEqual(
             set(decision["shop"]),
-            {"shopId", "name", "genre", "capacityTier", "nonSmokingStatus", "dinnerBudgetTier"},
+            {
+                "shopId",
+                "name",
+                "genre",
+                "capacityTier",
+                "nonSmokingStatus",
+                "dinnerBudgetTier",
+                "location",
+                "walkingTimeMinutes",
+                "providerPageUrl",
+            },
         )
+        self.assertEqual(set(decision["yourShopVotes"][0]), {"shop", "status"})
 
     def test_decision_includes_this_participants_own_schedule_response(self):
         token = self.issue_token()
@@ -2223,38 +2726,72 @@ class FinalizedParticipantViewApiTests(GatheringSelectingShopApiTestCase):
 
         self.assertEqual(response.json()["decision"]["yourScheduleResponse"], "GOING")
 
-    def test_decision_includes_only_this_participants_own_approved_shops(self):
+    def test_decision_includes_only_this_participants_own_shop_votes(self):
         self.put_shortlisted_shops(self.open_shop_ids[0:2])
-        approves_both = self.issue_token()
-        approves_none = self.issue_token()
-        self.put_shop_votes(approves_both, [self.open_shop_ids[0], self.open_shop_ids[1]])
-        self.put_shop_votes(approves_none, [])
+        wants_both = self.issue_token()
+        answers_none = self.issue_token()
+        self.put_shop_votes(
+            wants_both,
+            [
+                (self.open_shop_ids[0], "WANT_TO_GO"),
+                (self.open_shop_ids[1], "OK_TO_GO"),
+            ],
+        )
         self.post_finalize(self.open_shop_ids[0])
 
         both_view = (
-            Client()
-            .get(reverse("gathering:participant-view", kwargs={"token": approves_both}))
-            .json()
+            Client().get(reverse("gathering:participant-view", kwargs={"token": wants_both})).json()
         )
         none_view = (
             Client()
-            .get(reverse("gathering:participant-view", kwargs={"token": approves_none}))
+            .get(reverse("gathering:participant-view", kwargs={"token": answers_none}))
             .json()
         )
 
-        self.assertEqual(
-            {shop["shopId"] for shop in both_view["decision"]["yourApprovedShops"]},
-            set(self.open_shop_ids[0:2]),
-        )
-        # approves_none never sees approves_both's approvals reflected in
-        # their own decision -- each participant's yourApprovedShops is
-        # derived solely from their own recorded votes (adr/0041 decision 3).
-        self.assertEqual(none_view["decision"]["yourApprovedShops"], [])
+        both_votes = {
+            v["shop"]["shopId"]: v["status"] for v in both_view["decision"]["yourShopVotes"]
+        }
+        self.assertEqual(both_votes[self.open_shop_ids[0]], "WANT_TO_GO")
+        self.assertEqual(both_votes[self.open_shop_ids[1]], "OK_TO_GO")
+        # answers_none never voted on either shop, and never sees wants_both's
+        # votes reflected in their own decision -- each participant's
+        # yourShopVotes is derived solely from their own recorded votes
+        # (adr/0041 decision 3), and every shop they never voted on is
+        # still listed, with a null status (adr/0046, 2026-09-05).
+        none_votes = {
+            v["shop"]["shopId"]: v["status"] for v in none_view["decision"]["yourShopVotes"]
+        }
+        self.assertEqual(none_votes, {shop_id: None for shop_id in self.open_shop_ids[0:2]})
         # LiveProjectedShop carries no aggregate/other-participant field at all.
         self.assertEqual(
-            set(both_view["decision"]["yourApprovedShops"][0]),
-            {"shopId", "name", "genre", "capacityTier", "nonSmokingStatus", "dinnerBudgetTier"},
+            set(both_view["decision"]["yourShopVotes"][0]["shop"]),
+            {
+                "shopId",
+                "name",
+                "genre",
+                "capacityTier",
+                "nonSmokingStatus",
+                "dinnerBudgetTier",
+                "location",
+                "walkingTimeMinutes",
+                "providerPageUrl",
+            },
         )
+
+    def test_a_shop_this_participant_never_answered_is_included_with_a_null_status(self):
+        # adr/0046 open item 3 (2026-09-05 human chat decision): a
+        # never-answered shop appears in yourShopVotes with status: null
+        # ("答えないまま締まりました"), rather than being omitted entirely.
+        self.put_shortlisted_shops([self.open_shop_ids[0]])
+        token = self.issue_token()
+        self.post_finalize(self.open_shop_ids[0])
+
+        response = Client().get(reverse("gathering:participant-view", kwargs={"token": token}))
+
+        votes = response.json()["decision"]["yourShopVotes"]
+        self.assertEqual(len(votes), 1)
+        self.assertEqual(votes[0]["shop"]["shopId"], self.open_shop_ids[0])
+        self.assertIsNone(votes[0]["status"])
 
     def test_finalized_link_rejects_new_schedule_responses_and_shop_votes(self):
         token = self.issue_token()
@@ -2508,10 +3045,12 @@ class ParticipantViewApiTests(GatheringOrganizerTestCase):
                 "scheduleQuestions",
                 "confirmedCandidateDate",
                 "shopVoteQuestions",
+                "searchOrigin",
                 "decision",
             },
         )
         self.assertIsNone(body["shopVoteQuestions"])
+        self.assertIsNone(body["searchOrigin"])
         self.assertIsNone(body["decision"])
         question = body["scheduleQuestions"][0]
         self.assertEqual(
@@ -2563,6 +3102,40 @@ class ParticipantViewApiTests(GatheringOrganizerTestCase):
         self.assertEqual(response.status_code, 429)
         self.assertEqual(response.json()["code"], "LINK_RATE_LIMITED")
         self.assertTrue(response.has_header("Retry-After"))
+
+    def test_server_error_seeded_link_is_a_bare_500_with_no_body(self):
+        """adr/0047, TDR-GTH-42: deliberately not a ``ProblemResponse`` --
+        no ``code``, no ``message`` -- so this failure carries none of
+        linkError's four recognized codes by construction, and the browser
+        has nothing technical to accidentally surface from this response."""
+        Client().post(
+            "/test-support/gathering-scheduling/participant-links/server-error",
+            data=json.dumps({"token": self.token}),
+            content_type="application/json",
+        )
+
+        response = self.participant_client.get(
+            reverse("gathering:participant-view", kwargs={"token": self.token})
+        )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.content, b"")
+
+    def test_server_error_seed_only_affects_the_next_getParticipantView_call(self):
+        Client().post(
+            "/test-support/gathering-scheduling/participant-links/server-error",
+            data=json.dumps({"token": self.token}),
+            content_type="application/json",
+        )
+        self.participant_client.get(
+            reverse("gathering:participant-view", kwargs={"token": self.token})
+        )
+
+        response = self.participant_client.get(
+            reverse("gathering:participant-view", kwargs={"token": self.token})
+        )
+
+        self.assertEqual(response.status_code, 200)
 
     def test_set_schedule_response_no_csrf_token_required(self):
         response = self.participant_client.put(
@@ -2707,20 +3280,36 @@ class ParticipantViewApiTests(GatheringOrganizerTestCase):
 
 
 class TestSupportGatheringApiTests(GatheringOrganizerTestCase):
-    """These three seams have no ``app_name``/reverse name (mirrors every
+    """These four seams have no ``app_name``/reverse name (mirrors every
     other ``test_support`` route this project already tests by literal path,
     see ``tests/test_test_support.py``)."""
 
     RESET_PATH = "/test-support/gathering-scheduling-state"
     EXPIRE_PATH = "/test-support/gathering-scheduling/participant-links/expire"
     RATE_LIMIT_PATH = "/test-support/gathering-scheduling/participant-links/rate-limit"
+    SERVER_ERROR_PATH = "/test-support/gathering-scheduling/participant-links/server-error"
 
     @override_settings(ROOT_URLCONF="dining_radar.urls", ACCEPTANCE_TEST_SUPPORT=False)
     def test_routes_are_not_registered_in_the_standard_production_urlconf(self):
-        for path in (self.RESET_PATH, self.EXPIRE_PATH, self.RATE_LIMIT_PATH):
+        paths = (self.RESET_PATH, self.EXPIRE_PATH, self.RATE_LIMIT_PATH, self.SERVER_ERROR_PATH)
+        for path in paths:
             with self.subTest(path=path):
                 response = Client().delete(path)
                 self.assertEqual(response.status_code, 404)
+
+    @override_settings(ACCEPTANCE_TEST_SUPPORT=False)
+    def test_server_error_seam_is_acceptance_only_even_under_the_acceptance_urlconf(self):
+        """adr/0047's own instruction: guard this seam the same way the
+        existing two guard themselves (``_acceptance_only``) -- a 404, not a
+        204, when ``ACCEPTANCE_TEST_SUPPORT`` is off, regardless of which
+        urlconf is mounted."""
+        response = Client().post(
+            self.SERVER_ERROR_PATH,
+            data=json.dumps({"token": "unknown-token"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 404)
 
     def test_reset_endpoint_deletes_every_gathering(self):
         self.create_gathering_via_api()
@@ -2782,6 +3371,32 @@ class TestSupportGatheringApiTests(GatheringOrganizerTestCase):
 
         self.assertEqual(response.status_code, 204)
         self.assertTrue(ParticipantLink.objects.get(token=token).rate_limited_once)
+
+    def test_seed_participant_link_server_error_rejects_an_unknown_token(self):
+        response = Client().post(
+            self.SERVER_ERROR_PATH,
+            data=json.dumps({"token": "unknown-token"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_seed_participant_link_server_error_flags_the_named_token(self):
+        payload = self.create_gathering_via_api()
+        issue_response = self.post_json(
+            reverse("gathering:participant-links", kwargs={"gathering_id": payload["id"]}),
+            {"count": 1},
+        )
+        token = issue_response.json()["issuedLinks"][0]["token"]
+
+        response = Client().post(
+            self.SERVER_ERROR_PATH,
+            data=json.dumps({"token": token}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 204)
+        self.assertTrue(ParticipantLink.objects.get(token=token).server_error_once)
 
 
 # --- API error-branch coverage: unauthenticated / CSRF / malformed / 404 ----
@@ -3234,7 +3849,7 @@ class LiveProjectedShopFallbackSerializerTests(SimpleTestCase):
     """
 
     def test_falls_back_to_the_shop_id_when_missing_from_the_lookup(self):
-        entry = serializers.serialize_live_projected_shop("missing-shop-id", {})
+        entry = serializers.serialize_live_projected_shop("missing-shop-id", {}, None)
 
         self.assertEqual(
             entry,
@@ -3245,8 +3860,114 @@ class LiveProjectedShopFallbackSerializerTests(SimpleTestCase):
                 "capacityTier": None,
                 "nonSmokingStatus": None,
                 "dinnerBudgetTier": None,
+                "location": {"latitude": 0.0, "longitude": 0.0},
+                "walkingTimeMinutes": 0,
+                "providerPageUrl": "missing-shop-id",
             },
         )
+
+
+# --- participant load-failure notice (adr/0047, TDR-GTH-42) ----------------
+
+
+class ParticipantLoadFailureSourceTests(SimpleTestCase):
+    """Guards the fix for the bug adr/0047 documents: this screen's
+    ``getParticipantView`` call had no error handling at all, so an
+    unrecognized response (a network failure, an unparsable body, or a
+    response carrying none of ``linkError``'s four recognized codes) left
+    the page blank -- no question, no error surface, no explanation
+    (this file's own module docstring history for the full account).
+
+    ``tests/ui_invariants``/``tests/acceptance`` exercise the *rendered*
+    behavior through a real browser; these source-level checks are the
+    complement ``DateTimeLocalConversionSourceTests`` above already
+    establishes as this project's convention for a bug a Django-test-client
+    reproduction cannot see (a JS-only code path).
+    """
+
+    def test_request_json_never_lets_a_promise_reject(self):
+        source = PARTICIPANT_JS.read_text(encoding="utf-8")
+        self.assertIn(
+            "function requestJson(method, url, body) {",
+            source,
+            "requestJson's own signature moved or was renamed",
+        )
+        # Both failure sources -- response.json() rejecting (an unparsable
+        # body) and fetch() itself rejecting (a network-level failure) --
+        # must be caught, not left to propagate as a rejected promise.
+        self.assertIn("response.json().then(", source)
+        self.assertIn(".catch(function () {", source)
+        self.assertIn("return { status: null, body: null };", source)
+
+    def test_load_view_classifies_every_outcome_before_the_recognized_link_error_codes(self):
+        source = PARTICIPANT_JS.read_text(encoding="utf-8")
+        self.assertIn("function loadView() {", source)
+        self.assertIn("var RECOGNIZED_LINK_ERROR_CODES = [", source)
+        for code in ("LINK_NOT_FOUND", "LINK_EXPIRED", "LINK_REVOKED", "LINK_RATE_LIMITED"):
+            self.assertIn(f'"{code}",', source)
+        self.assertIn("state.loadFailure = true;", source)
+        self.assertIn("state.loadFailure = false;", source)
+
+    def test_render_shows_only_the_load_error_element_and_nothing_else(self):
+        """unexpectedLoadFailureOutcome's own absent list (adr/0047): every
+        other participant-facing element must stay absent, so render()'s
+        loadFailure branch must return before building any of them."""
+        source = PARTICIPANT_JS.read_text(encoding="utf-8")
+        render_index = source.index("function render() {")
+        branch_index = source.index("if (state.loadFailure) {", render_index)
+        return_index = source.index("return;", branch_index)
+        children_index = source.index("var children = [];", render_index)
+        self.assertLess(
+            branch_index,
+            children_index,
+            "the loadFailure branch must be checked before any other surface is built",
+        )
+        self.assertLess(
+            return_index,
+            children_index,
+            "the loadFailure branch must return before falling through to the rest of render()",
+        )
+
+    def test_load_error_surface_declares_no_operational_control(self):
+        """Human ruling 2026-09-06 (loadFailure.noRetryControl): no
+        purpose-declared control inside gathering-participant-load-error."""
+        source = PARTICIPANT_JS.read_text(encoding="utf-8")
+        function_index = source.index("function renderLoadFailure() {")
+        function_end = source.index("\n  }", function_index)
+        function_source = source[function_index:function_end]
+
+        self.assertIn("gathering-participant-load-error", function_source)
+        self.assertNotIn("data-gathering-control-purpose", function_source)
+        self.assertNotIn("addEventListener", function_source)
+
+    def test_load_error_visible_text_discloses_no_technical_detail(self):
+        """adr/0047 decision 3: no HTTP status code, exception message,
+        trace/request identifier, hostname, or synthetic disclosure canary
+        anywhere in this element's own rendering code."""
+        source = PARTICIPANT_JS.read_text(encoding="utf-8")
+        function_index = source.index("function renderLoadFailure() {")
+        function_end = source.index("\n  }", function_index)
+        function_source = source[function_index:function_end]
+
+        for forbidden in (
+            "result.status",
+            "result.body",
+            "response.status",
+            "trace",
+            "Trace",
+            "stack",
+            "Stack",
+            "hostname",
+            # profiles.localAcceptance.syntheticDisclosureCanaries
+            # (gathering-scheduling-browser-interface.yaml).
+            "synthetic-private-origin-never-disclose.invalid",
+            "synthetic-provider-internals-never-disclose",
+        ):
+            self.assertNotIn(
+                forbidden,
+                function_source,
+                f"renderLoadFailure must not reference {forbidden!r}",
+            )
 
 
 # --- static source regressions (orchestrator合流 findings, 2026-09-02) ------
