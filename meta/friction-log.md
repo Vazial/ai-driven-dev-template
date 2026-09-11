@@ -764,3 +764,45 @@ principles: [P-11, P-04]
       git のコミットメッセージで足りる）を規程として言い切る。今回の 250KB のうち、
       ADR にも friction-log にも残っていなかった情報は**ごく僅かだった**という実測が
       (c) を支持する材料になる。
+
+---
+
+## FR-021: `meta/**` の Python は、どの CI でも lint されていない
+
+```yaml
+id: FR-021
+date: 2026-09-11
+found_at: AI
+slice: dining-radar 実機フィードバック大改訂
+agents: [orchestrator]
+cause_category: 検査の適用範囲が宣言されていない
+cause_key: meta-tooling-is-ungraded-by-its-own-gates
+pushed_to: []
+status: 未対応
+principles: [P-04]
+```
+
+- 事象: 別ツリーで `ruff check .` をリポジトリのルートから実行したら **9件のエラー**が出た。
+  内訳は `meta/loop/harvest_friction.py`（未使用 import 2件・セミコロンによる複文3件）、
+  `meta/loop/test_friction_trend.py`（複文3件）、`meta/tools/test_govlint.py`（未使用 import 1件）。
+  いずれも 2026-08-23 の ADR-0055/0058 のコミット（`2fb1dba`・`721eac1`）以来そのままである。
+- なぜ今まで緑だったか: ruff を回す workflow は `ci-dining-radar.yml` **1本だけ**で、そのジョブは
+  `defaults.run.working-directory: projects/dining-radar` を持つ。したがって
+  `python -m ruff check .` の `.` は**プロジェクト配下だけ**を指す。他の4本の CI
+  （connpass-session-radar・reservation-frontend・reservation-system・govlint）は ruff を回さない。
+  **`meta/**` の Python は、どの関所も通っていない。**
+- 危うかった点: 統合ブランチの検証結果を報告した際に `ruff check .` を緑と書いていた。これは
+  プロジェクト配下で回した結果であり CI と同じ範囲なので**主張としては正しかった**が、別ツリーの
+  ルートで回した瞬間に赤が出たため、一度は「過去の報告が誤りだったか」を確かめ直す羽目になった。
+  **同じコマンド文字列が、実行場所によって違う範囲を意味する**のが原因で、報告にも範囲が書かれて
+  いなかった。
+- 構造: `meta/tools/govlint.py` は全プロジェクトの統治文書を採点する道具であり、
+  `meta/loop/` は摩擦を収穫する道具である。**他を採点する道具自身が誰にも採点されていない。**
+  これは既に記録済みの `tools/check_mutation_score.py` の欠陥（自分の鮮度を確かめずに緑を報告する）と
+  同じ形をしている。
+- 押し込み先の候補（未決）:
+  (a) `govlint.yml` に `meta/**` を対象とした ruff のステップを足す。**govlint.yml 自体は
+      `meta/tools/**` のロック（`meta/adr/0046`）の対象外**なので、workflow の追加だけなら
+      人間の解錠は要らない可能性がある——要確認。
+  (b) 検証結果を報告するとき、`ruff check .` のように**実行場所で意味が変わるコマンドは
+      実行ディレクトリを添えて書く**ことを運用のガードレールにする。
