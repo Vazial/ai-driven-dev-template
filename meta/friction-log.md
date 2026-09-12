@@ -851,3 +851,48 @@ principles: [P-04, P-06]
   (b) worktree を使う指示では、**起点のコミットを orchestrator が明示的に用意してから**渡す
       （`git worktree add <path> <branch>` を自分で実行し、その場所を渡す）。
   (c) Bash を持たない役割には worktree 分離を使わない、と決める。
+
+---
+
+## FR-023: 全文書き出ししか持たない役が、出力上限に当たって契約を空のひな形で上書きした
+
+```yaml
+id: FR-023
+date: 2026-09-13
+found_at: AI
+slice: dining-radar 会の契約改訂（第2段）
+agents: [architect, orchestrator]
+cause_category: 道具が作業を表現できない
+cause_key: write-only-role-cannot-edit-file-larger-than-output-budget
+pushed_to: []
+status: 未対応
+principles: [P-06, P-04]
+```
+
+- 事象: architect に `gathering-scheduling-browser-interface.yaml`（**2,591行**）の改訂を頼んだ。
+  architect は `Read, Grep, Glob, Write` しか持たないため全文書き出しになる。
+  書き出しの途中で**出力の上限（64,000トークン）に当たって実行が打ち切られ**、
+  ファイルは**12行の空のひな形で上書きされた状態**で残った。
+  agent 自身の最後の発言は「a critical error — that last Write replaced the entire file with a
+  placeholder stub, destroying all prior content. I must fix this immediately」であり、
+  **直す前に打ち切られた。**
+- 実害: なし。**コミット前に orchestrator が `git checkout --` で完全に復元した**
+  （2,591行・コメント455行・`testId` 65個が基線と一致、govlint 緑）。
+  段を割り、コミット前に機械照合する運用にしていたことが効いた。
+- **FR-031 との違い**: FR-031 は「判断の誤り」（部分編集を指示されたのに全文再構成した）だった。
+  今回は**判断ではなく能力の不足**である。2,591行は `Write` 1回の出力上限を超えるので、
+  **この役はこのファイルを正しく書き換えることが原理的にできない。**
+  指示の書き方をどう工夫しても解決しない。
+- 構造: 契約を surgical に編集できる役が**1つも無い**。
+  architect は `Write` のみ（全文書き出し）、developer と tester は `Edit` を持つが
+  **契約に触ってはならない**、reviewer は書けない。**契約は、大きくなった瞬間に誰も直せなくなる。**
+- 対処（今回）: 役の分担を変えた。**architect は契約本体ではなく「差分の指定」を書き**
+  （見つける文字列と置き換える文字列の対。1ファイルに詰めず複数ファイルへ分割）、
+  **orchestrator がそれを機械的に適用する**（各アンカーがちょうど1回出現することを assert）。
+  architect が契約の中身を決める役割は動かさない。
+- 押し込み先の候補（未決）:
+  (a) architect に `Edit` を渡す。**ただし FR-031 の再発条件を作る**——部分編集の手段があることは、
+      全文再構成を選ばない保証にはならない。渡すなら「全文書き出しを禁じる」ことを役割契約に書く必要がある。
+  (b) 今回の「差分の指定を書かせて orchestrator が適用する」型を役割契約に正式化する。
+  (c) 契約ファイルを分割して1本を出力上限内に収める。**ただし分割自体が大きな設計判断**であり、
+      SSoT が散る代償がある。
