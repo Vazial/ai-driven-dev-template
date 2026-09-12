@@ -806,3 +806,48 @@ principles: [P-04]
       人間の解錠は要らない可能性がある——要確認。
   (b) 検証結果を報告するとき、`ruff check .` のように**実行場所で意味が変わるコマンドは
       実行ディレクトリを添えて書く**ことを運用のガードレールにする。
+
+---
+
+## FR-022: 未マージのブランチにしか無い内容を根拠に役割agentを起動し、3回続けて空振りさせた
+
+```yaml
+id: FR-022
+date: 2026-09-12
+found_at: AI
+slice: dining-radar 会の画面群の描き直し
+agents: [orchestrator, developer, designer, architect]
+cause_category: 起点の指定が届かない
+cause_key: agent-briefed-against-unmerged-branch-content
+pushed_to: []
+status: 未対応
+principles: [P-04, P-06]
+```
+
+- 事象: **同じ失敗を3回した。**orchestrator が役割agentへの指示文で、
+  **その時点で未マージのブランチにしか存在しない内容**を根拠として名指しした。
+  1回目（developer、描画不変量の拡大）: `friction-log.md` の FR-035 を根拠に挙げたが、
+  FR-035 は未マージの `docs/field-feedback-round2-intake` にしか無かった。agent は
+  「grep したが存在しない」と自己申告したうえで、指示本文の説明で足りると判断して続行した。
+  2回目（designer、第1束）: `activeContext.md` の「未処理の実機フィードバック」節を読めと
+  指示したが、同じ理由で存在しなかった。agent は近い内容を自分で探して代替した。
+  3回目（architect、裁定の ADR 化）: 「起点は `docs/field-feedback-round2-intake` ブランチ」と
+  指示したが、**worktree はそのブランチから作られていなかった**（worktree の先端 `58d49df` に対し
+  ブランチの先端は `b3caa3b`）。architect は `Read`/`Glob` しか持たず checkout できないため、
+  **何も書かずに止まって報告した。これは正しい判断である。**
+- なぜ 3 回目だけ止まったか: **やらせようとした仕事の性質が違う。**1・2回目は代替材料で近似できたが、
+  3回目は「2026-09-12 のチャットでの人間の裁定」を ADR の `approved_by` に書く作業であり、
+  **裁定の原文を確認せずに書けば、確認していない人間の発言を確認したかのように記録することになる。**
+  architect はそれを「契約の番人としてできない」と言って止めた。**役割の境界が正しく働いた例**として残す。
+- 原因: (a) `isolation: "worktree"` で作られる worktree の起点が、orchestrator が
+  指示文で名指しするブランチと一致する保証がない。orchestrator はそれを確かめずに書いていた。
+  (b) 役割によっては（architect は `Read/Grep/Glob/Write` のみ）**起点を自分で直す手段が無い**。
+  指示だけ与えても届かない。
+- 対処（今回）: 3回目は worktree を使わず、**既に当該ブランチに乗っているメインの作業ツリーで
+  architect を起動し直した**。
+- 押し込み先の候補（未決）:
+  (a) 役割agentを起動する前に、**根拠として名指しするファイルの当該箇所が起点に実在するか**を
+      orchestrator が確かめる。手順としてガードレールに1行置く。
+  (b) worktree を使う指示では、**起点のコミットを orchestrator が明示的に用意してから**渡す
+      （`git worktree add <path> <branch>` を自分で実行し、その場所を渡す）。
+  (c) Bash を持たない役割には worktree 分離を使わない、と決める。
