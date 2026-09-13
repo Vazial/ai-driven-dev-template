@@ -806,3 +806,127 @@ principles: [P-04]
       人間の解錠は要らない可能性がある——要確認。
   (b) 検証結果を報告するとき、`ruff check .` のように**実行場所で意味が変わるコマンドは
       実行ディレクトリを添えて書く**ことを運用のガードレールにする。
+
+---
+
+## FR-022: 未マージのブランチにしか無い内容を根拠に役割agentを起動し、3回続けて空振りさせた
+
+```yaml
+id: FR-022
+date: 2026-09-12
+found_at: AI
+slice: dining-radar 会の画面群の描き直し
+agents: [orchestrator, developer, designer, architect]
+cause_category: 起点の指定が届かない
+cause_key: agent-briefed-against-unmerged-branch-content
+pushed_to: []
+status: 未対応
+principles: [P-04, P-06]
+```
+
+- 事象: **同じ失敗を3回した。**orchestrator が役割agentへの指示文で、
+  **その時点で未マージのブランチにしか存在しない内容**を根拠として名指しした。
+  1回目（developer、描画不変量の拡大）: `friction-log.md` の FR-035 を根拠に挙げたが、
+  FR-035 は未マージの `docs/field-feedback-round2-intake` にしか無かった。agent は
+  「grep したが存在しない」と自己申告したうえで、指示本文の説明で足りると判断して続行した。
+  2回目（designer、第1束）: `activeContext.md` の「未処理の実機フィードバック」節を読めと
+  指示したが、同じ理由で存在しなかった。agent は近い内容を自分で探して代替した。
+  3回目（architect、裁定の ADR 化）: 「起点は `docs/field-feedback-round2-intake` ブランチ」と
+  指示したが、**worktree はそのブランチから作られていなかった**（worktree の先端 `58d49df` に対し
+  ブランチの先端は `b3caa3b`）。architect は `Read`/`Glob` しか持たず checkout できないため、
+  **何も書かずに止まって報告した。これは正しい判断である。**
+- なぜ 3 回目だけ止まったか: **やらせようとした仕事の性質が違う。**1・2回目は代替材料で近似できたが、
+  3回目は「2026-09-12 のチャットでの人間の裁定」を ADR の `approved_by` に書く作業であり、
+  **裁定の原文を確認せずに書けば、確認していない人間の発言を確認したかのように記録することになる。**
+  architect はそれを「契約の番人としてできない」と言って止めた。**役割の境界が正しく働いた例**として残す。
+- 原因: (a) `isolation: "worktree"` で作られる worktree の起点が、orchestrator が
+  指示文で名指しするブランチと一致する保証がない。orchestrator はそれを確かめずに書いていた。
+  (b) 役割によっては（architect は `Read/Grep/Glob/Write` のみ）**起点を自分で直す手段が無い**。
+  指示だけ与えても届かない。
+- 対処（今回）: 3回目は worktree を使わず、**既に当該ブランチに乗っているメインの作業ツリーで
+  architect を起動し直した**。
+- 押し込み先の候補（未決）:
+  (a) 役割agentを起動する前に、**根拠として名指しするファイルの当該箇所が起点に実在するか**を
+      orchestrator が確かめる。手順としてガードレールに1行置く。
+  (b) worktree を使う指示では、**起点のコミットを orchestrator が明示的に用意してから**渡す
+      （`git worktree add <path> <branch>` を自分で実行し、その場所を渡す）。
+  (c) Bash を持たない役割には worktree 分離を使わない、と決める。
+
+---
+
+## FR-023: 全文書き出ししか持たない役が、出力上限に当たって契約を空のひな形で上書きした
+
+```yaml
+id: FR-023
+date: 2026-09-13
+found_at: AI
+slice: dining-radar 会の契約改訂（第2段）
+agents: [architect, orchestrator]
+cause_category: 道具が作業を表現できない
+cause_key: write-only-role-cannot-edit-file-larger-than-output-budget
+pushed_to: []
+status: 未対応
+principles: [P-06, P-04]
+```
+
+- 事象: architect に `gathering-scheduling-browser-interface.yaml`（**2,591行**）の改訂を頼んだ。
+  architect は `Read, Grep, Glob, Write` しか持たないため全文書き出しになる。
+  書き出しの途中で**出力の上限（64,000トークン）に当たって実行が打ち切られ**、
+  ファイルは**12行の空のひな形で上書きされた状態**で残った。
+  agent 自身の最後の発言は「a critical error — that last Write replaced the entire file with a
+  placeholder stub, destroying all prior content. I must fix this immediately」であり、
+  **直す前に打ち切られた。**
+- 実害: なし。**コミット前に orchestrator が `git checkout --` で完全に復元した**
+  （2,591行・コメント455行・`testId` 65個が基線と一致、govlint 緑）。
+  段を割り、コミット前に機械照合する運用にしていたことが効いた。
+- **FR-031 との違い**: FR-031 は「判断の誤り」（部分編集を指示されたのに全文再構成した）だった。
+  今回は**判断ではなく能力の不足**である。2,591行は `Write` 1回の出力上限を超えるので、
+  **この役はこのファイルを正しく書き換えることが原理的にできない。**
+  指示の書き方をどう工夫しても解決しない。
+- 構造: 契約を surgical に編集できる役が**1つも無い**。
+  architect は `Write` のみ（全文書き出し）、developer と tester は `Edit` を持つが
+  **契約に触ってはならない**、reviewer は書けない。**契約は、大きくなった瞬間に誰も直せなくなる。**
+- 対処（今回）: 役の分担を変えた。**architect は契約本体ではなく「差分の指定」を書き**
+  （見つける文字列と置き換える文字列の対。1ファイルに詰めず複数ファイルへ分割）、
+  **orchestrator がそれを機械的に適用する**（各アンカーがちょうど1回出現することを assert）。
+  architect が契約の中身を決める役割は動かさない。
+- 押し込み先の候補（未決）:
+  (a) architect に `Edit` を渡す。**ただし FR-031 の再発条件を作る**——部分編集の手段があることは、
+      全文再構成を選ばない保証にはならない。渡すなら「全文書き出しを禁じる」ことを役割契約に書く必要がある。
+  (b) 今回の「差分の指定を書かせて orchestrator が適用する」型を役割契約に正式化する。
+  (c) 契約ファイルを分割して1本を出力上限内に収める。**ただし分割自体が大きな設計判断**であり、
+      SSoT が散る代償がある。
+
+---
+
+## FR-024: 欠陥注入を戻す `git checkout --` が、まだコミットしていない修正ごと消した
+
+```yaml
+id: FR-024
+date: 2026-09-13
+found_at: AI
+slice: dining-radar 会の画面群の描き直し（統合後の欠陥注入）
+agents: [developer, orchestrator]
+cause_category: 手順の順序が安全を保証していない
+cause_key: defect-injection-revert-wipes-uncommitted-fix
+pushed_to: []
+status: 未対応
+principles: [P-06, P-04]
+```
+
+- 事象: 検査の穴（確定後の地図の線の数を「決まった関数を通った回数」で数えていた）を直したあと、
+  直ったことを示すために欠陥を1つ入れてテストを回し、`git checkout -- participant.js` で欠陥を戻した。
+  **直した本体はまだコミットしていなかったので、欠陥と一緒に修正も消えた。**
+  担当の developer が次の注入の前に気づき、修正をやり直してコミットし、注入を最初からやり直した。
+  最終的な検証はコミット後の状態に対して行われており、実害は無い。
+- 原因: `adr/0065`（欠陥注入のコードをコミットしない）は「何を残さないか」を定めるが、
+  **「どの順で作業するか」を定めていない。**欠陥の戻し方として自然な `git checkout --` は、
+  作業ツリーを HEAD に戻す操作であり、HEAD に無いもの（未コミットの修正）を区別しない。
+  **直すことと、直ったことを欠陥注入で示すことが同じファイルの上で起きると、この事故の条件がそろう。**
+- なぜ危ういか: 気づかなければ、**修正が消えた状態で「欠陥を入れると落ちる」を確認して報告する**ことになる。
+  元の穴が残ったまま「直して証明した」と書かれる。今回は担当者が気づいたが、機械の関所は無い。
+- 押し込み先の候補（未決）:
+  (a) `adr/0065` の運用に「**修正を先にコミットしてから欠陥を入れる**。戻すときは `git checkout --` ではなく
+      `git diff` の逆適用か、コミット済みの状態との比較で確かめる」を1行足す。
+  (b) 欠陥注入の報告に、**注入前の HEAD のコミットと、注入を戻した後の `git status` / `git diff`** を必ず貼らせる
+      （今回の依頼文ではそれを要求しており、担当者が気づく助けになった）。
