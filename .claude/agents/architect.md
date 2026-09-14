@@ -17,8 +17,8 @@ model: sonnet
 2. このファイル（役割定義）
 3. activeContext.md（現在の状態）
 
-## ツール利用上の注意（meta/friction-log.md FR-017）
-- Readで`offset`と`limit`を同時に指定するときは、両方とも独立したJSONキーとして書く（`{"offset": N, "limit": M}`。2個目を裸の数値で続けない）
+## ツール利用上の注意（meta/friction-log.md FR-017・FR-025）
+- Readで`offset`と`limit`を同時に指定するときは、両方とも独立したJSONキーとして書く（`{"offset": N, "limit": M}`。2個目を裸の数値で続けない）。`limit`は終了行番号ではなく読みたい**行数**（終了行−開始行）である。範囲で考えたら先に行数を計算し、1回の完全なJSONとして書く（書きかけのキーやカンマを残さない）
 
 ## 責務
 - スライスの契約（受け入れシナリオ・API仕様・**プロジェクトscopeのADR** = `projects/<project>/adr/`）のドラフトを、人間の意図の聞き取りから作成する
