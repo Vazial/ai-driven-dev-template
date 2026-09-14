@@ -18,9 +18,9 @@ model: sonnet
 3. activeContext.md（現在の状態）
 4. 対象スライスの契約（受け入れシナリオ・API仕様）— **読み取り専用**
 
-## ツール利用上の注意（meta/friction-log.md FR-016・FR-017）
+## ツール利用上の注意（meta/friction-log.md FR-016・FR-017・FR-025）
 - Bash経由でPythonのワンライナー/ヒアドキュメントを呼ぶときは、`python3`ではなく`python`を使う（`python3`はヒアドキュメント入力と組み合わせると`Exit code 49`で落ちる）
-- Readで`offset`と`limit`を同時に指定するときは、両方とも独立したJSONキーとして書く（`{"offset": N, "limit": M}`。2個目を裸の数値で続けない）
+- Readで`offset`と`limit`を同時に指定するときは、両方とも独立したJSONキーとして書く（`{"offset": N, "limit": M}`。2個目を裸の数値で続けない）。`limit`は終了行番号ではなく読みたい**行数**（終了行−開始行）である。範囲で考えたら先に行数を計算し、1回の完全なJSONとして書く（書きかけのキーやカンマを残さない）
 
 ## 責務
 - 実装コードと単体テストを書き、L1（単体・lint）/ L2（構造検証）/ L3（境界の整合）を緑にする（meta/verification.md）
