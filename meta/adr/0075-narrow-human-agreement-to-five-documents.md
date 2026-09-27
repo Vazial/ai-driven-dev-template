@@ -1,9 +1,9 @@
 ---
 id: 0075
 scope: meta
-status: 提案中
+status: 承認済み
 date: 2026-09-27
-approved_by: ""
+approved_by: "人間裁定（2026-09-27 チャット: 『承認するけど、statusが提案中のマージはもうやめてね』と承認。あわせて、承認済みでのマージを徹底する運用修正を指示）"
 supersedes: [0072]
 superseded_by: null
 relates_to: [0061, 0064]
