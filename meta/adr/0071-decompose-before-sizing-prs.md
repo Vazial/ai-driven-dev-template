@@ -1,9 +1,9 @@
 ---
 id: 0071
 scope: meta
-status: 提案中
+status: 承認済み
 date: 2026-09-27
-approved_by: ""
+approved_by: "人間裁定（2026-09-27 チャット: 「PR単位が小さすぎるかもね」「適切にタスク分解するフローが必要だったかもね」との指摘を受けてADR-0071を起票し、承認）"
 supersedes: []
 superseded_by: null
 relates_to: [P-02, 0041, 0057, 0064, 0069, 0070]
