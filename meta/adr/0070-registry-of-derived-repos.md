@@ -1,9 +1,9 @@
 ---
 id: 0070
 scope: meta
-status: 提案中
+status: 承認済み
 date: 2026-09-27
-approved_by: ""
+approved_by: "人間裁定（2026-09-27 チャット: 派生リポジトリの登録漏れ対策として表と機械的な突き合わせを提案し合意。ai-driven-dev-template-privateは対象外でアーカイブと裁定した上で、ADR-0070を承認）"
 supersedes: []
 superseded_by: null
 relates_to: [P-04, P-05, 0067, 0068, 0069]
