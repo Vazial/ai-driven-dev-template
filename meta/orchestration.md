@@ -40,7 +40,7 @@ AI は Todo へ移さない。範囲の合意は人間が Todo へ移す操作�
 4. **役割を起動する**: 下の §4。標準フロー（`meta/agents.md` §4）の順番と承認点はそのまま守る
 5. **検証する**: 役割の成果物に適用される機械検証を、指揮役が実行してから次へ渡す（`meta/agents.md` の検証の申告）
 6. **Draft PR にする**: `.github/pull_request_template.md` に従う。PR をチケットに添付し（`orca linear attach`）、In Review へ
-7. **節目ごとに書く**: 着手・役割の完了・止まった理由・PR作成を、チケットのコメントに1〜3行で残す
+7. **節目ごとに書く**: 着手・役割の完了・止まった理由・PR作成を、チケットのコメントに1〜3行で残す。同時に`orca worktree set --workspace-status`をチケットの状態に合わせて更新する（In Progress→`in-progress`、Draft PR作成後→`in-review`、マージ後→`completed`。meta/adr/0074）
 
 止まるのは次のとき。チケットのコメントに判断を仰ぐ型（決めること・選択肢・トレードオフ・推奨。`meta/permissions.md` §2）で書き、In Progress のまま次のチケットへは進まない。
 
