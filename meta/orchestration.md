@@ -139,3 +139,15 @@ meta/orchestration.md の §6 に従い、bash meta/template-sync.sh pull を走
 
 `meta/template-sync.sh` がまだ届いていない派生リポジトリでは、最初の1回だけテンプレの写しから手で走らせる。
 `cd <派生リポジトリ> && bash <テンプレの場所>/meta/template-sync.sh pull`
+
+### 新しい派生リポジトリを作ったとき
+
+自動実行は、リポジトリごとに1件ずつ登録する。派生リポジトリが増えても自動では増えないので、作った日に次を済ませる。
+1つでも抜けると、そのリポジトリはテンプレの更新を受け取らないまま黙って古くなる。
+
+1. 取り込みの道具を載せる。写し方式なら `TEMPLATE_SYNC` と `scripts/template-pull.sh`、枝を積む方式なら `meta/upstream-import.sh seed`（meta/adr/0067）
+2. 上の手順で、初回の取り込みを手で1回走らせ、PR をマージする
+3. 上の `orca automations create` を、`--repo name:<新しいリポジトリ名>` で登録し、`orca automations list` に出たことを確かめる
+4. ルートの `activeContext.md` のプロジェクト一覧に、そのリポジトリを載せる
+
+派生リポジトリ自体を閉じる（アーカイブする）ときは、自動実行を `orca automations remove` で外す。
