@@ -11,7 +11,7 @@
 | アイデア・やること・順番・状態 | Linear（チーム KEN） |
 | 仕様・ADR・契約・コード | リポジトリ |
 | 何が決まったか・いまの作業がどこまで進んだか | 各 `activeContext.md`（次にやることはチケット番号だけ） |
-| 作業場所の一覧 | Orca のボード（窓。状態は持たない） |
+| 作業場所の一覧 | Orca のボード（窓。状態のSSOTはLinearのまま。作業場所ごとの`workspace-status`・`linked-issue`はLinearの写しとして§3手順7で更新する。meta/adr/0074） |
 
 チケットの Linear Project は、対象のリポジトリ名と同じ名前にする（例: `ai-driven-dev-template`）。
 自動実行はリポジトリごとに登録し、自分の Project のチケットだけを取る。
