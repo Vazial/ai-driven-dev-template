@@ -148,6 +148,23 @@ meta/orchestration.md の §6 に従い、bash meta/template-sync.sh pull を走
 1. 取り込みの道具を載せる。写し方式なら `TEMPLATE_SYNC` と `scripts/template-pull.sh`、枝を積む方式なら `meta/upstream-import.sh seed`（meta/adr/0067）
 2. 上の手順で、初回の取り込みを手で1回走らせ、PR をマージする
 3. 上の `orca automations create` を、`--repo name:<新しいリポジトリ名>` で登録し、`orca automations list` に出たことを確かめる
-4. ルートの `activeContext.md` のプロジェクト一覧に、そのリポジトリを載せる
+4. `meta/derived-repos.md` の表に1行足す（状態は「稼働」）
 
-派生リポジトリ自体を閉じる（アーカイブする）ときは、自動実行を `orca automations remove` で外す。
+派生リポジトリ自体を閉じる（アーカイブする）ときは、表の状態を「閉鎖」に書き換える。自動実行は下の突き合わせが外す。
+
+### 表との突き合わせ（テンプレ側の週1の自動実行）
+
+登録の抜けは、機械が見張る（meta/adr/0070）。`bash meta/derived-repos-check.sh` が、表・Orca の自動実行・GitHub 上のリポジトリを突き合わせ、ずれを1行ずつ出す。ずれがあれば終了コード 0。
+
+```text
+orca automations create --name "週1: 派生リポジトリの表の突き合わせ" --trigger weekly --day 1 --time 05:30 \
+  --timezone Asia/Tokyo --provider claude --repo name:ai-driven-dev-template \
+  --precheck "bash meta/derived-repos-check.sh" --prompt "<下の文面>"
+```
+
+```text
+bash meta/derived-repos-check.sh を走らせ、出たずれを次のとおり直す。
+「追加: <リポジトリ>」は、そのリポジトリの origin/main に meta/template-sync.sh があれば、meta/orchestration.md §6 の登録コマンドで自動実行を登録する。無ければ登録せず、orca linear create で Project ai-driven-dev-template に「<リポジトリ> の初回の取り込みが要る」という Backlog のチケットを作る。
+「外す: <リポジトリ>」は、orca automations remove でそのリポジトリの「週1: テンプレの取り込み」を外す。
+「表に無い: <リポジトリ>」は直さない。表に足すか対象外にするかは人間が決めるので、orca linear create で Project ai-driven-dev-template に Backlog のチケットを作る。
+```
