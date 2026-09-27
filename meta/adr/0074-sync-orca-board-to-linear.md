@@ -1,9 +1,9 @@
 ---
 id: 0074
 scope: meta
-status: 提案中
+status: 承認済み
 date: 2026-09-27
-approved_by: ""
+approved_by: "人間裁定（2026-09-27 チャット: 『この方向で進めてよいですか？』の提案に『ok』と承認）"
 supersedes: []
 superseded_by: null
 relates_to: [0068]

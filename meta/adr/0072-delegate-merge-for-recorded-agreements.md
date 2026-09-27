@@ -1,11 +1,11 @@
 ---
 id: 0072
 scope: meta
-status: 承認済み
+status: superseded
 date: 2026-09-27
 approved_by: "人間裁定（2026-09-27 チャット: PR #217の提案『#217はまさに新しい制約を含むADRなので、承認いただければ次からは記録PRをAIがマージまで行えるようになります。いかがですか？』に対し『いいと思います』と承認）"
 supersedes: []
-superseded_by: null
+superseded_by: 0075
 relates_to: [P-01, 0061, 0064]
 ---
 
