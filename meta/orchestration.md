@@ -73,7 +73,7 @@ Project は親と同じにし、状態は Backlog のままにする。Todo へ�
 
 ```text
 orca orchestration run-create --objective "<チケット番号>: <チケット名>" --json
-orca orchestration worker-start --worktree name:<チケット番号> --agent codex --model gpt-5.6-luna \
+orca orchestration worker-start --worktree name:<チケット番号> --agent codex --model gpt-6-luna \
   --task-title "<チケット番号> developer" --spec "<下の routing>" --json
 orca orchestration check --wait --types "worker_done,escalation,question" --timeout-ms 900000 --json
 ```
