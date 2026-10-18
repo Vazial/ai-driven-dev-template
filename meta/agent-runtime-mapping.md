@@ -14,13 +14,13 @@
 `.claude/agents/<role>.md` が役割・責務・禁止事項の共通契約である。そこに書かれたClaude向けの
 `model`値をCodex向けに書き換えてはならない。
 
-| role | 共通契約のmodel | Claude Codeのruntime定義 | Codexの階級 | Codexのruntime model（2026-10-11時点の最新世代） |
-|---|---|---|---|---|
-| architect | `sonnet` | `.claude/agents/architect.md` (`sonnet`) | terra | `gpt-5.6-terra` |
-| designer | `opus` | `.claude/agents/designer.md` (`opus`) | terra | `gpt-5.6-terra` |
-| developer | `sonnet` | `.claude/agents/developer.md` (`sonnet`) | terra | `gpt-5.6-terra` |
-| tester | `sonnet` | `.claude/agents/tester.md` (`sonnet`) | terra | `gpt-5.6-terra` |
-| reviewer | `sonnet` | `.claude/agents/reviewer.md` (`sonnet`) | terra | `gpt-5.6-terra` |
+| role | 共通契約のmodel | Claude Codeのruntime定義 | Codexのruntime model（階級terra） |
+|---|---|---|---|
+| architect | `sonnet` | `.claude/agents/architect.md` (`sonnet`) | `gpt-5.6-terra` |
+| designer | `opus` | `.claude/agents/designer.md` (`opus`) | `gpt-5.6-terra` |
+| developer | `sonnet` | `.claude/agents/developer.md` (`sonnet`) | `gpt-5.6-terra` |
+| tester | `sonnet` | `.claude/agents/tester.md` (`sonnet`) | `gpt-5.6-terra` |
+| reviewer | `sonnet` | `.claude/agents/reviewer.md` (`sonnet`) | `gpt-5.6-terra` |
 
 ### モデルの決め方: 階級を固定し、世代は最新を使う
 
