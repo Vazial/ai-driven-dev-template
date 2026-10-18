@@ -3,23 +3,17 @@
 > 対象: Claude CodeとCodex。役割定義を両runtimeで共有し、runtime固有のモデル選択と起動先だけを
 > この表に分離する。根拠: ADR-0004、ADR-0036。
 
-## 基本の構成（単純な作業はLuna、設計とレビューはClaude）
-
-通常はこの構成で回す（KEN-18、ADR-0068）。実装とテスト作成のような単純な作業はCodexのLuna、設計・
-契約・レビューのような判断を担う役割はClaudeに任せる。具体的な起動先は下の「既定の実行先」の表が持つ。
-次の「役割とモデルの対応」は、どちらか一方のruntimeしか使えないときの対応であり、基本の構成ではない。Codexだけで回すときは、全roleを階級terraにそろえる。
-
-## 役割とモデルの対応（Codexだけ、またはClaudeだけで回すとき）
+## 役割とモデルの対応（単独のruntimeで回すとき）
 
 `.claude/agents/<role>.md` が役割・責務・禁止事項の共通契約である。そこに書かれたClaude向けの
 `model`値をCodex向けに書き換えてはならない。
 
-| role | 共通契約のmodel | Claude Codeのruntime定義 | Codexのruntime model（階級terra） |
+| role | 共通契約のmodel | Claude Codeのruntime定義 | Codexのruntime model |
 |---|---|---|---|
 | architect | `sonnet` | `.claude/agents/architect.md` (`sonnet`) | `gpt-5.6-terra` |
-| designer | `opus` | `.claude/agents/designer.md` (`opus`) | `gpt-5.6-terra` |
-| developer | `sonnet` | `.claude/agents/developer.md` (`sonnet`) | `gpt-5.6-terra` |
-| tester | `sonnet` | `.claude/agents/tester.md` (`sonnet`) | `gpt-5.6-terra` |
+| designer | `opus` | `.claude/agents/designer.md` (`opus`) | `gpt-6.1-sol` |
+| developer | `sonnet` | `.claude/agents/developer.md` (`sonnet`) | `gpt-6-luna` |
+| tester | `sonnet` | `.claude/agents/tester.md` (`sonnet`) | `gpt-6-luna` |
 | reviewer | `sonnet` | `.claude/agents/reviewer.md` (`sonnet`) | `gpt-5.6-terra` |
 
 ### モデルの決め方: 階級を固定し、世代は最新を使う
@@ -45,16 +39,16 @@ ADR-0048を参照する。reasoning effortはこの対応表では固定しな�
 
 ## 既定の実行先（ClaudeとCodexを混ぜて回すとき）
 
-Orcaで1チケットを回すときは、役割ごとに次の実行先で起動する（ADR-0068）。上の表は各runtimeで
-単独に回すときのモデルであり、指揮役がCodexだけのときは引き続き上の表に従う。
+Orcaで1チケットを回すときは、役割ごとに次の実行先で起動する（ADR-0068）。これが基本の構成で、単純な作業（実装とテスト作成）はCodexのLuna、指揮・設計・監査はClaudeに任せる。
+上の表は各runtimeで単独に回すときのモデルであり、指揮役がCodexだけのときは上の表に従う。
 
 | 役割 | 実行先 | Orcaの起動指定 |
 |---|---|---|
-| orchestrator（指揮役） | Claude Sonnet | Orca側のClaude既定モデル |
+| orchestrator（指揮役） | Claude Opus | Orca側のClaude既定モデル |
 | architect | Claude Sonnet | `--agent claude --model sonnet` |
 | designer | Claude Opus | `--agent claude --model opus` |
-| developer | Codex Luna | `--agent codex --model gpt-5.6-luna` |
-| tester | Codex Luna | `--agent codex --model gpt-5.6-luna` |
+| developer | Codex Luna | `--agent codex --model gpt-6-luna` |
+| tester | Codex Luna | `--agent codex --model gpt-6-luna` |
 | reviewer | Claude Sonnet | `--agent claude --model sonnet` |
 
 testerとreviewerが別のruntimeになるのは意図である（学習元の違うAIが監査し、同じ誤解を共有しにくい）。
