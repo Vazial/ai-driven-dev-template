@@ -1,5 +1,5 @@
 ---
-id: 0077
+id: 0078
 scope: meta
 status: 承認済み
 date: 2026-10-11
@@ -9,7 +9,7 @@ superseded_by: null
 relates_to: [0004, 0036, 0048, 0075]
 ---
 
-# ADR-0077: Codexのモデルは階級で固定し、世代は最新を使う
+# ADR-0078: Codexのモデルは階級で固定し、世代は最新を使う
 
 > **承認者向けサマリ**: `meta/agent-runtime-mapping.md` はCodexのモデルを `gpt-5.6-*` の固定名で持っていたが、
 > 現在のCodexには6・6.1世代がある。役割に割り当てる本体を「階級（luna / terra / sol / astra）」とし、
