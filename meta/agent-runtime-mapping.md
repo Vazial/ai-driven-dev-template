@@ -7,7 +7,7 @@
 
 通常はこの構成で回す（KEN-18、ADR-0068）。実装とテスト作成のような単純な作業はCodexのLuna、設計・
 契約・レビューのような判断を担う役割はClaudeに任せる。具体的な起動先は下の「既定の実行先」の表が持つ。
-次の「役割とモデルの対応」は、Claudeを使わずCodexだけで回すときの対応であり、基本の構成ではない。
+次の「役割とモデルの対応」は、どちらか一方のruntimeしか使えないときの対応であり、基本の構成ではない。Codexだけで回すときは、全roleを階級terraにそろえる。
 
 ## 役割とモデルの対応（Codexだけ、またはClaudeだけで回すとき）
 
@@ -17,9 +17,9 @@
 | role | 共通契約のmodel | Claude Codeのruntime定義 | Codexの階級 | Codexのruntime model（2026-10-11時点の最新世代） |
 |---|---|---|---|---|
 | architect | `sonnet` | `.claude/agents/architect.md` (`sonnet`) | terra | `gpt-5.6-terra` |
-| designer | `opus` | `.claude/agents/designer.md` (`opus`) | sol | `gpt-6.1-sol` |
-| developer | `sonnet` | `.claude/agents/developer.md` (`sonnet`) | luna | `gpt-6-luna` |
-| tester | `sonnet` | `.claude/agents/tester.md` (`sonnet`) | luna | `gpt-6-luna` |
+| designer | `opus` | `.claude/agents/designer.md` (`opus`) | terra | `gpt-5.6-terra` |
+| developer | `sonnet` | `.claude/agents/developer.md` (`sonnet`) | terra | `gpt-5.6-terra` |
+| tester | `sonnet` | `.claude/agents/tester.md` (`sonnet`) | terra | `gpt-5.6-terra` |
 | reviewer | `sonnet` | `.claude/agents/reviewer.md` (`sonnet`) | terra | `gpt-5.6-terra` |
 
 ### モデルの決め方: 階級を固定し、世代は最新を使う
