@@ -3,18 +3,36 @@
 > 対象: Claude CodeとCodex。役割定義を両runtimeで共有し、runtime固有のモデル選択と起動先だけを
 > この表に分離する。根拠: ADR-0004、ADR-0036。
 
-## 役割とモデルの対応
+## 基本の構成（単純な作業はLuna、設計とレビューはClaude）
+
+通常はこの構成で回す（KEN-18、ADR-0068）。実装とテスト作成のような単純な作業はCodexのLuna、設計・
+契約・レビューのような判断を担う役割はClaudeに任せる。具体的な起動先は下の「既定の実行先」の表が持つ。
+次の「役割とモデルの対応」は、どちらか一方のruntimeしか使えないときの対応であり、基本の構成ではない。Codexだけで回すときは、全roleを階級terraにそろえる。
+
+## 役割とモデルの対応（Codexだけ、またはClaudeだけで回すとき）
 
 `.claude/agents/<role>.md` が役割・責務・禁止事項の共通契約である。そこに書かれたClaude向けの
 `model`値をCodex向けに書き換えてはならない。
 
-| role | 共通契約のmodel | Claude Codeのruntime定義 | Codexのruntime model |
+| role | 共通契約のmodel | Claude Codeのruntime定義 | Codexのruntime model（階級terra） |
 |---|---|---|---|
 | architect | `sonnet` | `.claude/agents/architect.md` (`sonnet`) | `gpt-5.6-terra` |
-| designer | `opus` | `.claude/agents/designer.md` (`opus`) | `gpt-5.6-sol` |
-| developer | `sonnet` | `.claude/agents/developer.md` (`sonnet`) | `gpt-5.6-luna` |
-| tester | `sonnet` | `.claude/agents/tester.md` (`sonnet`) | `gpt-5.6-luna` |
+| designer | `opus` | `.claude/agents/designer.md` (`opus`) | `gpt-5.6-terra` |
+| developer | `sonnet` | `.claude/agents/developer.md` (`sonnet`) | `gpt-5.6-terra` |
+| tester | `sonnet` | `.claude/agents/tester.md` (`sonnet`) | `gpt-5.6-terra` |
 | reviewer | `sonnet` | `.claude/agents/reviewer.md` (`sonnet`) | `gpt-5.6-terra` |
+
+### モデルの決め方: 階級を固定し、世代は最新を使う
+
+役割に割り当てる本体は**階級**（luna＝軽量、terra＝均衡、sol＝主力、astra＝最上位）である。世代（5.6、6、6.1…）は
+階級の中で**その時点の最新**を使う。階級を選ぶ根拠は役割ごとのADR（ADR-0048）が持ち、世代の更新では階級を変えない。
+
+- 最新世代は、Codexが返すモデル一覧（`~/.codex/models_cache.json`）の中で、その階級のうち最も新しい世代とする。
+  一覧が「Older generation」と注記するものは最新ではない。
+- 階級によって最新世代が揃わない場合がある（2026-10-11時点で terra は5.6世代のみ。6世代にterraは無い）。
+  その階級の最新世代を使い、世代を揃えるために階級を変えない。
+- 世代が更新されたら、この表の右端の列とページ下の「既定の実行先」表、`meta/orchestration.md` の例を同じPRで更新する。
+  更新は階級を変えない限りレビュー済み更新として扱う（階級を変えるときはADRを起こす）。
 
 Claude Codeは `.claude/agents/<role>.md` をruntime定義として使う。Codexはrole定義を自動発見しないため、
 `AGENTS.md` に従い同じ `.claude/agents/<role>.md` とこの表を読んで、表のCodex modelを指定してdispatchする。
